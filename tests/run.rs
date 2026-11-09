@@ -874,14 +874,19 @@ fn check_json_format() {
 fn scratch_directories_are_private_and_never_reused() {
     use std::os::unix::fs::MetadataExt;
     let env = Env::new();
-    env.script("bin/where", "#!/bin/sh\nstat -f '%Lp' \"$KORIN_OUT\" 2>/dev/null || stat -c '%a' \"$KORIN_OUT\"\nstat -f '%Lp' \"$(dirname \"$KORIN_OUT\")\" 2>/dev/null || stat -c '%a' \"$(dirname \"$KORIN_OUT\")\"\n");
+    // `ls -ld` prints the same mode string on macOS and Linux; `stat` flags differ (GNU
+    // `stat -f` reports the filesystem instead of failing).
+    env.script(
+        "bin/where",
+        "#!/bin/sh\nls -ld \"$KORIN_OUT\" | cut -c1-10\nls -ld \"$(dirname \"$KORIN_OUT\")\" | cut -c1-10\n",
+    );
     env.wizard("stage \"a\"\n  read where\n    capture modes = lines\n");
     let out = env.run_yes(&[]);
     assert_eq!(out.code, 0, "{}", out.text);
     let events = env.events_of("capture");
     assert_eq!(
         events[0]["value"],
-        serde_json::json!(["700", "700"]),
+        serde_json::json!(["drwx------", "drwx------"]),
         "{}",
         out.text
     );
