@@ -42,6 +42,10 @@ impl Session {
             ),
         );
         cmd.env("TMPDIR", dir.join("tmp"));
+        // Color follows the test, not the developer's shell.
+        cmd.env_remove("NO_COLOR");
+        cmd.env_remove("CLICOLOR_FORCE");
+        cmd.env("TERM", "xterm-256color");
         for (key, value) in env {
             cmd.env(key, value);
         }
@@ -72,15 +76,12 @@ impl Session {
     fn wait_for(&self, text: &str) {
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline {
-            if self.output.lock().unwrap().contains(text) {
+            if self.text().contains(text) {
                 return;
             }
             std::thread::sleep(Duration::from_millis(50));
         }
-        panic!(
-            "timed out waiting for {text:?}; output:\n{}",
-            self.output.lock().unwrap()
-        );
+        panic!("timed out waiting for {text:?}; output:\n{}", self.text());
     }
 
     fn send(&mut self, text: &str) {
@@ -105,7 +106,13 @@ impl Session {
         }
     }
 
+    /// What the terminal shows: the output without color codes.
     fn text(&self) -> String {
+        visible(&self.raw())
+    }
+
+    /// The output as korin wrote it, color codes included.
+    fn raw(&self) -> String {
         self.output.lock().unwrap().clone()
     }
 
@@ -569,4 +576,67 @@ fn deeply_nested_confirm_shows_every_remaining_step() {
     }
     s.send("n\r");
     assert_eq!(s.wait(), 1, "{}", s.text());
+}
+
+/// Removes color and cursor codes, so tests match the text korin wrote.
+fn visible(text: &str) -> String {
+    regex::Regex::new("\x1b\\[[0-9;?]*[A-Za-z]")
+        .unwrap()
+        .replace_all(text, "")
+        .into_owned()
+}
+
+#[test]
+fn a_terminal_gets_carbonfox_colors_unless_no_color_is_set() {
+    for (no_color, colored) in [(None, true), (Some("1"), false)] {
+        let dir = setup("stage \"a\"\n  read tool\n", &[("tool", "true")]);
+        let env: Vec<(&str, PathBuf)> = match no_color {
+            Some(v) => vec![
+                ("NO_COLOR", PathBuf::from(v)),
+                ("COLORTERM", "truecolor".into()),
+            ],
+            None => vec![("COLORTERM", "truecolor".into())],
+        };
+        let mut s = Session::start_with_env(dir.path(), &["run", "w.korin"], &env);
+        s.wait_for("Run stage 1?");
+        // Blue (78a9ff) for the prompt mark, as in carbonfox.
+        assert_eq!(
+            s.raw().contains("\x1b[1;38;2;120;169;255m❯"),
+            colored,
+            "{:?}",
+            s.raw()
+        );
+        assert_eq!(s.raw().contains('\x1b'), colored, "{:?}", s.raw());
+        s.send("y\r");
+        assert_eq!(s.wait(), 0, "{}", s.text());
+    }
+}
+
+#[test]
+fn live_view_erases_the_preview_and_ghosts_the_steps_to_come() {
+    let dir = setup(
+        "stage \"a\"\n  read slow\n  note \"still-to-come\"\n",
+        &[("slow", "echo started; sleep 1; echo finished")],
+    );
+    let env = vec![("COLORTERM", PathBuf::from("truecolor"))];
+    let mut s = Session::start_with_env(dir.path(), &["run", "w.korin"], &env);
+    s.wait_for("Run stage 1?");
+    let before = s.raw().len();
+    s.send("y\r");
+    s.wait_for("started");
+    let running = s.raw()[before..].to_string();
+    // The preview (two step lines and the prompt) is erased back to the stage header.
+    assert!(running.contains("\x1b[3A\x1b[J"), "{running:?}");
+    // The note still to come is drawn in carbonfox's comment color under the output.
+    let ghost = "\x1b[38;2;110;111;112m  1.2  note \"still-to-come\"\x1b[0m";
+    assert!(running.contains(ghost), "{running:?}");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    // By the end the note has run for real, and the ghost is gone.
+    let raw = s.raw();
+    let last_ghost = raw.rfind(ghost).unwrap();
+    assert!(
+        raw[last_ghost..].contains("\x1b[J"),
+        "the ghost was never erased"
+    );
+    assert!(s.text().contains("still-to-come"));
 }

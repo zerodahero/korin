@@ -1038,7 +1038,7 @@ EOF
     env.wizard("stage \"a\"\n  read emit\n    capture v = jq .v\n  read take {v}\n");
     let out = env.run_yes(&[]);
     assert_eq!(out.code, 0, "{}", out.text);
-    assert!(out.text.contains(r"1.2 $ take $'a b\rX'"), "{}", out.text);
+    assert!(out.text.contains(r"1.2 ❯ take $'a b\rX'"), "{}", out.text);
 }
 
 #[test]
@@ -1309,4 +1309,44 @@ fn kill_grace_is_bounded() {
     assert_eq!(out.code, 2, "{}", out.text);
     assert!(out.text.contains("--kill-grace"), "{}", out.text);
     assert!(env.calls().is_empty(), "a command ran");
+}
+
+#[test]
+fn a_secret_spanning_a_substituted_value_is_still_redacted() {
+    // The secret is the literal `word-` plus the value of `name`. Value marks sit between the
+    // two in the rendered line, so redaction must not depend on them.
+    let env = Env::new();
+    env.script("bin/tool", "#!/bin/sh\ntrue\n");
+    env.wizard(concat!(
+        "param name = \"susan\"\n",
+        "param pw secret\n",
+        "stage \"a\"\n",
+        "  read tool word-{name}\n",
+    ));
+    let out = env.run_yes_env(&[], &[("KORIN_SECRET_PW", "word-susan")]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    assert!(out.text.contains("1.1 ❯ tool «secret:pw»"), "{}", out.text);
+    assert!(
+        env.leaks("word-susan", &out).is_empty(),
+        "{:?}",
+        env.leaks("word-susan", &out)
+    );
+    let starts = env.events_of("command_start");
+    assert_eq!(starts.len(), 1, "{:?}", env.events());
+    assert_eq!(starts[0]["command_kind"], "read");
+    let argv = starts[0]["argv"].as_str().unwrap().to_string();
+    assert!(!argv.contains(['\u{e000}', '\u{e001}']), "{argv:?}");
+}
+
+#[test]
+fn command_start_events_keep_their_kind() {
+    // The command's own kind once overwrote the event's `kind`, hiding every command_start.
+    let env = Env::new();
+    env.script("bin/tool", "#!/bin/sh\ntrue\n");
+    env.wizard("stage \"a\"\n  read tool\n");
+    let out = env.run_yes(&[]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    let starts = env.events_of("command_start");
+    assert_eq!(starts.len(), 1, "{:?}", env.events());
+    assert_eq!(starts[0]["command_kind"], "read");
 }

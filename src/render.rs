@@ -5,35 +5,74 @@ use std::fmt::Write as _;
 use crate::ast::{CaptureMode, CmpOp, GateMode, SayKind};
 use crate::ir::{Expr, IPart, Interpolated, Program, Step, StepKind, Sym, SymKind};
 
+/// Opens a value korin put into a command, in a rendered line for the terminal. The theme turns
+/// each marked value into color, and every line loses its marks before it is shown.
+pub const VALUE_OPEN: char = '\u{e000}';
+/// Closes a value opened by [`VALUE_OPEN`].
+pub const VALUE_CLOSE: char = '\u{e001}';
+
+fn is_mark(c: char) -> bool {
+    c == VALUE_OPEN || c == VALUE_CLOSE
+}
+
+/// Removes value marks, for anything that is not the terminal, such as the journal.
+pub fn strip_marks(text: &str) -> String {
+    text.chars().filter(|c| !is_mark(*c)).collect()
+}
+
 /// Quotes one argument so it reads unambiguously, the way a shell would need it. Control
 /// characters are escaped, so a value cannot rewrite the line it is shown on.
 pub fn quote(arg: &str) -> String {
-    let plain = !arg.is_empty()
-        && arg
+    quote_segments(&[(arg, false)])
+}
+
+/// Quotes one argument built from pieces, marking the pieces that are values. The quoting
+/// depends on the whole argument, so the marks never change how it is quoted.
+fn quote_segments(segments: &[(&str, bool)]) -> String {
+    let whole: String = segments.iter().map(|(text, _)| *text).collect();
+    let plain = !whole.is_empty()
+        && whole
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || "_@%+=:,./-".contains(c));
-    if plain {
-        return arg.to_string();
+    let escaped = !plain && whole.chars().any(|c| c.is_control() || is_mark(c));
+    let mut out = String::new();
+    if escaped {
+        out.push_str("$'");
+    } else if !plain {
+        out.push('\'');
     }
-    if arg.chars().any(char::is_control) {
-        let mut out = String::from("$'");
-        for c in arg.chars() {
-            match c {
-                '\\' => out.push_str("\\\\"),
-                '\'' => out.push_str("\\'"),
-                '\n' => out.push_str("\\n"),
-                '\r' => out.push_str("\\r"),
-                '\t' => out.push_str("\\t"),
-                c if c.is_control() => {
-                    let _ = write!(out, "\\x{:02x}", u32::from(c));
+    for (text, marked) in segments {
+        let marked = *marked && !text.is_empty();
+        if marked {
+            out.push(VALUE_OPEN);
+        }
+        for c in text.chars() {
+            if escaped {
+                match c {
+                    '\\' => out.push_str("\\\\"),
+                    '\'' => out.push_str("\\'"),
+                    '\n' => out.push_str("\\n"),
+                    '\r' => out.push_str("\\r"),
+                    '\t' => out.push_str("\\t"),
+                    c if c.is_control() || is_mark(c) => {
+                        let _ = write!(out, "\\x{:02x}", u32::from(c));
+                    }
+                    c => out.push(c),
                 }
-                c => out.push(c),
+            } else if !plain && c == '\'' {
+                out.push_str(r"'\''");
+            } else {
+                out.push(c);
             }
         }
-        out.push('\'');
-        return out;
+        if marked {
+            out.push(VALUE_CLOSE);
+        }
     }
-    format!("'{}'", arg.replace('\'', r"'\''"))
+    if !plain {
+        out.push('\'');
+    }
+    out
 }
 
 /// Escapes control characters in text shown inside a message, so a value cannot add lines or
@@ -45,7 +84,7 @@ pub fn escape_controls(text: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            c if c.is_control() => {
+            c if c.is_control() || is_mark(c) => {
                 let _ = write!(out, "\\x{:02x}", u32::from(c));
             }
             c => out.push(c),
@@ -132,20 +171,25 @@ fn argument(program: &Program, t: &Interpolated, values: &dyn Values) -> String 
     ] = t.parts.as_slice()
         && let Some(items) = values.shown_arg(program, *sym)
     {
-        return items.iter().map(|i| quote(i)).collect::<Vec<_>>().join(" ");
+        return items
+            .iter()
+            .map(|i| quote_segments(&[(i, true)]))
+            .collect::<Vec<_>>()
+            .join(" ");
     }
-    let mut whole = String::new();
+    let mut segments: Vec<(String, bool)> = Vec::new();
     for part in &t.parts {
         match part {
-            IPart::Lit(text) => whole.push_str(text),
+            IPart::Lit(text) => segments.push((text.clone(), false)),
             IPart::Sym { sym, .. } => match values.shown_arg(program, *sym) {
-                Some(pieces) => whole.push_str(&pieces.join(" ")),
+                Some(pieces) => segments.push((pieces.join(" "), true)),
                 // Not known yet: show the placeholder unquoted, so it reads as one.
                 None => return interpolated(program, t, values, false),
             },
         }
     }
-    quote(&whole)
+    let borrowed: Vec<(&str, bool)> = segments.iter().map(|(t, m)| (t.as_str(), *m)).collect();
+    quote_segments(&borrowed)
 }
 
 /// How tightly an expression binds: `or` 1, `and` 2, `not` 3, everything else 4.
@@ -231,7 +275,7 @@ pub fn step_lines(
     match &step.kind {
         StepKind::Command(c) => {
             out.push(format!(
-                "{pad}{id}  {} $ {}",
+                "{pad}{id}  {} ❯ {}",
                 c.kind.keyword(),
                 argv(program, &c.argv, values)
             ));
@@ -399,4 +443,34 @@ pub fn plan(program: &Program) -> String {
         }
     }
     out.join("\n") + "\n"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn marks_never_change_how_an_argument_is_quoted() {
+        for (pieces, expected) in [
+            (vec![("hi ", false), ("susan", true)], "'hi susan'"),
+            (vec![("--id=", false), ("abc", true)], "--id=abc"),
+            (vec![("a\n", true), ("b", false)], "$'a\\nb'"),
+            (vec![("it's", true)], r"'it'\''s'"),
+        ] {
+            let marked = quote_segments(&pieces);
+            assert_eq!(strip_marks(&marked), expected, "{pieces:?}");
+            let whole: String = pieces.iter().map(|(t, _)| *t).collect();
+            assert_eq!(strip_marks(&marked), quote(&whole), "{pieces:?}");
+        }
+        assert_eq!(
+            quote_segments(&[("hi ", false), ("susan", true)]),
+            "'hi \u{e000}susan\u{e001}'"
+        );
+    }
+
+    #[test]
+    fn a_mark_inside_a_value_is_escaped_not_trusted() {
+        assert_eq!(quote("x\u{e000}y"), "$'x\\xe000y'");
+        assert_eq!(escape_controls("x\u{e001}y"), "x\\xe001y");
+    }
 }

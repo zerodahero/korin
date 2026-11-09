@@ -6,7 +6,11 @@
 pub mod capture;
 pub mod journal;
 pub mod process;
+mod screen;
 
+use screen::Screen;
+
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
 use std::os::fd::AsFd;
@@ -23,6 +27,7 @@ use crate::ir::{
 };
 use crate::redact::{Redactor, StreamRedactor};
 use crate::render::{self, Values as _};
+use crate::theme::Theme;
 use capture::{Data, Extract, Fingerprint, extract};
 use journal::Journal;
 use process::{Cancel, Signals, Spec, Status, Suspended};
@@ -94,6 +99,10 @@ pub struct Options {
     pub runs_dir: PathBuf,
     /// The directory commands run in.
     pub cwd: PathBuf,
+    /// Colors for the terminal; plain when stdout is not one.
+    pub theme: Theme,
+    /// The command line, shown in the run's intro.
+    pub invocation: String,
 }
 
 /// How a run ended. The exit code follows from it.
@@ -167,33 +176,36 @@ struct Value {
 /// Runs a program and reports how it ended. Everything it prints goes to stdout.
 pub fn run(program: &Program, options: Options) -> Ending {
     let tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    let theme = options.theme;
     if let Err(stop) = preflight(program, &options, tty) {
-        print_stop(&stop, None);
+        print_stop(theme, &stop, None);
         return stop.ending;
     }
     let mut runner = match Runner::new(program, options, tty) {
         Ok(runner) => runner,
         Err(stop) => {
-            print_stop(&stop, None);
+            print_stop(theme, &stop, None);
             return stop.ending;
         }
     };
     runner.start()
 }
 
-fn print_stop(stop: &Stop, journal: Option<&Path>) {
+/// Prints how a run stopped. The message and details must already be redacted.
+fn print_stop(theme: Theme, stop: &Stop, journal: Option<&Path>) {
     let mark = if stop.ending == Ending::Cancelled {
         "■"
     } else {
         "✗"
     };
-    println!("\n{mark} {}", stop.message);
+    let mut lines = vec![String::new(), format!("{mark} {}", stop.message)];
     for line in &stop.details {
-        println!("  {line}");
+        lines.push(format!("  {line}"));
     }
     if let Some(dir) = journal {
-        println!("  journal: {}", dir.display());
+        lines.push(format!("  journal: {}", dir.display()));
     }
+    println!("{}", theme.lines(&lines.join("\n")));
 }
 
 /// Checks everything that can stop a run before any command executes.
@@ -230,6 +242,8 @@ struct Runner<'p> {
     /// For each enclosing block, innermost last: the steps after the one running now. A
     /// `confirm` shows all of them, so the human sees everything left in the stage.
     rests: Vec<&'p [Step]>,
+    /// The terminal view: with a live view, steps still to run stay below the output.
+    screen: RefCell<Screen>,
 }
 
 impl<'p> Runner<'p> {
@@ -333,6 +347,10 @@ impl<'p> Runner<'p> {
                 scratch_root.display()
             ))
         })?;
+        // The live view erases and redraws lines, so it needs a terminal it can measure. Ghost
+        // lines are told apart from real output only by color, so it also needs color.
+        let theme = opts.theme;
+        let live = tty && theme.enabled() && terminal_size::terminal_size().is_some();
         Ok(Self {
             p,
             opts,
@@ -347,6 +365,7 @@ impl<'p> Runner<'p> {
             scratch_root,
             from,
             rests: Vec::new(),
+            screen: RefCell::new(Screen::new(live, theme)),
         })
     }
 
@@ -357,6 +376,7 @@ impl<'p> Runner<'p> {
             json!({"wizard": self.p.file.name, "title": self.p.title, "from": from}),
         );
         self.journal.report(&format!("# {}\n", self.p.title));
+        self.intro();
         let p = self.p;
         let result = self.params().and_then(|()| {
             for stage in &p.stages {
@@ -369,15 +389,17 @@ impl<'p> Runner<'p> {
         });
         let _ = std::fs::remove_dir_all(&self.scratch_root);
         if let Some((count, first)) = self.journal.failures() {
-            println!("\n⚠ the journal is incomplete: {count} write(s) failed, first: {first}");
+            self.say(&format!(
+                "\n⚠ the journal is incomplete: {count} write(s) failed, first: {first}"
+            ));
         }
         match result {
             Ok(()) => {
                 self.journal
                     .event("run_end", json!({"ending": "completed"}));
                 self.journal.report("\n**Completed.**");
-                println!("\n✓ {} completed", self.p.title);
-                println!("  journal: {}", self.journal.dir().display());
+                self.say(&format!("\n✓ {} completed", self.p.title));
+                self.say(&format!("  journal: {}", self.journal.dir().display()));
                 Ending::Completed
             }
             Err(stop) => {
@@ -404,15 +426,74 @@ impl<'p> Runner<'p> {
                         .map(|d| self.redactor.redact(d))
                         .collect(),
                 };
-                print_stop(&redacted, Some(self.journal.dir()));
+                self.screen.borrow_mut().clear();
+                print_stop(self.opts.theme, &redacted, Some(self.journal.dir()));
                 stop.ending
             }
         }
     }
 
+    /// Prints a line to the terminal: redacted first, then colored.
+    ///
+    /// A line may mark the values korin put into a command, so the theme can color them.
+    /// Redaction runs on the marked line, and the marks must not split a secret: the line is
+    /// colored only if removing the marks gives exactly the plain line, redacted. Otherwise it
+    /// prints that plain line without value colors.
     fn say(&self, line: &str) {
-        println!("{}", self.redactor.redact(line));
-        let _ = std::io::stdout().flush();
+        let shown = self.opts.theme.lines(&self.redact_marked(line));
+        self.screen.borrow_mut().print(&format!("{shown}\n"));
+    }
+
+    /// Redacts a line that may mark values, keeping the marks only if they split no secret.
+    fn redact_marked(&self, line: &str) -> String {
+        let redacted_plain = self.redactor.redact(&render::strip_marks(line));
+        let redacted_marked = self.redactor.redact(line);
+        if render::strip_marks(&redacted_marked) == redacted_plain {
+            redacted_marked
+        } else {
+            redacted_plain
+        }
+    }
+
+    /// The lines for every step still to run in the stage: this block's remaining steps,
+    /// then each enclosing block's, innermost first.
+    fn remaining_lines(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+        for block in self.rests.iter().rev() {
+            for s in *block {
+                render::step_lines(self.p, s, 1, self, &mut lines);
+            }
+        }
+        lines
+    }
+
+    /// With a live view, shows the steps still to run as ghost lines under the output.
+    fn update_ghost(&self) {
+        if !self.screen.borrow().live() {
+            return;
+        }
+        let theme = self.opts.theme;
+        let lines = self
+            .remaining_lines()
+            .iter()
+            .map(|line| theme.ghost(&self.redact_marked(line)))
+            .collect();
+        self.screen.borrow_mut().set_ghost(lines);
+    }
+
+    /// The intro, shaped like a shell prompt: the wizard, where it runs, then the command.
+    fn intro(&self) {
+        let stages = self.p.stages.len();
+        self.say(&format!(
+            "╭─ korin ─ {} ─ {} ─ {stages} stage{}",
+            render::escape_controls(&self.p.title),
+            render::escape_controls(&home_relative(&self.opts.cwd)),
+            if stages == 1 { "" } else { "s" },
+        ));
+        self.say(&format!(
+            "╰─❯ {}",
+            render::escape_controls(&self.opts.invocation)
+        ));
     }
 
     // ---- inputs ----
@@ -452,24 +533,31 @@ impl<'p> Runner<'p> {
             )));
         }
         if secret {
-            let value = rpassword::prompt_password(format!("  {name} (hidden): "))
-                .map_err(|e| Stop::failed(format!("cannot read `{name}`: {e}")))?;
+            self.screen.borrow_mut().hide();
+            let value =
+                rpassword::prompt_password(self.opts.theme.ask(&format!("{name} (hidden):")))
+                    .map_err(|e| Stop::failed(format!("cannot read `{name}`: {e}")))?;
             if self.signals.take_interrupt() {
                 return Err(Stop::cancelled("interrupted with Ctrl-C"));
             }
             Ok(value)
         } else {
-            self.read_line(&format!("  {name}: "))
+            self.read_line(&self.opts.theme.ask(&format!("{name}:")))
         }
     }
 
     /// Reads a line from the terminal. Ctrl-C and `SIGTERM` cancel the run instead of being lost.
     fn read_line(&self, prompt: &str) -> Result<String, Stop> {
-        read_line_interruptible(&self.signals, prompt)
+        self.screen.borrow_mut().hide();
+        let answer = read_line_interruptible(&self.signals, prompt)?;
+        self.screen
+            .borrow_mut()
+            .echoed(&format!("{prompt}{answer}"));
+        Ok(answer)
     }
 
     fn ask_yes(&self, question: &str) -> Result<bool, Stop> {
-        let answer = self.read_line(&format!("  ? {question} [y/N] "))?;
+        let answer = self.read_line(&self.opts.theme.question(question))?;
         Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "Yes"))
     }
 
@@ -481,6 +569,8 @@ impl<'p> Runner<'p> {
             "\n▸ Stage {}/{total} · {}",
             stage.number, stage.title
         ));
+        // Everything after the header is the preview; a live view erases it once approved.
+        self.screen.borrow_mut().mark();
         let mut lines = Vec::new();
         for step in &stage.steps {
             render::step_lines(self.p, step, 1, self, &mut lines);
@@ -515,8 +605,11 @@ impl<'p> Runner<'p> {
                 )));
             }
         }
+        self.screen.borrow_mut().erase_to_mark();
         let prefix = format!("s{}", stage.number);
-        self.steps(&stage.steps, &prefix, "", None)
+        let result = self.steps(&stage.steps, &prefix, "", None);
+        self.screen.borrow_mut().clear();
+        result
     }
 
     /// Stops before a gate if any command in the stage would receive a value that is already
@@ -586,19 +679,17 @@ impl<'p> Runner<'p> {
         if self.signals.take_terminate() {
             return Err(Stop::cancelled("korin received SIGTERM or SIGHUP"));
         }
+        self.update_ghost();
         match &step.kind {
             StepKind::Command(command) => self.command(command, step, path, suffix, deadline),
             StepKind::Confirm(text) => {
                 let text = self.display_interpolated(text);
-                // Everything left in the stage: this block's remaining steps, then each
-                // enclosing block's, innermost first.
+                // Everything left in the stage, shown in full as at a gate. A live view
+                // erases the list once confirmed, and the ghost takes over again.
                 let _ = rest;
-                let mut lines = Vec::new();
-                for block in self.rests.iter().rev() {
-                    for s in *block {
-                        render::step_lines(self.p, s, 1, self, &mut lines);
-                    }
-                }
+                let lines = self.remaining_lines();
+                self.screen.borrow_mut().clear();
+                self.screen.borrow_mut().mark();
                 if !lines.is_empty() {
                     self.say("  next:");
                     for line in &lines {
@@ -606,6 +697,8 @@ impl<'p> Runner<'p> {
                     }
                 }
                 if self.ask_yes(&text)? {
+                    self.screen.borrow_mut().erase_to_mark();
+                    self.update_ghost();
                     self.journal
                         .event("confirm", json!({"step": step.id, "approved": true}));
                     Ok(())
@@ -699,10 +792,10 @@ impl<'p> Runner<'p> {
             StepKind::Say { kind, text } => {
                 let text = self.display_interpolated(text);
                 match kind {
-                    SayKind::Note => self.say(&format!("  {text}")),
-                    SayKind::Warn => self.say(&format!("  ⚠ {text}")),
+                    SayKind::Note => self.say(&format!("\n  {text}")),
+                    SayKind::Warn => self.say(&format!("\n  ⚠ {text}")),
                     SayKind::Record => {
-                        self.say(&format!("  {text}"));
+                        self.say(&format!("\n  ✓ {text}"));
                         self.journal.report(&format!("- {text}"));
                     }
                 }
@@ -864,10 +957,11 @@ impl<'p> Runner<'p> {
                 ))
             })?;
         let shown = render::argv(self.p, &command.argv, self);
-        self.say(&format!("  {} $ {shown}", step.id));
+        self.say(&format!("\n  {} ❯ {shown}", step.id));
+        let shown = render::strip_marks(&shown);
         self.journal.event(
             "command_start",
-            json!({"invocation_id": invocation, "step": step.id, "kind": command.kind.keyword(), "argv": shown, "exe": exe.display().to_string()}),
+            json!({"invocation_id": invocation, "step": step.id, "command_kind": command.kind.keyword(), "argv": shown, "exe": exe.display().to_string()}),
         );
 
         // Fingerprints for file paths outside the scratch directory, so stale files never count.
@@ -904,16 +998,18 @@ impl<'p> Runner<'p> {
         let (status, stdout, stderr, cancelled, escaped) = if command.kind
             == CommandKind::Interactive
         {
+            self.screen.borrow_mut().hide();
             self.journal
                 .event("handoff_start", json!({"invocation_id": invocation}));
             let grace = self.opts.grace;
             let signals = &self.signals;
+            let suspended = self.opts.theme.ask(&format!(
+                "{} is suspended: [r]esume or [k]ill?",
+                self.redactor.redact(&shown)
+            ));
             let mut on_suspend = || {
                 println!();
-                match read_line_interruptible(
-                    signals,
-                    &format!("  {shown} is suspended: [r]esume or [k]ill? "),
-                ) {
+                match read_line_interruptible(signals, &suspended) {
                     Ok(answer) if !answer.trim().starts_with('k') => Suspended::Resume,
                     _ => Suspended::Kill,
                 }
@@ -959,24 +1055,51 @@ impl<'p> Runner<'p> {
             // One buffer per stream: a secret split across two reads is held until whole.
             let mut buffers = [StreamRedactor::default(), StreamRedactor::default()];
             let mut line_start = true;
+            let gutter = self.opts.theme.gutter();
+            let screen = &self.screen;
+            let live = screen.borrow().live();
+            // A live view writes whole lines only, so it can count the rows it must erase.
+            let mut partial = String::new();
             let mut on_output = |is_err: bool, chunk: &[u8]| {
                 if stream {
                     let text = buffers[usize::from(is_err)].push(&redactor, chunk);
-                    print!("{}", indent_from(&text, &mut line_start));
-                    let _ = std::io::stdout().flush();
+                    if live {
+                        partial.push_str(&text);
+                        if let Some(end) = partial.rfind('\n') {
+                            let whole: String = partial.drain(..=end).collect();
+                            screen.borrow_mut().print(&indent(&whole, &gutter));
+                        }
+                    } else {
+                        screen.borrow_mut().print_raw(&indent_from(
+                            &text,
+                            &gutter,
+                            &mut line_start,
+                        ));
+                    }
                 }
             };
             let finished = process::execute(&spec, &self.signals, &mut on_output)
                 .map_err(|e| Stop::failed(format!("cannot start `{}`: {e}", argv[0])))?;
             if stream {
-                for buffer in &mut buffers {
-                    print!(
-                        "{}",
-                        indent_from(&buffer.finish(&redactor), &mut line_start)
-                    );
-                }
-                if !line_start {
-                    println!();
+                if live {
+                    for buffer in &mut buffers {
+                        partial.push_str(&buffer.finish(&redactor));
+                    }
+                    if !partial.is_empty() {
+                        self.screen.borrow_mut().print(&indent(&partial, &gutter));
+                    }
+                } else {
+                    let mut screen = self.screen.borrow_mut();
+                    for buffer in &mut buffers {
+                        screen.print_raw(&indent_from(
+                            &buffer.finish(&redactor),
+                            &gutter,
+                            &mut line_start,
+                        ));
+                    }
+                    if !line_start {
+                        screen.print_raw("\n");
+                    }
                 }
             }
             (
@@ -1207,8 +1330,10 @@ impl<'p> Runner<'p> {
             }
         }
         if command.secret_producing && published {
-            print!("{}", indent(&self.redactor.redact_bytes(&stdout)));
-            print!("{}", indent(&self.redactor.redact_bytes(&stderr)));
+            let gutter = self.opts.theme.gutter();
+            let mut screen = self.screen.borrow_mut();
+            screen.print(&indent(&self.redactor.redact_bytes(&stdout), &gutter));
+            screen.print(&indent(&self.redactor.redact_bytes(&stderr), &gutter));
         } else if !published {
             self.say(&format!(
                 "  output withheld: {}",
@@ -1594,11 +1719,11 @@ fn excerpts(mut stop: Stop, redactor: &Redactor, stdout: &[u8], stderr: &[u8]) -
 }
 
 /// Indents streamed output, continuing a line that an earlier piece left open.
-fn indent_from(text: &str, line_start: &mut bool) -> String {
+fn indent_from(text: &str, gutter: &str, line_start: &mut bool) -> String {
     let mut out = String::new();
     for line in text.split_inclusive('\n') {
         if *line_start {
-            out.push_str("    │ ");
+            out.push_str(gutter);
         }
         out.push_str(line);
         *line_start = line.ends_with('\n');
@@ -1606,10 +1731,10 @@ fn indent_from(text: &str, line_start: &mut bool) -> String {
     out
 }
 
-fn indent(text: &str) -> String {
+fn indent(text: &str, gutter: &str) -> String {
     let mut out = String::new();
     for line in text.split_inclusive('\n') {
-        out.push_str("    │ ");
+        out.push_str(gutter);
         out.push_str(line);
     }
     if !out.is_empty() && !out.ends_with('\n') {
@@ -1806,5 +1931,19 @@ struct ScratchGuard(PathBuf);
 impl Drop for ScratchGuard {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// A path with the home directory shown as `~`, as a shell prompt shows it.
+fn home_relative(path: &Path) -> String {
+    match std::env::var_os("HOME").map(PathBuf::from) {
+        Some(home) if path == home => "~".into(),
+        Some(home) => match path.strip_prefix(&home) {
+            Ok(rest) if !home.as_os_str().is_empty() && home != Path::new("/") => {
+                format!("~/{}", rest.display())
+            }
+            _ => path.display().to_string(),
+        },
+        None => path.display().to_string(),
     }
 }

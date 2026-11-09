@@ -4,13 +4,34 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use korin::compile::compile_path;
 use korin::diag::Diag;
+use korin::theme::{Choice, Theme};
 
 /// A guided runbook language: every command is shown before it runs.
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
+    /// When to use color: `auto` colors a terminal unless `NO_COLOR` is set.
+    #[arg(long, value_enum, default_value_t = ColorArg::Auto, global = true)]
+    color: ColorArg,
     #[command(subcommand)]
     command: Cmd,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum ColorArg {
+    Auto,
+    Always,
+    Never,
+}
+
+impl From<ColorArg> for Choice {
+    fn from(arg: ColorArg) -> Self {
+        match arg {
+            ColorArg::Auto => Choice::Auto,
+            ColorArg::Always => Choice::Always,
+            ColorArg::Never => Choice::Never,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -62,16 +83,28 @@ enum Format {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    let choice = Choice::from(cli.color);
+    let diagnostics = Theme::stderr(choice).diagnostics();
+    let _ = miette::set_hook(Box::new(move |_| {
+        Box::new(
+            miette::MietteHandlerOpts::new()
+                .graphical_theme(diagnostics.clone())
+                .force_graphical(choice == Choice::Always)
+                .build(),
+        )
+    }));
     match cli.command {
-        Cmd::Check { file, format, from } => check(&file, format, from.as_deref()),
-        Cmd::Plan { file } => plan(&file),
+        Cmd::Check { file, format, from } => {
+            check(&file, format, from.as_deref(), Theme::stderr(choice))
+        }
+        Cmd::Plan { file } => plan(&file, Theme::stdout(choice)),
         Cmd::Run {
             file,
             params,
             yes,
             from,
             kill_grace,
-        } => run(&file, params, yes, from, kill_grace),
+        } => run(&file, params, yes, from, kill_grace, Theme::stdout(choice)),
         Cmd::Fmt { files, check } => fmt(&files, check),
         Cmd::Modules => {
             print!("{}", korin::stdlib::listing());
@@ -97,7 +130,7 @@ fn report(diags: &[Diag], format: Format) {
     }
 }
 
-fn check(file: &std::path::Path, format: Format, from: Option<&str>) -> ExitCode {
+fn check(file: &std::path::Path, format: Format, from: Option<&str>, theme: Theme) -> ExitCode {
     match compile_path(file) {
         Ok((program, mut diags)) => {
             if let Some(from) = from {
@@ -112,7 +145,7 @@ fn check(file: &std::path::Path, format: Format, from: Option<&str>) -> ExitCode
                 ExitCode::FAILURE
             } else {
                 if matches!(format, Format::Human) {
-                    eprintln!("✓ {} is valid", file.display());
+                    eprintln!("{}", theme.lines(&format!("✓ {} is valid", file.display())));
                 }
                 ExitCode::SUCCESS
             }
@@ -124,11 +157,11 @@ fn check(file: &std::path::Path, format: Format, from: Option<&str>) -> ExitCode
     }
 }
 
-fn plan(file: &std::path::Path) -> ExitCode {
+fn plan(file: &std::path::Path, theme: Theme) -> ExitCode {
     match compile_path(file) {
         Ok((program, diags)) => {
             report(&diags, Format::Human);
-            print!("{}", korin::render::plan(&program));
+            print!("{}", theme.lines(&korin::render::plan(&program)));
             ExitCode::SUCCESS
         }
         Err(diags) => {
@@ -150,6 +183,7 @@ fn run(
     yes: bool,
     from: Option<String>,
     kill_grace: u64,
+    theme: Theme,
 ) -> ExitCode {
     let program = match compile_path(file) {
         Ok((program, diags)) => {
@@ -169,6 +203,8 @@ fn run(
         grace: std::time::Duration::from_secs(kill_grace),
         runs_dir: cwd.join(".korin").join("runs"),
         cwd,
+        theme,
+        invocation: invocation(),
     };
     ExitCode::from(korin::run::run(&program, options).exit_code())
 }
@@ -215,4 +251,12 @@ fn fmt(files: &[PathBuf], check: bool) -> ExitCode {
         }
     }
     status
+}
+
+/// The command line korin was started with, as the run's intro shows it.
+fn invocation() -> String {
+    std::iter::once("korin".to_string())
+        .chain(std::env::args().skip(1).map(|a| korin::render::quote(&a)))
+        .collect::<Vec<_>>()
+        .join(" ")
 }

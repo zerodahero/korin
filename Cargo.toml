@@ -26,13 +26,18 @@ nix = { version = "0.31.3", features = [
   "fs",
   "user",
 ] }
+# miette already depends on it; korin uses it to color diagnostics with its own palette.
+owo-colors = "4.4.0"
 regex = "1.13.1"
 rpassword = "7.5.4"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
 signal-hook = "0.4.6"
+# Both already come with miette; the live view uses them to count terminal rows.
+terminal_size = "0.4.4"
 thiserror = "2.0.21"
+unicode-width = "0.2.3"
 zeroize = "1.9.1"
 
 [lints.rust]
