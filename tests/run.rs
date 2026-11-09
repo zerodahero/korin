@@ -1310,3 +1310,16 @@ fn kill_grace_is_bounded() {
     assert!(out.text.contains("--kill-grace"), "{}", out.text);
     assert!(env.calls().is_empty(), "a command ran");
 }
+
+#[test]
+fn command_start_events_keep_their_kind() {
+    // The command's own kind once overwrote the event's `kind`, hiding every command_start.
+    let env = Env::new();
+    env.script("bin/tool", "#!/bin/sh\ntrue\n");
+    env.wizard("stage \"a\"\n  read tool\n");
+    let out = env.run_yes(&[]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    let starts = env.events_of("command_start");
+    assert_eq!(starts.len(), 1, "{:?}", env.events());
+    assert_eq!(starts[0]["command_kind"], "read");
+}

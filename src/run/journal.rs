@@ -65,7 +65,14 @@ impl Journal {
             "kind": kind,
         });
         if let (Value::Object(target), Value::Object(extra)) = (&mut event, fields) {
-            target.extend(extra);
+            // `ts` and `kind` identify the event; a field with the same name never replaces them.
+            for (key, value) in extra {
+                debug_assert!(
+                    key != "ts" && key != "kind",
+                    "event field `{key}` is reserved"
+                );
+                target.entry(key).or_insert(value);
+            }
         }
         self.redactor.redact_json(&mut event);
         if let Err(error) = writeln!(self.events, "{event}") {

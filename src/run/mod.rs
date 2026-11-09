@@ -867,7 +867,7 @@ impl<'p> Runner<'p> {
         self.say(&format!("  {} $ {shown}", step.id));
         self.journal.event(
             "command_start",
-            json!({"invocation_id": invocation, "step": step.id, "kind": command.kind.keyword(), "argv": shown, "exe": exe.display().to_string()}),
+            json!({"invocation_id": invocation, "step": step.id, "command_kind": command.kind.keyword(), "argv": shown, "exe": exe.display().to_string()}),
         );
 
         // Fingerprints for file paths outside the scratch directory, so stale files never count.
