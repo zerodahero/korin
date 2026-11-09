@@ -6,7 +6,9 @@
       "camelcase": "Korin",
       "title": "Korin",
       "scope": "source.korin",
-      "file-types": ["korin"],
+      "file-types": [
+        "korin"
+      ],
       "injection-regex": "^korin$",
       "class-name": "TreeSitterKorin",
       "highlights": "queries/highlights.scm",
@@ -18,7 +20,7 @@
     "license": "Apache-2.0",
     "description": "Korin wizard files for tree-sitter",
     "links": {
-      "repository": "https://github.com/zerodahero/korin"
+      "repository": "https://github.com/zerodahero/tree-sitter-korin"
     }
   },
   "bindings": {

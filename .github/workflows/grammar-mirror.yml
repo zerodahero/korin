@@ -1,0 +1,56 @@
+name: grammar mirror
+
+# Mirrors tree-sitter-korin/ to zerodahero/tree-sitter-korin. Editors download a grammar
+# repo whole, so a dedicated repo keeps korin's own files, such as mise.toml, out of the
+# download. The grammar is edited here only; the mirror is never edited directly.
+
+on:
+  push:
+    branches: [main]
+    # Path filters do not apply to tag pushes, so every release tag is mirrored.
+    paths: [tree-sitter-korin/**]
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: grammar-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # The split is deterministic: the same history gives the same commits, so each push
+      # fast-forwards the mirror. A rejected push means someone edited the mirror directly.
+      - name: split tree-sitter-korin
+        run: git subtree split --prefix=tree-sitter-korin --branch=mirror
+      - name: push to zerodahero/tree-sitter-korin
+        env:
+          DEPLOY_KEY: ${{ secrets.GRAMMAR_MIRROR_DEPLOY_KEY }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/mirror_key"
+          known="$RUNNER_TEMP/known_hosts"
+          trap 'rm -f "$key"' EXIT
+          install -m 600 /dev/null "$key"
+          printf '%s\n' "$DEPLOY_KEY" >"$key"
+          # GitHub's published host key (api.github.com/meta), so no host is trusted on first use.
+          printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' >"$known"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o UserKnownHostsFile=$known -o StrictHostKeyChecking=yes"
+          remote=git@github.com:zerodahero/tree-sitter-korin.git
+          case "$REF" in
+          refs/heads/main) git push "$remote" mirror:refs/heads/main ;;
+          refs/tags/v*) git push "$remote" "mirror:$REF" ;;
+          *)
+              echo "unexpected ref $REF" >&2
+              exit 1
+              ;;
+          esac

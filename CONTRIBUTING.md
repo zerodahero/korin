@@ -34,7 +34,8 @@ leak. Without the file, the step warns and passes.
 - Runner tests put a fake `aws` from `tests/fixtures/` first on `PATH`. They never call a real
   cloud API.
 - A syntax change also changes `tree-sitter-korin/grammar.js`. Run `mise run grammar` to
-  regenerate it, run its tests and parse every `.korin` file.
+  regenerate it, run its tests and parse every `.korin` file. CI mirrors that directory to
+  `zerodahero/tree-sitter-korin`; never edit the mirror directly.
 
 ## Commits
 
