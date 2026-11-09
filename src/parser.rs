@@ -1266,6 +1266,11 @@ impl Cur<'_> {
                 self.skip_ws();
                 let filter_start = self.pos;
                 let (filter, on) = split_trailing_on(self.rest_text(), filter_start);
+                if on.is_none()
+                    && let Some(span) = misplaced_on_match(self.rest_text(), filter_start)
+                {
+                    return Err(self.on_takes_a_name(span));
+                }
                 self.pos = self.end;
                 if filter.is_empty() {
                     return Err(self.err(Span::new(filter_start, filter_start + 1), "expected a jq filter"));
@@ -1304,12 +1309,23 @@ impl Cur<'_> {
 
     fn trailing_on(&mut self) -> PResult<Option<Ident>> {
         let on = if self.eat_keyword("on").is_some() {
-            Some(self.expect_ident("a name for the `expect`")?)
+            let name = self.expect_ident("the name of an `expect` on this step")?;
+            if MATCH_KEYWORDS.contains(&name.value.as_str()) && !self.at_end() {
+                return Err(self.on_takes_a_name(name.span));
+            }
+            Some(name)
         } else {
             None
         };
         self.expect_end()?;
         Ok(on)
+    }
+
+    /// The error for `on exit 0` and the like: `on` names an `expect`, it is not a match.
+    fn on_takes_a_name(&self, span: Span) -> Diag {
+        self.err(span, "`on` takes the name of an `expect`, not a match")
+            .label("this is a match")
+            .help("a plain capture already runs only when the command succeeds; to capture when an `expect` matches, declare it on the step, as in `expect gone = exit 254`, then write `on gone`")
     }
 
     fn expect_match(&mut self) -> PResult<Spanned<Match>> {
@@ -1541,6 +1557,25 @@ fn mode_span(start: usize, mode: &CaptureMode) -> Span {
         _ => 5,
     };
     Span::new(start, start + len)
+}
+
+/// The keywords that start an `expect` match.
+const MATCH_KEYWORDS: [&str; 5] = ["exit", "signal", "stdout", "stderr", "missing"];
+
+/// Finds `on <match keyword> ...` in a jq filter, as in `jq .id on exit 0`, and returns the
+/// span of the match keyword. jq has no `on` keyword, so this is never a real filter.
+fn misplaced_on_match(text: &str, offset: usize) -> Option<Span> {
+    let mut words = text
+        .split_whitespace()
+        .map(|word| (word.as_ptr() as usize - text.as_ptr() as usize, word));
+    let mut previous: Option<&str> = None;
+    for (start, word) in words.by_ref() {
+        if previous == Some("on") && MATCH_KEYWORDS.contains(&word) {
+            return Some(Span::new(offset + start, offset + start + word.len()));
+        }
+        previous = Some(word);
+    }
+    None
 }
 
 /// Splits a trailing ` on <expect>` off a jq filter.

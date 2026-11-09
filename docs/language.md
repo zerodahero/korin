@@ -97,11 +97,16 @@ Options are indented under the step they belong to.
 
 | Option | Meaning |
 |---|---|
-| `capture [secret] <name>[?] = <mode> [on <expect>]` | Extracts a value from stdout. |
-| `capture [secret] <name>[?] = file <path> <mode> [on <expect>]` | Extracts a value from a file the command wrote. |
+| `capture [secret] <name>[?] = <mode> [on <expect-name>]` | Extracts a value from stdout. |
+| `capture [secret] <name>[?] = file <path> <mode> [on <expect-name>]` | Extracts a value from a file the command wrote. |
 | `expect <name> = <match> [and <match> ...]` | Names an expected result, such as "not found". |
 | `env <NAME>=<word>` | Sets an environment variable for this command only. |
 | `timeout <dur>` | Limits how long the command may run. Default `15m`. Not allowed on `interactive`. |
+
+A plain capture runs only when the command succeeds. `on` names an `expect` declared on the
+same step, and makes the capture run only when that expect matches. It takes a name, not a
+match: write `expect gone = exit 254` and then `capture … on gone`, never `on exit 254`. See
+Expects.
 
 ## Commands and arguments
 

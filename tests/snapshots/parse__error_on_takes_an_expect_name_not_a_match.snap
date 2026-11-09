@@ -1,0 +1,8 @@
+---
+source: tests/parse.rs
+assertion_line: 218
+expression: "errors(&with_header(concat!(\"stage \\\"s\\\"\\n\", \"  read x\\n\",\n\"    capture a = text on exit 0\\n\",\n\"    capture b = regex /(.)/ on stderr ~ /x/\\n\",\n\"    capture c = jq .id on exit 0\\n\",)))"
+---
+test.korin:5:25: syntax: `on` takes the name of an `expect`, not a match
+test.korin:6:32: syntax: `on` takes the name of an `expect`, not a match
+test.korin:7:27: syntax: `on` takes the name of an `expect`, not a match

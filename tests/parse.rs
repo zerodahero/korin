@@ -212,3 +212,28 @@ fn huge_durations_are_diagnostics_not_panics() {
         "    timeout 0s\n",
     ))));
 }
+
+#[test]
+fn error_on_takes_an_expect_name_not_a_match() {
+    insta::assert_snapshot!(errors(&with_header(concat!(
+        "stage \"s\"\n",
+        "  read x\n",
+        "    capture a = text on exit 0\n",
+        "    capture b = regex /(.)/ on stderr ~ /x/\n",
+        "    capture c = jq .id on exit 0\n",
+    ))));
+}
+
+#[test]
+fn on_may_name_an_expect_called_like_a_match_keyword() {
+    // `on exit` alone names an expect called `exit`; only `on exit 0` is a mistake.
+    let src = with_header(concat!(
+        "stage \"s\"\n",
+        "  read x\n",
+        "    expect exit = exit 3\n",
+        "    capture a = text on exit\n",
+        "    capture b = jq .id on exit\n",
+    ));
+    let file = SourceFile::new("w.korin", "w.korin", &src);
+    assert!(parse_wizard(&file).is_ok());
+}
