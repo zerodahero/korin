@@ -651,6 +651,7 @@ dependencies = [
  "jiff",
  "miette",
  "nix 0.31.3",
+ "owo-colors",
  "portable-pty",
  "regex",
  "rpassword",
@@ -659,7 +660,9 @@ dependencies = [
  "sha2",
  "signal-hook",
  "tempfile",
+ "terminal_size",
  "thiserror 2.0.21",
+ "unicode-width 0.2.3",
  "zeroize",
 ]
 

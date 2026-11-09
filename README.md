@@ -18,9 +18,9 @@ At the gate, korin shows that the second command depends on the first:
 
 ```text
 ▸ Stage 3/5 · Snapshot
-  3.1  mutate $ aws rds create-db-cluster-snapshot --db-cluster-identifier main-db-cluster --db-cluster-snapshot-identifier main-db-cluster-rehearsal-snap --output json
+  3.1  mutate ❯ aws rds create-db-cluster-snapshot --db-cluster-identifier main-db-cluster --db-cluster-snapshot-identifier main-db-cluster-rehearsal-snap --output json
         → snap_arn
-  3.2  mutate $ aws ssm put-parameter --name /rehearsal/main-db-cluster/snapshot --value <snap_arn ← 3.1> --overwrite
+  3.2  mutate ❯ aws ssm put-parameter --name /rehearsal/main-db-cluster/snapshot --value <snap_arn ← 3.1> --overwrite
   ? Run stage 3? [y/N]
 ```
 
@@ -41,6 +41,12 @@ korin run wizard.korin --param cluster=main-db-cluster
 korin fmt wizard.korin       # canonical layout; --check to verify only
 korin modules                # list the built-in aws and rds templates
 ```
+
+In a terminal, korin colors its output with the carbonfox palette and keeps the view tidy:
+once you approve a stage, its preview folds away, and the steps still to run stay dimmed
+below the output of the one running now. `--color never`, or the `NO_COLOR` environment
+variable, turns color off and prints every line in order instead; `--color always` keeps
+color on in a pipe. Output that is not a terminal, and the journal, are always plain.
 
 Each run writes a journal to `.korin/runs/<time>-<wizard>/`: every event as JSON lines, a
 `report.md` summary, and the full output of every command, with secrets redacted.
