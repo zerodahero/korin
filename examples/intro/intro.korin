@@ -1,0 +1,33 @@
+korin 1
+title "RDS snapshot and restore rehearsal"
+gates mutating            # optional; default `all` (see Gates)
+allow aws                 # optional; only these executables may run
+
+use aws
+use rds
+use "./lib/local.korin"
+
+param cluster required
+param scratch = "{cluster}-rehearsal"
+param db_password secret   # prompted with hidden input if not passed
+
+stage "Identity"
+  aws.identity() as me
+  confirm "Is {me.account} ({me.arn}) the right account?"
+
+stage "Source cluster"
+  rds.cluster({cluster}) as src
+  assert src.status == "available" else "{cluster} is {src.status}, not available."
+
+stage "Snapshot"
+  mutate aws rds create-db-cluster-snapshot --db-cluster-identifier {cluster} --db-cluster-snapshot-identifier {scratch}-snap --output json
+    capture snap_arn = jq .DBClusterSnapshot.DBClusterSnapshotArn
+  rds.await_snapshot({scratch}-snap)
+
+stage "Scratch cluster"
+  read aws rds describe-db-clusters --db-cluster-identifier {scratch} --output json
+    expect missing = exit 254 and stderr ~ /DBClusterNotFound/
+  when missing
+    mutate aws rds restore-db-cluster-from-snapshot ... --snapshot-identifier {snap_arn}
+  each sg in src.security_groups
+    read aws ec2 describe-security-groups --group-ids {sg} --output json

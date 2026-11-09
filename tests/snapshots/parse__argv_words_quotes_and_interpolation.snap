@@ -1,0 +1,113 @@
+---
+source: tests/parse.rs
+expression: "wizard(&with_header(\"stage \\\"s\\\"\\n  read tool \\\"two words\\\" a{x}b {xs...} --flag=\\\"{y} z\\\" \\\\{literal\\\\}\\n\"))"
+---
+Wizard {
+    header: Header {
+        version: 1 @ 6..7,
+        title: "t" @ 14..17,
+        gates: All,
+        unattended: None,
+        allow: None,
+    },
+    uses: [],
+    params: [],
+    stages: [
+        Stage {
+            title: "s" @ 24..27,
+            steps: [
+                Command(
+                    Command {
+                        kind: Read,
+                        argv: [
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "tool",
+                                    ),
+                                ],
+                                span: 35..39,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "two words",
+                                    ),
+                                ],
+                                span: 40..51,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "a",
+                                    ),
+                                    Ref(
+                                        Ref {
+                                            path: [
+                                                "x",
+                                            ],
+                                            splat: false,
+                                            span: 53..56,
+                                        },
+                                    ),
+                                    Lit(
+                                        "b",
+                                    ),
+                                ],
+                                span: 52..57,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Ref(
+                                        Ref {
+                                            path: [
+                                                "xs",
+                                            ],
+                                            splat: true,
+                                            span: 58..65,
+                                        },
+                                    ),
+                                ],
+                                span: 58..65,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "--flag=",
+                                    ),
+                                    Ref(
+                                        Ref {
+                                            path: [
+                                                "y",
+                                            ],
+                                            splat: false,
+                                            span: 74..77,
+                                        },
+                                    ),
+                                    Lit(
+                                        " z",
+                                    ),
+                                ],
+                                span: 66..80,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "{literal}",
+                                    ),
+                                ],
+                                span: 81..92,
+                            },
+                        ],
+                        captures: [],
+                        expects: [],
+                        env: [],
+                        timeout: None,
+                        span: 30..92,
+                    },
+                ),
+            ],
+            span: 18..27,
+        },
+    ],
+}

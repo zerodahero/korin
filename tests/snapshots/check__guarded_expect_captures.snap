@@ -1,0 +1,6 @@
+---
+source: tests/check.rs
+expression: "wizard(concat!(\"use aws\\n\", \"stage \\\"a\\\"\\n\", \"  aws.ssm_get(/x) as prev\\n\",\n\"  note \\\"unguarded {prev.value}\\\"\\n\", \"  when not prev.missing\\n\",\n\"    note \\\"guarded {prev.value}\\\"\\n\", \"  when prev.missing\\n\",\n\"    note \\\"wrong guard {prev.value}\\\"\\n\",\n\"  assert not prev.missing and prev.value == \\\"x\\\" else \\\"short-circuit guard\\\"\\n\",))"
+---
+error main.korin:6:19: guard: `prev.value` exists only when no `expect` of its step matched
+error main.korin:10:23: guard: `prev.value` exists only when no `expect` of its step matched

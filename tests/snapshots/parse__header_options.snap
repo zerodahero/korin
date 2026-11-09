@@ -1,0 +1,93 @@
+---
+source: tests/parse.rs
+expression: "wizard(concat!(\"korin 1\\n\", \"title \\\"t\\\"\\n\", \"gates mutating\\n\",\n\"unattended allowed\\n\", \"allow aws, ./scripts/fix.sh\\n\", \"use aws\\n\",\n\"use \\\"./lib/x.korin\\\" as x\\n\", \"param a required\\n\", \"param b secret\\n\",\n\"param c = \\\"{a}-c\\\"\\n\", \"stage \\\"s\\\"\\n\", \"  note \\\"hi\\\"\\n\",))"
+---
+Wizard {
+    header: Header {
+        version: 1 @ 6..7,
+        title: "t" @ 14..17,
+        gates: Mutating,
+        unattended: Some(
+            33..51,
+        ),
+        allow: Some(
+            [
+                "aws" @ 58..61,
+                "./scripts/fix.sh" @ 63..79,
+            ],
+        ),
+    },
+    uses: [
+        Use {
+            target: Builtin(
+                "aws" @ 84..87,
+            ),
+            alias: None,
+            span: 80..87,
+        },
+        Use {
+            target: Path(
+                "./lib/x.korin" @ 92..107,
+            ),
+            alias: Some(
+                "x" @ 111..112,
+            ),
+            span: 88..112,
+        },
+    ],
+    params: [
+        Param {
+            name: "a" @ 119..120,
+            kind: Required,
+            span: 113..129,
+        },
+        Param {
+            name: "b" @ 136..137,
+            kind: Secret,
+            span: 130..144,
+        },
+        Param {
+            name: "c" @ 151..152,
+            kind: Default(
+                Interpolated {
+                    parts: [
+                        Ref(
+                            Ref {
+                                path: [
+                                    "a",
+                                ],
+                                splat: false,
+                                span: 156..159,
+                            },
+                        ),
+                        Lit(
+                            "-c",
+                        ),
+                    ],
+                    span: 155..162,
+                },
+            ),
+            span: 145..162,
+        },
+    ],
+    stages: [
+        Stage {
+            title: "s" @ 169..172,
+            steps: [
+                Say {
+                    kind: Note,
+                    text: Interpolated {
+                        parts: [
+                            Lit(
+                                "hi",
+                            ),
+                        ],
+                        span: 180..184,
+                    },
+                    span: 175..184,
+                },
+            ],
+            span: 163..172,
+        },
+    ],
+}

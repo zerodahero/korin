@@ -1,0 +1,40 @@
+# Built-in templates for Amazon RDS and Aurora. Load with `use rds`.
+
+# Reads a DB cluster.
+define cluster(id)
+  exports status, arn, version, endpoint, writer, security_groups
+  read aws rds describe-db-clusters --db-cluster-identifier {id} --output json
+    capture status          = jq .DBClusters[0].Status
+    capture arn             = jq .DBClusters[0].DBClusterArn
+    capture version         = jq .DBClusters[0].EngineVersion
+    capture endpoint        = jq .DBClusters[0].Endpoint
+    capture writer?         = jq .DBClusters[0].DBClusterMembers[] | select(.IsClusterWriter) | .DBInstanceIdentifier
+    capture security_groups = jq list .DBClusters[0].VpcSecurityGroups[].VpcSecurityGroupId
+
+# Reads a DB instance.
+define instance(id)
+  exports status, version, endpoint
+  read aws rds describe-db-instances --db-instance-identifier {id} --output json
+    capture status    = jq .DBInstances[0].DBInstanceStatus
+    capture version   = jq .DBInstances[0].EngineVersion
+    capture endpoint? = jq .DBInstances[0].Endpoint.Address
+
+# Waits until a cluster reaches a status. Stops early on a status it cannot recover from.
+define await_cluster(id, want)
+  poll every 30s for 2h
+    read aws rds describe-db-clusters --db-cluster-identifier {id} --output json
+      capture status = jq .DBClusters[0].Status
+    until status == want
+    fail status ~ /^(failed|restore-error|storage-full|migration-failed|deleting|deleted|incompatible-.*|inaccessible-.*)$/
+
+# Waits until a cluster snapshot is available.
+define await_snapshot(id)
+  poll every 30s for 2h
+    read aws rds describe-db-cluster-snapshots --db-cluster-snapshot-identifier {id} --output json
+      capture status = jq .DBClusterSnapshots[0].Status
+    until status == "available"
+    fail status ~ /^(failed|deleted|deleting)$/
+
+# Deletes a cluster without a final snapshot. Its instances must be deleted first.
+define delete_cluster(id)
+  mutate aws rds delete-db-cluster --db-cluster-identifier {id} --skip-final-snapshot --output json

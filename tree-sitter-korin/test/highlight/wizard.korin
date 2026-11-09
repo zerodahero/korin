@@ -1,0 +1,39 @@
+korin 1
+# <- keyword
+title "Rehearsal"
+#     ^ string
+param cluster required
+#     ^ variable.parameter
+#             ^ keyword.modifier
+
+stage "Snapshot"
+# <- keyword
+  rds.cluster({cluster}) as src
+# ^ module
+#     ^ function.call
+#              ^ variable
+  mutate aws rds create --id {cluster}-snap
+# ^ keyword
+#        ^ function.call
+#                       ^ variable.parameter
+#                             ^ variable
+    capture arn = jq .Snapshot.Arn on gone
+#   ^ keyword
+#           ^ variable
+#                 ^ keyword
+#                    ^ string.special
+#                                  ^ keyword
+#                                     ^ label
+    expect gone = exit 254 and stderr ~ /NotFound/
+#          ^ label
+#                      ^ number
+#                          ^ keyword.operator
+#                                       ^ string.regexp
+  when not gone and src.status == "available"
+# ^ keyword.conditional
+#      ^ keyword.operator
+#                   ^ variable
+#                              ^ operator
+    note "{arn}"
+#   ^ keyword
+#          ^ variable

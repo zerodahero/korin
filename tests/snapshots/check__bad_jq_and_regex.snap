@@ -1,0 +1,8 @@
+---
+source: tests/check.rs
+expression: "wizard(concat!(\"stage \\\"a\\\"\\n\", \"  read tool\\n\", \"    capture a = jq .a |\\n\",\n\"    capture b = regex /no group/\\n\", \"    capture c = regex /(unclosed/\\n\",\n\"    expect d = stderr ~ /[/\\n\",))"
+---
+error main.korin:8:16: regex: invalid regex: unclosed character class
+error main.korin:5:17: jq: invalid jq filter: expected term at the end of the filter
+error main.korin:6:17: regex: a `regex` capture needs a group
+error main.korin:7:17: regex: invalid regex: unclosed group

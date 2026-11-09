@@ -1,0 +1,5 @@
+---
+source: tests/parse.rs
+expression: "errors(&with_header(\"define f()\\n  read x\\nstage \\\"s\\\"\\n  read x\\n\"))"
+---
+test.korin:3:1: misplaced: `define` belongs in a module file

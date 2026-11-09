@@ -1,0 +1,4 @@
+# Local templates for the intro wizard. A module file holds only `use` and `define`.
+
+define tag(cluster, key, value)
+  mutate aws rds add-tags-to-resource --resource-name {cluster} --tags Key={key},Value={value}

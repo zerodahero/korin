@@ -1,0 +1,9 @@
+---
+source: tests/check.rs
+expression: "wizard(concat!(\"param p required\\n\", \"stage \\\"a\\\"\\n\", \"  read tool {nope}\\n\",\n\"  read tool\\n\", \"    capture p = text\\n\", \"  each f in [\\\"a\\\", \\\"b\\\"]\\n\",\n\"    read tool {f}\\n\", \"      capture inner = text\\n\", \"  note \\\"{inner}\\\"\\n\",\n\"  note \\\"{korin.out}\\\"\\n\", \"stage \\\"a\\\"\\n\", \"  note \\\"duplicate title\\\"\\n\",))"
+---
+error main.korin:5:13: name: unknown name `nope`
+error main.korin:7:13: name: `p` is already defined
+error main.korin:11:9: name: unknown name `inner`
+error main.korin:12:9: name: `{korin.out}` can be used only in a command, an `env` value or a file path
+error main.korin:13:7: stage: two stages are titled "a"

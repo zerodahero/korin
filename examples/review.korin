@@ -1,0 +1,20 @@
+korin 1
+title "Review: feature branch"
+# Written by an agent, run later by a human. Every program it may start is listed here.
+allow git, glow, nvim, tuicr
+
+param base = "main"
+
+stage "Orientation"
+  read git log --oneline {base}..HEAD
+  read git diff --stat {base}...HEAD
+  interactive glow review/overview.md
+
+stage "Layer 1: runner core"
+  note "Risk: cancellation must reach every process the command started."
+  each f in ["src/run/process.rs", "src/run/mod.rs"]
+    interactive git difftool --no-prompt --tool=nvimdiff {base}...HEAD -- {f}
+
+stage "Layer 2: whole diff"
+  interactive tuicr
+  record "layer 2 reviewed in tuicr"

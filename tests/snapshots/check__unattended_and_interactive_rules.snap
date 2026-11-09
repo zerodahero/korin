@@ -1,0 +1,7 @@
+---
+source: tests/check.rs
+expression: "wizard(concat!(\"unattended allowed\\n\", \"stage \\\"a\\\"\\n\", \"  confirm \\\"go?\\\"\\n\",\n\"  interactive nvim x\\n\", \"    timeout 5m\\n\",))"
+---
+error main.korin:5:3: unattended: `confirm` cannot run unattended
+error main.korin:6:3: unattended: `interactive` cannot run unattended
+error main.korin:7:13: timeout: `timeout` is not allowed on `interactive`

@@ -1,0 +1,9 @@
+---
+source: tests/check.rs
+expression: "[from(outcome_only, \"fix\"), from(ask_only, \"2\"),\nfrom(exported_outcome, \"use\"), from(params_only, \"two\"),\nfrom(params_only, \"nope\"),].join(\"\\n\")"
+---
+main.korin:7:8: from: cannot start at stage 2: `missing` comes from skipped stage 1 "probe"
+main.korin:6:15: from: cannot start at stage 2: `name` comes from skipped stage 1 "ask"
+main.korin:7:8: from: cannot start at stage 2: `prev.missing` comes from skipped stage 1 "probe"
+ok 2
+main.korin:1:1: from: no stage matches `nope`

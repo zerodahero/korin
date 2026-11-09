@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# A stand-in for the AWS CLI that replays canned responses.
+#
+# Each call appends its argv to "$FAKE_AWS_DIR/calls.log". Responses live in directories under
+# "$FAKE_AWS_DIR/responses/". A response directory holds:
+#
+#   argv     the exact argv it answers, as one line joined by spaces (required)
+#   call     answer only the Nth call with this argv (optional; without it, answer any call)
+#   stdout, stderr, exit (a number, default 0)
+set -euo pipefail
+
+dir="${FAKE_AWS_DIR:?FAKE_AWS_DIR is not set}"
+argv="$*"
+printf '%s\n' "$argv" >>"$dir/calls.log"
+
+count_file="$dir/.count-$(printf '%s' "$argv" | cksum | cut -d' ' -f1)"
+n=$(($(cat "$count_file" 2>/dev/null || echo 0) + 1))
+printf '%s' "$n" >"$count_file"
+
+exact="" any=""
+for response in "$dir"/responses/*/; do
+    [[ -f "$response/argv" && "$(cat "$response/argv")" == "$argv" ]] || continue
+    if [[ -f "$response/call" ]]; then
+        [[ "$(cat "$response/call")" == "$n" ]] && exact="$response"
+    else
+        any="$response"
+    fi
+done
+response="${exact:-$any}"
+if [[ -z "$response" ]]; then
+    printf 'fake-aws: no response for call %s of: %s\n' "$n" "$argv" >&2
+    exit 99
+fi
+
+[[ -f "$response/stdout" ]] && cat "$response/stdout"
+[[ -f "$response/stderr" ]] && cat "$response/stderr" >&2
+exit "$(cat "$response/exit" 2>/dev/null || echo 0)"

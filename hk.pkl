@@ -1,0 +1,81 @@
+amends "package://github.com/jdx/hk/releases/download/v2.11.0/hk@2.11.0#/Config.pkl"
+
+import "package://github.com/jdx/hk/releases/download/v2.11.0/hk@2.11.0#/Builtins.pkl"
+
+local workflows = List(".github/workflows/*.yml", ".github/workflows/*.yaml")
+
+local linters = new Mapping<String, Step> {
+  ["cargo-fmt"] = Builtins.cargo_fmt
+  ["cargo-clippy"] = (Builtins.cargo_clippy) {
+    check = new CommandSpec {
+      command = "cargo clippy --all-targets --locked -- -D warnings"
+      effect = "read"
+    }
+  }
+  ["cargo-deny"] = Builtins.cargo_deny
+  ["taplo"] = Builtins.taplo
+  ["taplo-format"] = Builtins.taplo_format
+  ["rumdl"] = Builtins.rumdl
+  ["typos"] = Builtins.typos
+  ["shellcheck"] = Builtins.shellcheck
+  ["shfmt"] = (Builtins.shfmt) {
+    check = new CommandSpec {
+      command = "shfmt -i 4 -d {{ files }}"
+      effect = "read"
+    }
+    fix = new CommandSpec {
+      command = "shfmt -i 4 -w {{ files }}"
+      effect = "write"
+    }
+  }
+  ["actionlint"] = (Builtins.actionlint) {
+    glob = workflows
+  }
+  ["zizmor"] = (Builtins.zizmor) {
+    glob = workflows
+  }
+  ["pinact"] = (Builtins.pinact) {
+    glob = workflows
+  }
+  ["korin-fmt"] {
+    glob = List("**/*.korin")
+    // Highlight tests point `^` carets at exact columns, so formatting would break them.
+    exclude = List("tree-sitter-korin/test/**")
+    check = new CommandSpec {
+      command = "cargo run --quiet -- fmt --check {{ files }}"
+      effect = "read"
+    }
+    fix = new CommandSpec {
+      command = "cargo run --quiet -- fmt {{ files }}"
+      effect = "write"
+    }
+  }
+  // Patterns live outside the repo (see CONTRIBUTING.md), so private names never get committed.
+  ["denylist"] {
+    exclude = List("LICENSE")
+    check = new CommandSpec {
+      command = "scripts/denylist-check.sh {{ files }}"
+      effect = "read"
+    }
+  }
+}
+
+hooks {
+  ["pre-commit"] {
+    fix = true
+    stash = "git"
+    steps {
+      ...linters
+      ["gitleaks"] = (Builtins.gitleaks) {
+        scan = "staged"
+      }
+    }
+  }
+  ["check"] {
+    steps = linters
+  }
+  ["fix"] {
+    fix = true
+    steps = linters
+  }
+}

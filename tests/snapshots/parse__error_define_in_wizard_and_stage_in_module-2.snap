@@ -1,0 +1,5 @@
+---
+source: tests/parse.rs
+expression: "diags.iter().map(korin::diag::Diag::short).collect::<Vec<_>>().join(\"\\n\")"
+---
+m.korin:1:1: misplaced: a module file holds only `use` and `define`

@@ -1,0 +1,154 @@
+========================================
+jq filter with a trailing on
+========================================
+
+korin 1
+stage "a"
+  read tool
+    expect gone = exit 1
+    capture x = jq .a | select(.b == "x y # z") on gone
+    capture items = jq list .[].id
+    capture blob? = jq json .
+    capture secret tok = file {korin.out}/r.json jq .token
+    capture word = jq .on
+    capture last = jq .a on # not an expect
+
+----------------------------------------
+
+(source_file
+  (version
+    (integer))
+  (stage
+    (string)
+    (block
+      (command
+        (word)
+        (options
+          (expect
+            (identifier)
+            (match
+              (integer)))
+          (capture
+            (identifier)
+            (capture_mode
+              (jq_filter))
+            (identifier))
+          (capture
+            (identifier)
+            (capture_mode
+              (jq_variant)
+              (jq_filter)))
+          (capture
+            (identifier)
+            (capture_mode
+              (jq_variant)
+              (jq_filter)))
+          (capture
+            (identifier)
+            (word
+              (interpolation
+                (identifier)
+                (identifier)))
+            (capture_mode
+              (jq_filter)))
+          (capture
+            (identifier)
+            (capture_mode
+              (jq_filter)))
+          (capture
+            (identifier)
+            (capture_mode
+              (jq_filter))
+            (comment)))))))
+
+========================================
+text, lines and regex modes
+========================================
+
+korin 1
+stage "a"
+  read tool
+    capture t = text on ok
+    capture l = lines
+    capture r = regex /id-(\d+)\/x/ on ok
+    env TOKEN={tok}
+    timeout 90s
+
+----------------------------------------
+
+(source_file
+  (version
+    (integer))
+  (stage
+    (string)
+    (block
+      (command
+        (word)
+        (options
+          (capture
+            (identifier)
+            (capture_mode)
+            (identifier))
+          (capture
+            (identifier)
+            (capture_mode))
+          (capture
+            (identifier)
+            (capture_mode
+              (regex
+                (regex_pattern)))
+            (identifier))
+          (env
+            (identifier)
+            (word
+              (interpolation
+                (identifier))))
+          (timeout
+            (duration)))))))
+
+========================================
+expect matches
+========================================
+
+korin 1
+stage "a"
+  read tool
+    expect a = exit != 0
+    expect b = signal TERM
+    expect c = stdout ~ /ok/ and stderr ~ /NotFound/
+    expect d = missing {korin.out}/r.json
+
+----------------------------------------
+
+(source_file
+  (version
+    (integer))
+  (stage
+    (string)
+    (block
+      (command
+        (word)
+        (options
+          (expect
+            (identifier)
+            (match
+              (integer)))
+          (expect
+            (identifier)
+            (match
+              (identifier)))
+          (expect
+            (identifier)
+            (match
+              (regex
+                (regex_pattern)))
+            (match
+              (regex
+                (regex_pattern))))
+          (expect
+            (identifier)
+            (match
+              (word
+                (interpolation
+                  (identifier)
+                  (identifier))))))))))

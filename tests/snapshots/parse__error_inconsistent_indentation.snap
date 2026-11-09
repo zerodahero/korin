@@ -1,0 +1,5 @@
+---
+source: tests/parse.rs
+expression: "errors(&with_header(\"stage \\\"s\\\"\\n    read x\\n  read y\\n\"))"
+---
+test.korin:5:3: indent: this line's indentation does not match any enclosing block

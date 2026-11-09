@@ -1,0 +1,90 @@
+========================================
+argv words
+========================================
+
+korin 1
+stage "a"
+  mutate aws s3 cp {src}-copy "two words" --name="a b" \{literal\} {items...} a#b # comment
+  script read ./fix.sh {x}
+  interactive nvim {file}
+
+----------------------------------------
+
+(source_file
+  (version
+    (integer))
+  (stage
+    (string)
+    (block
+      (command
+        (word)
+        (word)
+        (word)
+        (word
+          (interpolation
+            (identifier)))
+        (word
+          (string))
+        (word
+          (string))
+        (word
+          (escape_sequence)
+          (escape_sequence))
+        (word
+          (interpolation
+            (identifier)))
+        (word)
+        (comment))
+      (command
+        (word)
+        (word
+          (interpolation
+            (identifier))))
+      (command
+        (word)
+        (word
+          (interpolation
+            (identifier)))))))
+
+========================================
+allow and template calls
+========================================
+
+korin 1
+allow aws, ./fix.sh,/usr/bin/env
+use aws
+use "./lib/local.korin" as local
+stage "a"
+  aws.identity() as me
+  local.thing({a}-b, "c, d", e)
+
+----------------------------------------
+
+(source_file
+  (version
+    (integer))
+  (allow
+    (word)
+    (word)
+    (word))
+  (use
+    (identifier))
+  (use
+    (string)
+    (identifier))
+  (stage
+    (string)
+    (block
+      (call
+        (identifier)
+        (identifier)
+        (identifier))
+      (call
+        (identifier)
+        (identifier)
+        (word
+          (interpolation
+            (identifier)))
+        (word
+          (string))
+        (word)))))

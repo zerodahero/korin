@@ -1,0 +1,5 @@
+---
+source: tests/parse.rs
+expression: "errors(&with_header(\"stage \\\"s\\\"\\n\\tread x\\n\"))"
+---
+test.korin:4:1: tab: tabs are not allowed in indentation
