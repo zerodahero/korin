@@ -28,6 +28,10 @@ jobs:
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3.6.3
       - name: hk check
         run: hk check --all
+        env:
+          # pinact verifies version comments through the GitHub API. Unauthenticated calls
+          # share a 60-per-hour limit per runner IP; this read-only token has its own limit.
+          GITHUB_TOKEN: ${{ github.token }}
       - name: tests
         run: cargo nextest run --locked
       - name: check examples
