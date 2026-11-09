@@ -1,0 +1,8 @@
+---
+source: tests/check.rs
+expression: "check(&[(\"main.korin\",\nconcat!(\"korin 1\\ntitle \\\"t\\\"\\n\", \"allow git, ./scripts/ok.sh\\n\",\n\"use \\\"./lib/m.korin\\\"\\n\", \"param tool required\\n\", \"stage \\\"a\\\"\\n\",\n\"  read git status\\n\", \"  read aws sts get-caller-identity\\n\",\n\"  read {tool} --version\\n\", \"  script read ./scripts/ok.sh\\n\",\n\"  script read ./scripts/other.sh\\n\", \"  m.run(git)\\n\", \"  m.run(rm)\\n\",),),\n(\"lib/m.korin\", \"define run(exe)\\n  read {exe} --version\\n\"),])"
+---
+error main.korin:8:8: allow: `aws` is not in the `allow` list
+error main.korin:9:8: exe: the executable must be literal text
+error main.korin:11:15: allow: `scripts/other.sh` is not in the `allow` list
+error ./lib/m.korin:2:8: allow: `rm` is not in the `allow` list

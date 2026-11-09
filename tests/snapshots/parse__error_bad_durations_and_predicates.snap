@@ -1,0 +1,9 @@
+---
+source: tests/parse.rs
+expression: "errors(&with_header(concat!(\"stage \\\"s\\\"\\n\", \"  read x\\n\", \"    timeout 10\\n\",\n\"    expect a = exit 999\\n\", \"    expect b = signal NOPE\\n\",\n\"    expect c = exit != 2\\n\", \"    capture d = yaml .x\\n\",)))"
+---
+test.korin:5:13: syntax: expected a duration such as `30s`, `15m` or `2h`
+test.korin:6:21: syntax: an exit code is between 0 and 255
+test.korin:7:23: syntax: unknown signal `NOPE`
+test.korin:8:24: syntax: only `exit != 0` is supported
+test.korin:9:17: syntax: unknown capture mode `yaml`

@@ -1,0 +1,62 @@
+[package]
+name = "korin"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+description = "A guided runbook language: every command is shown before it runs"
+license = "Apache-2.0"
+repository = "https://github.com/zerodahero/korin"
+readme = "README.md"
+keywords = ["runbook", "wizard", "cli", "dsl", "operations"]
+categories = ["command-line-utilities"]
+exclude = [".claude/", ".serena/", ".github/", "tests/"]
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+jaq-core = "3.1.2"
+jaq-json = "2.0.3"
+jaq-std = "3.0.4"
+jiff = "0.2.39"
+miette = { version = "7.6.0", features = ["fancy"] }
+nix = { version = "0.31.3", features = [
+  "signal",
+  "process",
+  "term",
+  "poll",
+  "fs",
+  "user",
+] }
+regex = "1.13.1"
+rpassword = "7.5.4"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+signal-hook = "0.4.6"
+thiserror = "2.0.21"
+zeroize = "1.9.1"
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Diagnostics are large and travel only on the error path; boxing them buys nothing.
+result_large_err = "allow"
+must_use_candidate = "allow"
+too_many_lines = "allow"
+module_name_repetitions = "allow"
+similar_names = "allow"
+many_single_char_names = "allow"
+# The only panics are poisoned locks, which mean another thread already panicked.
+missing_panics_doc = "allow"
+
+[dev-dependencies]
+insta = { version = "1.49.0", features = ["json", "yaml"] }
+portable-pty = "0.9.0"
+tempfile = "3.27.0"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

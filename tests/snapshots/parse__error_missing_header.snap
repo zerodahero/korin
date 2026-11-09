@@ -1,0 +1,5 @@
+---
+source: tests/parse.rs
+expression: "errors(\"stage \\\"s\\\"\\n  read x\\n\")"
+---
+test.korin:1:1: header: a wizard must start with `korin 1`

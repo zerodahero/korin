@@ -1,0 +1,572 @@
+//! Tests that need a real terminal: gates, `interactive` handoffs and job control. korin runs
+//! in a new session with a pty as its controlling terminal.
+
+use std::io::{Read, Write};
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+
+struct Session {
+    output: Arc<Mutex<String>>,
+    writer: Box<dyn Write + Send>,
+    child: Box<dyn portable_pty::Child + Send + Sync>,
+    master: Box<dyn portable_pty::MasterPty + Send>,
+}
+
+impl Session {
+    fn start(dir: &Path, args: &[&str]) -> Self {
+        Self::start_with_env(dir, args, &[])
+    }
+
+    fn start_with_env(dir: &Path, args: &[&str], env: &[(&str, PathBuf)]) -> Self {
+        let pty = native_pty_system()
+            .openpty(PtySize {
+                rows: 40,
+                cols: 200,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .unwrap();
+        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_korin"));
+        cmd.args(args);
+        cmd.cwd(dir);
+        cmd.env(
+            "PATH",
+            format!(
+                "{}:{}",
+                dir.join("bin").display(),
+                std::env::var("PATH").unwrap()
+            ),
+        );
+        cmd.env("TMPDIR", dir.join("tmp"));
+        for (key, value) in env {
+            cmd.env(key, value);
+        }
+        let child = pty.slave.spawn_command(cmd).unwrap();
+        let mut reader = pty.master.try_clone_reader().unwrap();
+        let writer = pty.master.take_writer().unwrap();
+        let output = Arc::new(Mutex::new(String::new()));
+        let sink = Arc::clone(&output);
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = reader.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                sink.lock()
+                    .unwrap()
+                    .push_str(&String::from_utf8_lossy(&buf[..n]));
+            }
+        });
+        Self {
+            output,
+            writer,
+            child,
+            master: pty.master,
+        }
+    }
+
+    fn wait_for(&self, text: &str) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            if self.output.lock().unwrap().contains(text) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        panic!(
+            "timed out waiting for {text:?}; output:\n{}",
+            self.output.lock().unwrap()
+        );
+    }
+
+    fn send(&mut self, text: &str) {
+        self.writer.write_all(text.as_bytes()).unwrap();
+        self.writer.flush().unwrap();
+    }
+
+    fn wait(&mut self) -> u32 {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            if let Some(status) = self.child.try_wait().unwrap() {
+                // Let the reader thread catch up with the last output.
+                std::thread::sleep(Duration::from_millis(100));
+                return status.exit_code();
+            }
+            assert!(
+                Instant::now() < deadline,
+                "korin did not exit; output:\n{}",
+                self.text()
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    fn text(&self) -> String {
+        self.output.lock().unwrap().clone()
+    }
+
+    fn pid(&self) -> i32 {
+        i32::try_from(self.child.process_id().unwrap()).unwrap()
+    }
+}
+
+fn setup(wizard: &str, scripts: &[(&str, &str)]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("bin")).unwrap();
+    std::fs::create_dir_all(dir.path().join("tmp")).unwrap();
+    std::fs::write(
+        dir.path().join("w.korin"),
+        format!("korin 1\ntitle \"t\"\n{wizard}"),
+    )
+    .unwrap();
+    for (name, body) in scripts {
+        let path = dir.path().join("bin").join(name);
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    dir
+}
+
+fn marker(dir: &Path, name: &str) -> PathBuf {
+    dir.join(name)
+}
+
+fn events(dir: &Path) -> String {
+    let runs = dir.join(".korin/runs");
+    let run = std::fs::read_dir(runs)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    std::fs::read_to_string(run.join("events.jsonl")).unwrap()
+}
+
+#[test]
+fn declined_gate_runs_nothing() {
+    let dir = setup(
+        "stage \"a\"\n  mutate touchit\n",
+        &[("touchit", "touch \"$PWD/touched\"")],
+    );
+    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.send("n\r");
+    assert_eq!(s.wait(), 1, "{}", s.text());
+    assert!(!marker(dir.path(), "touched").exists());
+    assert!(s.text().contains("was not approved"), "{}", s.text());
+}
+
+#[test]
+fn approved_gate_runs_and_yes_is_rejected_with_a_terminal() {
+    let dir = setup(
+        "stage \"a\"\n  mutate touchit\n",
+        &[("touchit", "touch \"$PWD/touched\"")],
+    );
+    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.send("y\r");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(marker(dir.path(), "touched").exists());
+
+    let mut s = Session::start(dir.path(), &["run", "w.korin", "--yes"]);
+    assert_eq!(s.wait(), 1, "{}", s.text());
+    assert!(
+        s.text().contains("`--yes` is for runs without a terminal"),
+        "{}",
+        s.text()
+    );
+}
+
+#[test]
+fn interactive_handoff_with_file_capture() {
+    let dir = setup(
+        concat!(
+            "stage \"a\"\n",
+            "  interactive fakeui\n",
+            "    capture notes = file {korin.out}/notes.md text\n",
+            "  record \"notes: {notes}\"\n",
+        ),
+        &[("fakeui", "echo 'looks good' > \"$KORIN_OUT/notes.md\"")],
+    );
+    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.send("y\r");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(s.text().contains("notes: looks good"), "{}", s.text());
+    let events = events(dir.path());
+    assert!(
+        events.contains("\"handoff_start\"") && events.contains("\"handoff_end\""),
+        "{events}"
+    );
+}
+
+const SUSPENDABLE: &str = concat!(
+    "stage \"a\"\n",
+    "  interactive fakeui\n",
+    "  mutate touchit\n",
+);
+
+fn suspendable() -> tempfile::TempDir {
+    setup(
+        SUSPENDABLE,
+        &[
+            ("fakeui", "echo ui-ready\nsleep 2\necho ui-done"),
+            ("touchit", "touch \"$PWD/next-step-ran\""),
+        ],
+    )
+}
+
+#[test]
+fn ctrl_z_then_resume_continues() {
+    let dir = suspendable();
+    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.send("y\r");
+    s.wait_for("ui-ready");
+    s.send("\x1a");
+    s.wait_for("is suspended");
+    s.send("r\r");
+    s.wait_for("ui-done");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(marker(dir.path(), "next-step-ran").exists(), "{}", s.text());
+}
+
+#[test]
+fn ctrl_z_then_kill_cancels() {
+    let dir = suspendable();
+    let mut s = Session::start(dir.path(), &["run", "w.korin", "--kill-grace", "1"]);
+    s.wait_for("Run stage 1?");
+    s.send("y\r");
+    s.wait_for("ui-ready");
+    s.send("\x1a");
+    s.wait_for("is suspended");
+    s.send("k\r");
+    assert_eq!(s.wait(), 130, "{}", s.text());
+    assert!(!marker(dir.path(), "next-step-ran").exists());
+    assert!(
+        s.text().contains("killed at the suspend prompt"),
+        "{}",
+        s.text()
+    );
+}
+
+#[test]
+fn sigterm_during_handoff_restores_and_stops() {
+    for stop_first in [false, true] {
+        let dir = setup(
+            SUSPENDABLE,
+            &[
+                (
+                    "fakeui",
+                    "echo ui-ready\necho $$ > \"$PWD/ui.pid\"\nsleep 30",
+                ),
+                ("touchit", "touch \"$PWD/next-step-ran\""),
+            ],
+        );
+        let mut s = Session::start(dir.path(), &["run", "w.korin", "--kill-grace", "1"]);
+        s.wait_for("Run stage 1?");
+        s.send("y\r");
+        s.wait_for("ui-ready");
+        if stop_first {
+            s.send("\x1a");
+            s.wait_for("is suspended");
+        }
+        let pid = nix::unistd::Pid::from_raw(s.pid());
+        nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGTERM).unwrap();
+        assert_eq!(s.wait(), 130, "stop_first={stop_first}: {}", s.text());
+        assert!(!marker(dir.path(), "next-step-ran").exists());
+        let ui = std::fs::read_to_string(dir.path().join("ui.pid")).unwrap();
+        let ui = nix::unistd::Pid::from_raw(ui.trim().parse().unwrap());
+        assert!(
+            nix::sys::signal::kill(ui, None).is_err(),
+            "the interactive program is still alive"
+        );
+    }
+}
+
+/// The v1 acceptance test: the RDS rehearsal example, end to end, against fake-aws.
+#[test]
+fn rds_rehearsal_example_end_to_end() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    for sub in ["bin", "tmp", "aws"] {
+        std::fs::create_dir_all(root.join(sub)).unwrap();
+    }
+    std::fs::copy("tests/fixtures/fake-aws", root.join("bin/aws")).unwrap();
+    std::fs::set_permissions(root.join("bin/aws"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::copy("examples/rds-rehearsal.korin", root.join("w.korin")).unwrap();
+
+    let counter = std::cell::Cell::new(0);
+    let respond = |argv: &str, n: Option<u32>, stdout: &str, stderr: &str, exit: i32| {
+        let response = root
+            .join("aws/responses")
+            .join(format!("{:03}", counter.get()));
+        counter.set(counter.get() + 1);
+        std::fs::create_dir_all(&response).unwrap();
+        std::fs::write(response.join("argv"), argv).unwrap();
+        if let Some(n) = n {
+            std::fs::write(response.join("call"), n.to_string()).unwrap();
+        }
+        std::fs::write(response.join("stdout"), stdout).unwrap();
+        std::fs::write(response.join("stderr"), stderr).unwrap();
+        std::fs::write(response.join("exit"), exit.to_string()).unwrap();
+    };
+    let cluster = |id: &str, status: &str| {
+        format!(
+            r#"{{"DBClusters":[{{"Status":"{status}","DBClusterArn":"arn:aws:rds:us-east-1:123456789012:cluster:{id}","EngineVersion":"16.4","Endpoint":"{id}.cluster-x.us-east-1.rds.amazonaws.com","DBClusterMembers":[],"VpcSecurityGroups":[{{"VpcSecurityGroupId":"sg-0a"}},{{"VpcSecurityGroupId":"sg-0b"}}]}}]}}"#
+        )
+    };
+    let scratch = "main-db-cluster-rehearsal";
+    respond(
+        "sts get-caller-identity --output json",
+        None,
+        r#"{"Account":"123456789012","Arn":"arn:aws:iam::123456789012:user/operator"}"#,
+        "",
+        0,
+    );
+    respond(
+        "rds describe-db-clusters --db-cluster-identifier main-db-cluster --output json",
+        None,
+        &cluster("main-db-cluster", "available"),
+        "",
+        0,
+    );
+    respond(
+        &format!(
+            "rds create-db-cluster-snapshot --db-cluster-identifier main-db-cluster --db-cluster-snapshot-identifier {scratch}-snap --output json"
+        ),
+        None,
+        &format!(
+            r#"{{"DBClusterSnapshot":{{"DBClusterSnapshotArn":"arn:aws:rds:us-east-1:123456789012:cluster-snapshot:{scratch}-snap"}}}}"#
+        ),
+        "",
+        0,
+    );
+    respond(
+        &format!(
+            "rds describe-db-cluster-snapshots --db-cluster-snapshot-identifier {scratch}-snap --output json"
+        ),
+        None,
+        r#"{"DBClusterSnapshots":[{"Status":"available"}]}"#,
+        "",
+        0,
+    );
+    let describe_scratch =
+        format!("rds describe-db-clusters --db-cluster-identifier {scratch} --output json");
+    respond(
+        &describe_scratch,
+        Some(1),
+        "",
+        "An error occurred (DBClusterNotFoundFault): DBClusterNotFound",
+        254,
+    );
+    respond(
+        &describe_scratch,
+        Some(2),
+        &cluster(scratch, "available"),
+        "",
+        0,
+    );
+    respond(
+        &describe_scratch,
+        Some(3),
+        &cluster(scratch, "available"),
+        "",
+        0,
+    );
+    respond(
+        &format!(
+            "rds restore-db-cluster-from-snapshot --db-cluster-identifier {scratch} --snapshot-identifier arn:aws:rds:us-east-1:123456789012:cluster-snapshot:{scratch}-snap --engine aurora-postgresql --vpc-security-group-ids sg-0a sg-0b --output json"
+        ),
+        None,
+        "{}",
+        "",
+        0,
+    );
+    respond(
+        &format!(
+            "rds delete-db-cluster --db-cluster-identifier {scratch} --skip-final-snapshot --output json"
+        ),
+        None,
+        "{}",
+        "",
+        0,
+    );
+
+    let mut s = Session::start_with_env(
+        root,
+        &["run", "w.korin", "--param", "cluster=main-db-cluster"],
+        &[("FAKE_AWS_DIR", root.join("aws"))],
+    );
+    for stage in [3, 4, 6] {
+        s.wait_for(&format!("Run stage {stage}?"));
+        s.send("y\r");
+    }
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let calls = std::fs::read_to_string(root.join("aws/calls.log")).unwrap();
+    assert!(
+        calls.contains("--vpc-security-group-ids sg-0a sg-0b"),
+        "{calls}"
+    );
+    assert_eq!(calls.lines().count(), 9, "{calls}");
+    let runs = root.join(".korin/runs");
+    let run = std::fs::read_dir(runs)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let report = std::fs::read_to_string(run.join("report.md")).unwrap();
+    assert!(
+        report.contains("restored main-db-cluster-rehearsal: engine 16.4"),
+        "{report}"
+    );
+    assert!(
+        report.contains("deleted main-db-cluster-rehearsal"),
+        "{report}"
+    );
+}
+
+// ---- review fixes ----
+
+impl Session {
+    /// The pty's foreground process group, as the terminal driver sees it.
+    fn foreground(&self) -> Option<i32> {
+        self.master.process_group_leader()
+    }
+
+    /// The terminal's modes, compared by their debug form.
+    fn modes(&self) -> String {
+        format!("{:?}", self.master.get_termios())
+    }
+}
+
+fn stopped(pid: i32) -> bool {
+    let out = std::process::Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid.to_string()])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).contains('T')
+}
+
+#[test]
+fn type_ahead_never_answers_a_gate() {
+    let dir = setup(
+        "stage \"a\"\n  mutate sleepy\nstage \"b\"\n  mutate touchit\n",
+        &[("sleepy", "sleep 1"), ("touchit", "touch \"$PWD/touched\"")],
+    );
+    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.send("y\r");
+    // Typed while stage 1 runs, before stage 2 is shown.
+    std::thread::sleep(Duration::from_millis(300));
+    s.send("y\r");
+    s.wait_for("Run stage 2?");
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(
+        !marker(dir.path(), "touched").exists(),
+        "type-ahead approved stage 2"
+    );
+    s.send("n\r");
+    assert_eq!(s.wait(), 1, "{}", s.text());
+    assert!(!marker(dir.path(), "touched").exists());
+}
+
+#[test]
+fn handoff_returns_the_terminal_and_its_modes() {
+    let dir = setup(
+        "stage \"a\"\n  interactive fakeui\nstage \"b\"\n  mutate touchit\n",
+        &[("fakeui", "stty raw -echo; sleep 0.3"), ("touchit", "true")],
+    );
+    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    let before = s.modes();
+    assert_eq!(s.foreground(), Some(s.pid()));
+    s.send("y\r");
+    s.wait_for("Run stage 2?");
+    // The program changed the modes; korin restored its own and took the terminal back.
+    assert_eq!(
+        s.foreground(),
+        Some(s.pid()),
+        "korin is not the foreground group"
+    );
+    assert_eq!(s.modes(), before, "terminal modes were not restored");
+    s.send("y\r");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+}
+
+#[test]
+fn korin_is_not_stopped_while_the_program_is_suspended() {
+    let dir = suspendable();
+    let mut s = Session::start(dir.path(), &["run", "w.korin", "--kill-grace", "1"]);
+    s.wait_for("Run stage 1?");
+    s.send("y\r");
+    s.wait_for("ui-ready");
+    s.send("\x1a");
+    s.wait_for("is suspended");
+    assert!(!stopped(s.pid()), "korin itself was stopped");
+    assert_eq!(
+        s.foreground(),
+        Some(s.pid()),
+        "korin did not take the terminal back"
+    );
+    s.send("k\r");
+    assert_eq!(s.wait(), 130, "{}", s.text());
+}
+
+#[test]
+fn nested_confirm_shows_the_rest_of_the_stage() {
+    let dir = setup(
+        concat!(
+            "stage \"a\"\n",
+            "  read tool\n",
+            "    expect missing = exit 1\n",
+            "  when not missing\n",
+            "    confirm \"Continue?\"\n",
+            "  note \"after-the-block\"\n",
+        ),
+        &[("tool", "true")],
+    );
+    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.send("y\r");
+    s.wait_for("Continue? [y/N]");
+    let text = s.text();
+    let next = &text[text.rfind("next:").expect("confirm lists what comes next")..];
+    assert!(next.contains("after-the-block"), "{next}");
+    s.send("n\r");
+    assert_eq!(s.wait(), 1, "{}", s.text());
+}
+
+#[test]
+fn deeply_nested_confirm_shows_every_remaining_step() {
+    let dir = setup(
+        concat!(
+            "stage \"a\"\n",
+            "  read tool\n",
+            "    expect missing = exit 1\n",
+            "  when not missing\n",
+            "    each f in [\"one\"]\n",
+            "      confirm \"Continue?\"\n",
+            "      note \"inner-rest\"\n",
+            "    note \"middle-rest\"\n",
+            "  note \"outer-rest\"\n",
+        ),
+        &[("tool", "true")],
+    );
+    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.send("y\r");
+    s.wait_for("Continue? [y/N]");
+    let text = s.text();
+    let next = &text[text.rfind("next:").expect("confirm lists what comes next")..];
+    for expected in ["inner-rest", "middle-rest", "outer-rest"] {
+        assert!(next.contains(expected), "{expected} missing from:\n{next}");
+    }
+    s.send("n\r");
+    assert_eq!(s.wait(), 1, "{}", s.text());
+}

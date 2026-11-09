@@ -1,0 +1,8 @@
+/target/
+/.korin/
+*.pending-snap
+
+# Local agent and editor state
+/.claude/settings.local.json
+/.claude/plan/
+/.serena/

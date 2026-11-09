@@ -1,0 +1,19 @@
+# Built-in templates for the AWS CLI. Load with `use aws`.
+
+# Who the current credentials belong to.
+define identity()
+  exports account, arn
+  read aws sts get-caller-identity --output json
+    capture account = jq .Account
+    capture arn     = jq .Arn
+
+# Reads an SSM parameter. `missing` is true when it does not exist.
+define ssm_get(name)
+  exports value, missing
+  read aws ssm get-parameter --name {name} --output json
+    expect missing = exit 254 and stderr ~ /ParameterNotFound/
+    capture value = jq .Parameter.Value
+
+# Writes an SSM parameter, replacing any existing value.
+define ssm_put(name, value)
+  mutate aws ssm put-parameter --name {name} --value {value} --type String --overwrite --output json

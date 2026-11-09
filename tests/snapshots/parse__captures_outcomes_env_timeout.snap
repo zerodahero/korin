@@ -1,0 +1,230 @@
+---
+source: tests/parse.rs
+expression: "wizard(&with_header(concat!(\"stage \\\"s\\\"\\n\",\n\"  read aws ssm get-parameter --name n --output json\\n\",\n\"    expect missing = exit 254 and stderr ~ /ParameterNotFound/\\n\",\n\"    expect gone = exit != 0\\n\", \"    expect stopped = signal TERM\\n\",\n\"    capture value = jq .Parameter.Value\\n\",\n\"    capture secret tok? = jq .Parameter | .Token on missing\\n\",\n\"    capture all = jq list .Items[].Id\\n\", \"    capture doc = jq json .Doc\\n\",\n\"    capture raw = text\\n\", \"    capture rows = lines on gone\\n\",\n\"    capture n = regex /(\\\\d+) rows/\\n\",\n\"    capture notes = file {korin.out}/notes.md text\\n\",\n\"    env PGPASSWORD={password}\\n\", \"    timeout 90s\\n\",)))"
+---
+Wizard {
+    header: Header {
+        version: 1 @ 6..7,
+        title: "t" @ 14..17,
+        gates: All,
+        unattended: None,
+        allow: None,
+    },
+    uses: [],
+    params: [],
+    stages: [
+        Stage {
+            title: "s" @ 24..27,
+            steps: [
+                Command(
+                    Command {
+                        kind: Read,
+                        argv: [
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "aws",
+                                    ),
+                                ],
+                                span: 35..38,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "ssm",
+                                    ),
+                                ],
+                                span: 39..42,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "get-parameter",
+                                    ),
+                                ],
+                                span: 43..56,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "--name",
+                                    ),
+                                ],
+                                span: 57..63,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "n",
+                                    ),
+                                ],
+                                span: 64..65,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "--output",
+                                    ),
+                                ],
+                                span: 66..74,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "json",
+                                    ),
+                                ],
+                                span: 75..79,
+                            },
+                        ],
+                        captures: [
+                            Capture {
+                                name: "value" @ 216..221,
+                                secret: false,
+                                optional: false,
+                                file: None,
+                                mode: Jq(".Parameter.Value") @ 224..243,
+                                on: None,
+                                span: 208..243,
+                            },
+                            Capture {
+                                name: "tok" @ 263..266,
+                                secret: true,
+                                optional: true,
+                                file: None,
+                                mode: Jq(".Parameter | .Token") @ 270..292,
+                                on: Some(
+                                    "missing" @ 296..303,
+                                ),
+                                span: 248..303,
+                            },
+                            Capture {
+                                name: "all" @ 316..319,
+                                secret: false,
+                                optional: false,
+                                file: None,
+                                mode: JqList(".Items[].Id") @ 322..341,
+                                on: None,
+                                span: 308..341,
+                            },
+                            Capture {
+                                name: "doc" @ 354..357,
+                                secret: false,
+                                optional: false,
+                                file: None,
+                                mode: JqJson(".Doc") @ 360..372,
+                                on: None,
+                                span: 346..372,
+                            },
+                            Capture {
+                                name: "raw" @ 385..388,
+                                secret: false,
+                                optional: false,
+                                file: None,
+                                mode: Text @ 391..395,
+                                on: None,
+                                span: 377..395,
+                            },
+                            Capture {
+                                name: "rows" @ 408..412,
+                                secret: false,
+                                optional: false,
+                                file: None,
+                                mode: Lines @ 415..420,
+                                on: Some(
+                                    "gone" @ 424..428,
+                                ),
+                                span: 400..428,
+                            },
+                            Capture {
+                                name: "n" @ 441..442,
+                                secret: false,
+                                optional: false,
+                                file: None,
+                                mode: Regex("(\\d+) rows") @ 445..463,
+                                on: None,
+                                span: 433..463,
+                            },
+                            Capture {
+                                name: "notes" @ 476..481,
+                                secret: false,
+                                optional: false,
+                                file: Some(
+                                    Interpolated {
+                                        parts: [
+                                            Ref(
+                                                Ref {
+                                                    path: [
+                                                        "korin",
+                                                        "out",
+                                                    ],
+                                                    splat: false,
+                                                    span: 489..500,
+                                                },
+                                            ),
+                                            Lit(
+                                                "/notes.md",
+                                            ),
+                                        ],
+                                        span: 489..509,
+                                    },
+                                ),
+                                mode: Text @ 510..514,
+                                on: None,
+                                span: 468..514,
+                            },
+                        ],
+                        expects: [
+                            Expect {
+                                name: "missing" @ 91..98,
+                                matches: [
+                                    Exit(254) @ 101..109,
+                                    Stderr("ParameterNotFound") @ 114..142,
+                                ],
+                                span: 84..142,
+                            },
+                            Expect {
+                                name: "gone" @ 154..158,
+                                matches: [
+                                    ExitNonZero @ 161..170,
+                                ],
+                                span: 147..170,
+                            },
+                            Expect {
+                                name: "stopped" @ 182..189,
+                                matches: [
+                                    Signal("TERM") @ 192..203,
+                                ],
+                                span: 175..203,
+                            },
+                        ],
+                        env: [
+                            (
+                                "PGPASSWORD" @ 523..533,
+                                Interpolated {
+                                    parts: [
+                                        Ref(
+                                            Ref {
+                                                path: [
+                                                    "password",
+                                                ],
+                                                splat: false,
+                                                span: 534..544,
+                                            },
+                                        ),
+                                    ],
+                                    span: 534..544,
+                                },
+                            ),
+                        ],
+                        timeout: Some(
+                            Duration(90) @ 557..560,
+                        ),
+                        span: 30..79,
+                    },
+                ),
+            ],
+            span: 18..27,
+        },
+    ],
+}

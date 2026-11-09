@@ -1,0 +1,66 @@
+[tools]
+# Exact: CI installs the same toolchain, so a local build matches a release build.
+rust = { version = "1.99.1", components = "clippy,rustfmt" }
+# Exact: hk.pkl amends the Pkl package of this exact hk version.
+hk = { version = "2.11.0", workflow = "release.yml" }
+pkl = "0.32.2"
+# Exact: `dist init` writes release.yml for this version, and `dist plan` in CI
+# fails when the installed version drifts from the generated workflow.
+cargo-dist = "0.34.0"
+cargo-deny = "latest"
+"aqua:nextest-rs/nextest/cargo-nextest" = "latest"
+cargo-insta = "latest"
+actionlint = "latest"
+gitleaks = "latest"
+pinact = "latest"
+rumdl = "latest"
+taplo = "latest"
+typos = "latest"
+zizmor = "latest"
+shellcheck = "latest"
+shfmt = "latest"
+# Exact: the generated tree-sitter-korin/src/parser.c is committed, and CI checks that
+# regenerating it changes nothing.
+tree-sitter = "0.27.1"
+
+[tasks.build]
+description = "Build the korin binary"
+run = "cargo build"
+
+[tasks.test]
+description = "Run the test suite"
+run = "cargo nextest run"
+
+[tasks.lint]
+description = "Run every hk check on the whole repo"
+run = "hk check --all"
+
+[tasks.fmt]
+description = "Apply every hk fixer on the whole repo"
+run = "hk fix --all"
+
+[tasks.check-examples]
+description = "Run korin check and korin plan on every example wizard"
+depends = ["build"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+status=0
+# Module files under lib/ hold only `use` and `define`; the wizard that imports them checks them.
+while IFS= read -r file; do
+  ./target/debug/korin check "$file" || status=1
+  ./target/debug/korin plan "$file" >/dev/null || status=1
+done < <(find examples -name '*.korin' -not -path '*/lib/*' | sort)
+exit "$status"
+'''
+
+[tasks.grammar]
+description = "Regenerate the tree-sitter grammar, run its tests and parse every .korin file"
+dir = "tree-sitter-korin"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+tree-sitter generate --js-runtime native
+tree-sitter test
+find ../examples ../src/stdlib -name '*.korin' -print0 | xargs -0 tree-sitter parse -p . --quiet
+'''

@@ -1,0 +1,13 @@
+---
+source: tests/check.rs
+expression: "check(&[(\"main.korin\",\nconcat!(\"korin 1\\ntitle \\\"t\\\"\\n\", \"use rds\\n\", \"use \\\"./lib/m.korin\\\"\\n\",\n\"stage \\\"a\\\"\\n\", \"  rds.cluster(one) as src\\n\", \"  rds.cluster(two) as dst\\n\",\n\"  assert src.status == dst.status else \\\"{src.status} vs {dst.status}\\\"\\n\",\n\"  rds.cluster(three) as src\\n\", \"  rds.cluster(four)\\n\", \"  rds.nope(x)\\n\",\n\"  rds.cluster(a, b) as c\\n\", \"  nope.x()\\n\", \"  note \\\"{src.private}\\\"\\n\",\n\"  m.loop()\\n\", \"  m.bad_export() as b\\n\",),),\n(\"lib/m.korin\",\nconcat!(\"define loop()\\n  m2.back()\\n\",\n\"define bad_export()\\n  exports ghost\\n  read tool\\n\",\n\"use \\\"./m2.korin\\\"\\n\",),),\n(\"lib/m2.korin\", \"use \\\"./m.korin\\\"\\ndefine back()\\n  m.loop()\\n\"),])"
+---
+error ./m2.korin:1:1: import-cycle: this import creates a cycle
+error main.korin:9:25: name: `src` is already defined
+error main.korin:10:3: template: `rds.cluster` exports values, so it needs `as <alias>`
+error main.korin:11:7: template: module `rds` has no template `nope`
+error main.korin:12:3: template: `rds.cluster` takes 1 argument(s), but 2 were given
+error main.korin:13:3: module: unknown module `nope`
+error main.korin:14:9: name: unknown name `src.private`
+error ./m2.korin:3:3: module: unknown module `m`
+error ./lib/m.korin:4:11: template: `ghost` is exported but never defined in the template body

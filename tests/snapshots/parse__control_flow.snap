@@ -1,0 +1,476 @@
+---
+source: tests/parse.rs
+expression: "wizard(&with_header(concat!(\"stage \\\"s\\\"\\n\",\n\"  when not a.missing and (b == \\\"x\\\" or c in [\\\"y\\\", \\\"z\\\"]) and d ~ /^ok/\\n\",\n\"    note \\\"guarded {b}\\\"\\n\", \"  each f in [\\\"a.rs\\\", \\\"b.rs\\\"]\\n\",\n\"    interactive nvim {f}\\n\", \"  poll every 30s for 2h\\n\",\n\"    read aws rds describe-db-clusters --output json\\n\",\n\"      capture status = jq .DBClusters[0].Status\\n\",\n\"    until status == \\\"available\\\"\\n\",\n\"    fail status in [\\\"failed\\\", \\\"deleting\\\"]\\n\",\n\"  assert exists x and n >= 3 else \\\"bad {n}\\\"\\n\",\n\"  ask secret pw \\\"Password?\\\"\\n\", \"  confirm \\\"Go?\\\"\\n\",\n\"  rds.cluster({id}-x, other) as c\\n\",\n\"  script mutate ./fix.sh {c.arn}\\n\",)))"
+---
+Wizard {
+    header: Header {
+        version: 1 @ 6..7,
+        title: "t" @ 14..17,
+        gates: All,
+        unattended: None,
+        allow: None,
+    },
+    uses: [],
+    params: [],
+    stages: [
+        Stage {
+            title: "s" @ 24..27,
+            steps: [
+                When {
+                    cond: And(
+                        And(
+                            Not(
+                                Ref(
+                                    Ref {
+                                        path: [
+                                            "a",
+                                            "missing",
+                                        ],
+                                        splat: false,
+                                        span: 39..48,
+                                    },
+                                ),
+                                35..38,
+                            ),
+                            Or(
+                                Cmp(
+                                    Eq,
+                                    Ref(
+                                        Ref {
+                                            path: [
+                                                "b",
+                                            ],
+                                            splat: false,
+                                            span: 54..55,
+                                        },
+                                    ),
+                                    Str(
+                                        Interpolated {
+                                            parts: [
+                                                Lit(
+                                                    "x",
+                                                ),
+                                            ],
+                                            span: 59..62,
+                                        },
+                                    ),
+                                ),
+                                In(
+                                    Ref(
+                                        Ref {
+                                            path: [
+                                                "c",
+                                            ],
+                                            splat: false,
+                                            span: 66..67,
+                                        },
+                                    ),
+                                    List(
+                                        [
+                                            Str(
+                                                Interpolated {
+                                                    parts: [
+                                                        Lit(
+                                                            "y",
+                                                        ),
+                                                    ],
+                                                    span: 72..75,
+                                                },
+                                            ),
+                                            Str(
+                                                Interpolated {
+                                                    parts: [
+                                                        Lit(
+                                                            "z",
+                                                        ),
+                                                    ],
+                                                    span: 77..80,
+                                                },
+                                            ),
+                                        ],
+                                        71..81,
+                                    ),
+                                ),
+                            ),
+                        ),
+                        Regex(
+                            Ref(
+                                Ref {
+                                    path: [
+                                        "d",
+                                    ],
+                                    splat: false,
+                                    span: 87..88,
+                                },
+                            ),
+                            "^ok" @ 91..96,
+                        ),
+                    ),
+                    body: [
+                        Say {
+                            kind: Note,
+                            text: Interpolated {
+                                parts: [
+                                    Lit(
+                                        "guarded ",
+                                    ),
+                                    Ref(
+                                        Ref {
+                                            path: [
+                                                "b",
+                                            ],
+                                            splat: false,
+                                            span: 115..118,
+                                        },
+                                    ),
+                                ],
+                                span: 106..119,
+                            },
+                            span: 101..119,
+                        },
+                    ],
+                    span: 30..96,
+                },
+                Each {
+                    var: "f" @ 127..128,
+                    list: List(
+                        [
+                            Str(
+                                Interpolated {
+                                    parts: [
+                                        Lit(
+                                            "a.rs",
+                                        ),
+                                    ],
+                                    span: 133..139,
+                                },
+                            ),
+                            Str(
+                                Interpolated {
+                                    parts: [
+                                        Lit(
+                                            "b.rs",
+                                        ),
+                                    ],
+                                    span: 141..147,
+                                },
+                            ),
+                        ],
+                        132..148,
+                    ),
+                    body: [
+                        Command(
+                            Command {
+                                kind: Interactive,
+                                argv: [
+                                    Interpolated {
+                                        parts: [
+                                            Lit(
+                                                "nvim",
+                                            ),
+                                        ],
+                                        span: 165..169,
+                                    },
+                                    Interpolated {
+                                        parts: [
+                                            Ref(
+                                                Ref {
+                                                    path: [
+                                                        "f",
+                                                    ],
+                                                    splat: false,
+                                                    span: 170..173,
+                                                },
+                                            ),
+                                        ],
+                                        span: 170..173,
+                                    },
+                                ],
+                                captures: [],
+                                expects: [],
+                                env: [],
+                                timeout: None,
+                                span: 153..173,
+                            },
+                        ),
+                    ],
+                    span: 122..148,
+                },
+                Poll(
+                    Poll {
+                        every: Duration(30) @ 187..190,
+                        limit: Duration(7200) @ 195..197,
+                        body: [
+                            Command(
+                                Command {
+                                    kind: Read,
+                                    argv: [
+                                        Interpolated {
+                                            parts: [
+                                                Lit(
+                                                    "aws",
+                                                ),
+                                            ],
+                                            span: 207..210,
+                                        },
+                                        Interpolated {
+                                            parts: [
+                                                Lit(
+                                                    "rds",
+                                                ),
+                                            ],
+                                            span: 211..214,
+                                        },
+                                        Interpolated {
+                                            parts: [
+                                                Lit(
+                                                    "describe-db-clusters",
+                                                ),
+                                            ],
+                                            span: 215..235,
+                                        },
+                                        Interpolated {
+                                            parts: [
+                                                Lit(
+                                                    "--output",
+                                                ),
+                                            ],
+                                            span: 236..244,
+                                        },
+                                        Interpolated {
+                                            parts: [
+                                                Lit(
+                                                    "json",
+                                                ),
+                                            ],
+                                            span: 245..249,
+                                        },
+                                    ],
+                                    captures: [
+                                        Capture {
+                                            name: "status" @ 264..270,
+                                            secret: false,
+                                            optional: false,
+                                            file: None,
+                                            mode: Jq(".DBClusters[0].Status") @ 273..297,
+                                            on: None,
+                                            span: 256..297,
+                                        },
+                                    ],
+                                    expects: [],
+                                    env: [],
+                                    timeout: None,
+                                    span: 202..249,
+                                },
+                            ),
+                        ],
+                        until: Cmp(
+                            Eq,
+                            Ref(
+                                Ref {
+                                    path: [
+                                        "status",
+                                    ],
+                                    splat: false,
+                                    span: 308..314,
+                                },
+                            ),
+                            Str(
+                                Interpolated {
+                                    parts: [
+                                        Lit(
+                                            "available",
+                                        ),
+                                    ],
+                                    span: 318..329,
+                                },
+                            ),
+                        ),
+                        fail: Some(
+                            In(
+                                Ref(
+                                    Ref {
+                                        path: [
+                                            "status",
+                                        ],
+                                        splat: false,
+                                        span: 339..345,
+                                    },
+                                ),
+                                List(
+                                    [
+                                        Str(
+                                            Interpolated {
+                                                parts: [
+                                                    Lit(
+                                                        "failed",
+                                                    ),
+                                                ],
+                                                span: 350..358,
+                                            },
+                                        ),
+                                        Str(
+                                            Interpolated {
+                                                parts: [
+                                                    Lit(
+                                                        "deleting",
+                                                    ),
+                                                ],
+                                                span: 360..370,
+                                            },
+                                        ),
+                                    ],
+                                    349..371,
+                                ),
+                            ),
+                        ),
+                        span: 176..197,
+                    },
+                ),
+                Assert {
+                    cond: And(
+                        Exists(
+                            Ref {
+                                path: [
+                                    "x",
+                                ],
+                                splat: false,
+                                span: 388..389,
+                            },
+                        ),
+                        Cmp(
+                            Ge,
+                            Ref(
+                                Ref {
+                                    path: [
+                                        "n",
+                                    ],
+                                    splat: false,
+                                    span: 394..395,
+                                },
+                            ),
+                            Num(
+                                "3" @ 399..400,
+                            ),
+                        ),
+                    ),
+                    message: Interpolated {
+                        parts: [
+                            Lit(
+                                "bad ",
+                            ),
+                            Ref(
+                                Ref {
+                                    path: [
+                                        "n",
+                                    ],
+                                    splat: false,
+                                    span: 411..414,
+                                },
+                            ),
+                        ],
+                        span: 406..415,
+                    },
+                    span: 374..415,
+                },
+                Ask {
+                    name: "pw" @ 429..431,
+                    secret: true,
+                    prompt: Interpolated {
+                        parts: [
+                            Lit(
+                                "Password?",
+                            ),
+                        ],
+                        span: 432..443,
+                    },
+                    span: 418..443,
+                },
+                Confirm {
+                    text: Interpolated {
+                        parts: [
+                            Lit(
+                                "Go?",
+                            ),
+                        ],
+                        span: 454..459,
+                    },
+                    span: 446..459,
+                },
+                Call(
+                    Call {
+                        module: "rds" @ 462..465,
+                        template: "cluster" @ 466..473,
+                        args: [
+                            Interpolated {
+                                parts: [
+                                    Ref(
+                                        Ref {
+                                            path: [
+                                                "id",
+                                            ],
+                                            splat: false,
+                                            span: 474..478,
+                                        },
+                                    ),
+                                    Lit(
+                                        "-x",
+                                    ),
+                                ],
+                                span: 474..480,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "other",
+                                    ),
+                                ],
+                                span: 482..487,
+                            },
+                        ],
+                        alias: Some(
+                            "c" @ 492..493,
+                        ),
+                        span: 462..493,
+                    },
+                ),
+                Command(
+                    Command {
+                        kind: ScriptMutate,
+                        argv: [
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "./fix.sh",
+                                    ),
+                                ],
+                                span: 510..518,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Ref(
+                                        Ref {
+                                            path: [
+                                                "c",
+                                                "arn",
+                                            ],
+                                            splat: false,
+                                            span: 519..526,
+                                        },
+                                    ),
+                                ],
+                                span: 519..526,
+                            },
+                        ],
+                        captures: [],
+                        expects: [],
+                        env: [],
+                        timeout: None,
+                        span: 496..526,
+                    },
+                ),
+            ],
+            span: 18..27,
+        },
+    ],
+}

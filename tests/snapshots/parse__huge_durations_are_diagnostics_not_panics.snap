@@ -1,0 +1,8 @@
+---
+source: tests/parse.rs
+expression: "errors(&with_header(concat!(\"stage \\\"s\\\"\\n\", \"  read x\\n\",\n\"    timeout 18446744073709551615h\\n\", \"  read y\\n\",\n\"    timeout 99999999999999999999999s\\n\", \"  read z\\n\", \"    timeout 721h\\n\",\n\"  read w\\n\", \"    timeout 0s\\n\",)))"
+---
+test.korin:5:13: syntax: this duration is too long
+test.korin:7:13: syntax: this duration is too long
+test.korin:9:13: syntax: this duration is too long
+test.korin:11:13: syntax: a duration must be longer than zero

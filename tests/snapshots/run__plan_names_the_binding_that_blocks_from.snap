@@ -1,0 +1,16 @@
+---
+source: tests/run.rs
+expression: json
+---
+[
+  {
+    "code": "from",
+    "column": 8,
+    "file": "w.korin",
+    "help": "start at stage 1 or earlier",
+    "label": "used here",
+    "line": 8,
+    "message": "cannot start at stage 2: `missing` comes from skipped stage 1 \"probe\"",
+    "severity": "error"
+  }
+]

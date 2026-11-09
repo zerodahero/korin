@@ -1,0 +1,14 @@
+---
+source: tests/check.rs
+expression: "wizard(concat!(\"param p required\\n\", \"stage \\\"a\\\"\\n\", \"  read tool\\n\",\n\"    capture xs = jq list .[]\\n\", \"    capture doc = jq json .\\n\",\n\"    expect o = exit 1\\n\", \"  when not o\\n\", \"    read tool {xs}\\n\",\n\"    read tool {xs...}\\n\", \"    read tool --ids={xs...}\\n\",\n\"    read tool {p...}\\n\", \"    note \\\"{xs}\\\"\\n\", \"    read tool {o}\\n\",\n\"    when p\\n\", \"      note \\\"x\\\"\\n\", \"    each x in p\\n\",\n\"      note \\\"x\\\"\\n\", \"    each x in xs\\n\", \"      read tool {x} {doc}\\n\",\n\"    assert xs == \\\"a\\\" else \\\"lists do not compare\\\"\\n\",\n\"    assert exists p else \\\"p is not optional\\\"\\n\",\n\"    read tool {doc.field}\\n\",))"
+---
+error main.korin:10:15: type: `xs` is a list
+error main.korin:12:21: type: `{list...}` must be a whole word in a command
+error main.korin:13:15: type: `p` is not a list, so it cannot be splatted
+error main.korin:14:11: type: `xs` is a list, which cannot be interpolated into a string
+error main.korin:15:15: type: `o` is an `expect`, so it cannot be interpolated
+error main.korin:16:10: type: a condition must be true or false
+error main.korin:18:15: type: `each` needs a list
+error main.korin:22:12: type: comparisons take values, not `expect` names or lists
+error main.korin:23:19: type: `exists` applies only to an optional capture, and `p` is not one
+error main.korin:24:15: name: unknown name `doc.field`

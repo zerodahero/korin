@@ -1,0 +1,36 @@
+---
+source: tests/check.rs
+expression: "korin::render::plan(&program)"
+---
+RDS snapshot and restore rehearsal
+params: cluster (required), scratch = "<cluster>-rehearsal", db_password (secret)
+
+▸ Stage 1/4 · Identity  [read-only, no gate; valid --from start]
+  1.1  aws.identity() as me
+    1.1.1  read $ aws sts get-caller-identity --output json
+          → me.account, me.arn
+  1.2  confirm "Is <me.account ← 1.1.1> (<me.arn ← 1.1.1>) the right account?"
+
+▸ Stage 2/4 · Source cluster  [read-only, no gate; valid --from start]
+  2.1  rds.cluster({cluster}) as src
+    2.1.1  read $ aws rds describe-db-clusters --db-cluster-identifier <cluster> --output json
+          → src.status, src.arn, src.version, src.endpoint, src.writer?, src.security_groups [list]
+  2.2  assert src.status == "available" else "<cluster> is <src.status ← 2.1.1>, not available."
+
+▸ Stage 3/4 · Snapshot  [mutating, gate; not a --from start: uses `src.security_groups` (line 32)]
+  3.1  mutate $ aws rds create-db-cluster-snapshot --db-cluster-identifier <cluster> --db-cluster-snapshot-identifier <scratch>-snap --output json
+        → snap_arn
+  3.2  rds.await_snapshot({scratch}-snap)
+    3.2.1  poll every 30s for 7200s
+      3.2.1.1  read $ aws rds describe-db-cluster-snapshots --db-cluster-snapshot-identifier <scratch>-snap --output json
+            → $call3$status
+          until $call3$status == "available"
+          fail $call3$status ~ /^(failed|deleted|deleting)$/
+
+▸ Stage 4/4 · Scratch cluster  [mutating, gate; not a --from start: uses `snap_arn` (line 31)]
+  4.1  read $ aws rds describe-db-clusters --db-cluster-identifier <scratch> --output json
+        ? missing
+  4.2  when missing
+    4.2.1  mutate $ aws rds restore-db-cluster-from-snapshot ... --snapshot-identifier <snap_arn ← 3.1>
+  4.3  each sg in src.security_groups
+    4.3.1  read $ aws ec2 describe-security-groups --group-ids <sg ← 4.3> --output json

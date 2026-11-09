@@ -1,0 +1,43 @@
+korin 1
+title "RDS snapshot and restore rehearsal"
+# Read-only stages run after display; only stages that change something stop at a gate.
+gates mutating
+allow aws
+
+use aws
+use rds
+
+param cluster required
+param scratch = "{cluster}-rehearsal"
+
+stage "Identity"
+  aws.identity() as me
+  record "account {me.account} as {me.arn}"
+
+stage "Source cluster"
+  rds.cluster({cluster}) as src
+  assert src.status == "available" else "{cluster} is {src.status}, not available."
+  record "{cluster}: engine {src.version}"
+
+stage "Snapshot"
+  mutate aws rds create-db-cluster-snapshot --db-cluster-identifier {cluster} --db-cluster-snapshot-identifier {scratch}-snap --output json
+    capture snap_arn = jq .DBClusterSnapshot.DBClusterSnapshotArn
+  rds.await_snapshot({scratch}-snap)
+  record "snapshot {snap_arn}"
+
+stage "Restore"
+  # Safe to re-run: restore only if the scratch cluster does not exist yet.
+  read aws rds describe-db-clusters --db-cluster-identifier {scratch} --output json
+    expect missing = exit 254 and stderr ~ /DBClusterNotFound/
+  when missing
+    mutate aws rds restore-db-cluster-from-snapshot --db-cluster-identifier {scratch} --snapshot-identifier {snap_arn} --engine aurora-postgresql --vpc-security-group-ids {src.security_groups...} --output json
+  rds.await_cluster({scratch}, available)
+
+stage "Verify"
+  rds.cluster({scratch}) as copy
+  assert copy.version == src.version else "{scratch} runs {copy.version}, but {cluster} runs {src.version}."
+  record "restored {scratch}: engine {copy.version}"
+
+stage "Clean up"
+  rds.delete_cluster({scratch})
+  record "deleted {scratch}"

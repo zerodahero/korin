@@ -1,0 +1,164 @@
+========================================
+nested blocks, blank lines and comments
+========================================
+
+korin 1
+title "t"
+gates mutating
+unattended allowed
+
+param a required
+param b secret
+param c = "{a}-x"
+
+stage "one"
+  when not missing and exists x
+    each f in ["a", "b"]
+      note "{f}"
+
+# a comment at column 0
+      warn "still inside each"
+  record "back in the stage"
+stage "two"
+  poll every 10s for 15m
+    read tool
+      capture s = jq .status
+    until s == "done"
+    fail s in ["failed", "deleted"]
+  ask secret pin "PIN?"
+  assert (a or b) and not c > -1.5 else "no"
+  confirm "go on?"
+
+----------------------------------------
+
+(source_file
+  (version
+    (integer))
+  (title
+    (string))
+  (gates)
+  (unattended)
+  (param
+    (identifier))
+  (param
+    (identifier))
+  (param
+    (identifier)
+    (string
+      (interpolation
+        (identifier))))
+  (stage
+    (string)
+    (block
+      (when
+        (and
+          (not
+            (reference
+              (identifier)))
+          (exists
+            (reference
+              (identifier))))
+        (block
+          (each
+            (identifier)
+            (list
+              (string)
+              (string))
+            (block
+              (say
+                (string
+                  (interpolation
+                    (identifier))))
+              (comment)
+              (say
+                (string))))))
+      (say
+        (string))))
+  (stage
+    (string)
+    (block
+      (poll
+        (duration)
+        (duration)
+        (poll_body
+          (command
+            (word)
+            (options
+              (capture
+                (identifier)
+                (capture_mode
+                  (jq_filter)))))
+          (until
+            (comparison
+              (reference
+                (identifier))
+              (string)))
+          (fail
+            (membership
+              (reference
+                (identifier))
+              (list
+                (string)
+                (string))))))
+      (ask
+        (identifier)
+        (string))
+      (assert
+        (and
+          (parenthesized
+            (or
+              (reference
+                (identifier))
+              (reference
+                (identifier))))
+          (not
+            (comparison
+              (reference
+                (identifier))
+              (number))))
+        (string))
+      (confirm
+        (string)))))
+
+========================================
+module with a define
+========================================
+
+use aws
+
+define cluster(id, region)
+  exports status, missing
+  read aws rds describe-db-clusters --db-cluster-identifier {id}
+    expect missing = exit 254
+    capture status = jq .DBClusters[0].Status
+
+----------------------------------------
+
+(source_file
+  (use
+    (identifier))
+  (define
+    (identifier)
+    (identifier)
+    (identifier)
+    (define_body
+      (exports
+        (identifier)
+        (identifier))
+      (command
+        (word)
+        (word)
+        (word)
+        (word)
+        (word
+          (interpolation
+            (identifier)))
+        (options
+          (expect
+            (identifier)
+            (match
+              (integer)))
+          (capture
+            (identifier)
+            (capture_mode
+              (jq_filter))))))))

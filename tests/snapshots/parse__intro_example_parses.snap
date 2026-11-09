@@ -1,0 +1,620 @@
+---
+source: tests/parse.rs
+expression: wizard(&src)
+---
+Wizard {
+    header: Header {
+        version: 1 @ 6..7,
+        title: "RDS snapshot and restore rehearsal" @ 14..50,
+        gates: Mutating,
+        unattended: None,
+        allow: Some(
+            [
+                "aws" @ 121..124,
+            ],
+        ),
+    },
+    uses: [
+        Use {
+            target: Builtin(
+                "aws" @ 189..192,
+            ),
+            alias: None,
+            span: 185..192,
+        },
+        Use {
+            target: Builtin(
+                "rds" @ 197..200,
+            ),
+            alias: None,
+            span: 193..200,
+        },
+        Use {
+            target: Path(
+                "./lib/local.korin" @ 205..224,
+            ),
+            alias: None,
+            span: 201..224,
+        },
+    ],
+    params: [
+        Param {
+            name: "cluster" @ 232..239,
+            kind: Required,
+            span: 226..248,
+        },
+        Param {
+            name: "scratch" @ 255..262,
+            kind: Default(
+                Interpolated {
+                    parts: [
+                        Ref(
+                            Ref {
+                                path: [
+                                    "cluster",
+                                ],
+                                splat: false,
+                                span: 266..275,
+                            },
+                        ),
+                        Lit(
+                            "-rehearsal",
+                        ),
+                    ],
+                    span: 265..286,
+                },
+            ),
+            span: 249..286,
+        },
+        Param {
+            name: "db_password" @ 293..304,
+            kind: Secret,
+            span: 287..311,
+        },
+    ],
+    stages: [
+        Stage {
+            title: "Identity" @ 364..374,
+            steps: [
+                Call(
+                    Call {
+                        module: "aws" @ 377..380,
+                        template: "identity" @ 381..389,
+                        args: [],
+                        alias: Some(
+                            "me" @ 395..397,
+                        ),
+                        span: 377..397,
+                    },
+                ),
+                Confirm {
+                    text: Interpolated {
+                        parts: [
+                            Lit(
+                                "Is ",
+                            ),
+                            Ref(
+                                Ref {
+                                    path: [
+                                        "me",
+                                        "account",
+                                    ],
+                                    splat: false,
+                                    span: 412..424,
+                                },
+                            ),
+                            Lit(
+                                " (",
+                            ),
+                            Ref(
+                                Ref {
+                                    path: [
+                                        "me",
+                                        "arn",
+                                    ],
+                                    splat: false,
+                                    span: 426..434,
+                                },
+                            ),
+                            Lit(
+                                ") the right account?",
+                            ),
+                        ],
+                        span: 408..455,
+                    },
+                    span: 400..455,
+                },
+            ],
+            span: 358..374,
+        },
+        Stage {
+            title: "Source cluster" @ 463..479,
+            steps: [
+                Call(
+                    Call {
+                        module: "rds" @ 482..485,
+                        template: "cluster" @ 486..493,
+                        args: [
+                            Interpolated {
+                                parts: [
+                                    Ref(
+                                        Ref {
+                                            path: [
+                                                "cluster",
+                                            ],
+                                            splat: false,
+                                            span: 494..503,
+                                        },
+                                    ),
+                                ],
+                                span: 494..503,
+                            },
+                        ],
+                        alias: Some(
+                            "src" @ 508..511,
+                        ),
+                        span: 482..511,
+                    },
+                ),
+                Assert {
+                    cond: Cmp(
+                        Eq,
+                        Ref(
+                            Ref {
+                                path: [
+                                    "src",
+                                    "status",
+                                ],
+                                splat: false,
+                                span: 521..531,
+                            },
+                        ),
+                        Str(
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "available",
+                                    ),
+                                ],
+                                span: 535..546,
+                            },
+                        ),
+                    ),
+                    message: Interpolated {
+                        parts: [
+                            Ref(
+                                Ref {
+                                    path: [
+                                        "cluster",
+                                    ],
+                                    splat: false,
+                                    span: 553..562,
+                                },
+                            ),
+                            Lit(
+                                " is ",
+                            ),
+                            Ref(
+                                Ref {
+                                    path: [
+                                        "src",
+                                        "status",
+                                    ],
+                                    splat: false,
+                                    span: 566..578,
+                                },
+                            ),
+                            Lit(
+                                ", not available.",
+                            ),
+                        ],
+                        span: 552..595,
+                    },
+                    span: 514..595,
+                },
+            ],
+            span: 457..479,
+        },
+        Stage {
+            title: "Snapshot" @ 603..613,
+            steps: [
+                Command(
+                    Command {
+                        kind: Mutate,
+                        argv: [
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "aws",
+                                    ),
+                                ],
+                                span: 623..626,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "rds",
+                                    ),
+                                ],
+                                span: 627..630,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "create-db-cluster-snapshot",
+                                    ),
+                                ],
+                                span: 631..657,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "--db-cluster-identifier",
+                                    ),
+                                ],
+                                span: 658..681,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Ref(
+                                        Ref {
+                                            path: [
+                                                "cluster",
+                                            ],
+                                            splat: false,
+                                            span: 682..691,
+                                        },
+                                    ),
+                                ],
+                                span: 682..691,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "--db-cluster-snapshot-identifier",
+                                    ),
+                                ],
+                                span: 692..724,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Ref(
+                                        Ref {
+                                            path: [
+                                                "scratch",
+                                            ],
+                                            splat: false,
+                                            span: 725..734,
+                                        },
+                                    ),
+                                    Lit(
+                                        "-snap",
+                                    ),
+                                ],
+                                span: 725..739,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "--output",
+                                    ),
+                                ],
+                                span: 740..748,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "json",
+                                    ),
+                                ],
+                                span: 749..753,
+                            },
+                        ],
+                        captures: [
+                            Capture {
+                                name: "snap_arn" @ 766..774,
+                                secret: false,
+                                optional: false,
+                                file: None,
+                                mode: Jq(".DBClusterSnapshot.DBClusterSnapshotArn") @ 777..819,
+                                on: None,
+                                span: 758..819,
+                            },
+                        ],
+                        expects: [],
+                        env: [],
+                        timeout: None,
+                        span: 616..753,
+                    },
+                ),
+                Call(
+                    Call {
+                        module: "rds" @ 822..825,
+                        template: "await_snapshot" @ 826..840,
+                        args: [
+                            Interpolated {
+                                parts: [
+                                    Ref(
+                                        Ref {
+                                            path: [
+                                                "scratch",
+                                            ],
+                                            splat: false,
+                                            span: 841..850,
+                                        },
+                                    ),
+                                    Lit(
+                                        "-snap",
+                                    ),
+                                ],
+                                span: 841..855,
+                            },
+                        ],
+                        alias: None,
+                        span: 822..856,
+                    },
+                ),
+            ],
+            span: 597..613,
+        },
+        Stage {
+            title: "Scratch cluster" @ 864..881,
+            steps: [
+                Command(
+                    Command {
+                        kind: Read,
+                        argv: [
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "aws",
+                                    ),
+                                ],
+                                span: 889..892,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "rds",
+                                    ),
+                                ],
+                                span: 893..896,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "describe-db-clusters",
+                                    ),
+                                ],
+                                span: 897..917,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "--db-cluster-identifier",
+                                    ),
+                                ],
+                                span: 918..941,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Ref(
+                                        Ref {
+                                            path: [
+                                                "scratch",
+                                            ],
+                                            splat: false,
+                                            span: 942..951,
+                                        },
+                                    ),
+                                ],
+                                span: 942..951,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "--output",
+                                    ),
+                                ],
+                                span: 952..960,
+                            },
+                            Interpolated {
+                                parts: [
+                                    Lit(
+                                        "json",
+                                    ),
+                                ],
+                                span: 961..965,
+                            },
+                        ],
+                        captures: [],
+                        expects: [
+                            Expect {
+                                name: "missing" @ 977..984,
+                                matches: [
+                                    Exit(254) @ 987..995,
+                                    Stderr("DBClusterNotFound") @ 1000..1028,
+                                ],
+                                span: 970..1028,
+                            },
+                        ],
+                        env: [],
+                        timeout: None,
+                        span: 884..965,
+                    },
+                ),
+                When {
+                    cond: Ref(
+                        Ref {
+                            path: [
+                                "missing",
+                            ],
+                            splat: false,
+                            span: 1036..1043,
+                        },
+                    ),
+                    body: [
+                        Command(
+                            Command {
+                                kind: Mutate,
+                                argv: [
+                                    Interpolated {
+                                        parts: [
+                                            Lit(
+                                                "aws",
+                                            ),
+                                        ],
+                                        span: 1055..1058,
+                                    },
+                                    Interpolated {
+                                        parts: [
+                                            Lit(
+                                                "rds",
+                                            ),
+                                        ],
+                                        span: 1059..1062,
+                                    },
+                                    Interpolated {
+                                        parts: [
+                                            Lit(
+                                                "restore-db-cluster-from-snapshot",
+                                            ),
+                                        ],
+                                        span: 1063..1095,
+                                    },
+                                    Interpolated {
+                                        parts: [
+                                            Lit(
+                                                "...",
+                                            ),
+                                        ],
+                                        span: 1096..1099,
+                                    },
+                                    Interpolated {
+                                        parts: [
+                                            Lit(
+                                                "--snapshot-identifier",
+                                            ),
+                                        ],
+                                        span: 1100..1121,
+                                    },
+                                    Interpolated {
+                                        parts: [
+                                            Ref(
+                                                Ref {
+                                                    path: [
+                                                        "snap_arn",
+                                                    ],
+                                                    splat: false,
+                                                    span: 1122..1132,
+                                                },
+                                            ),
+                                        ],
+                                        span: 1122..1132,
+                                    },
+                                ],
+                                captures: [],
+                                expects: [],
+                                env: [],
+                                timeout: None,
+                                span: 1048..1132,
+                            },
+                        ),
+                    ],
+                    span: 1031..1043,
+                },
+                Each {
+                    var: "sg" @ 1140..1142,
+                    list: Ref(
+                        Ref {
+                            path: [
+                                "src",
+                                "security_groups",
+                            ],
+                            splat: false,
+                            span: 1146..1165,
+                        },
+                    ),
+                    body: [
+                        Command(
+                            Command {
+                                kind: Read,
+                                argv: [
+                                    Interpolated {
+                                        parts: [
+                                            Lit(
+                                                "aws",
+                                            ),
+                                        ],
+                                        span: 1175..1178,
+                                    },
+                                    Interpolated {
+                                        parts: [
+                                            Lit(
+                                                "ec2",
+                                            ),
+                                        ],
+                                        span: 1179..1182,
+                                    },
+                                    Interpolated {
+                                        parts: [
+                                            Lit(
+                                                "describe-security-groups",
+                                            ),
+                                        ],
+                                        span: 1183..1207,
+                                    },
+                                    Interpolated {
+                                        parts: [
+                                            Lit(
+                                                "--group-ids",
+                                            ),
+                                        ],
+                                        span: 1208..1219,
+                                    },
+                                    Interpolated {
+                                        parts: [
+                                            Ref(
+                                                Ref {
+                                                    path: [
+                                                        "sg",
+                                                    ],
+                                                    splat: false,
+                                                    span: 1220..1224,
+                                                },
+                                            ),
+                                        ],
+                                        span: 1220..1224,
+                                    },
+                                    Interpolated {
+                                        parts: [
+                                            Lit(
+                                                "--output",
+                                            ),
+                                        ],
+                                        span: 1225..1233,
+                                    },
+                                    Interpolated {
+                                        parts: [
+                                            Lit(
+                                                "json",
+                                            ),
+                                        ],
+                                        span: 1234..1238,
+                                    },
+                                ],
+                                captures: [],
+                                expects: [],
+                                env: [],
+                                timeout: None,
+                                span: 1170..1238,
+                            },
+                        ),
+                    ],
+                    span: 1135..1165,
+                },
+            ],
+            span: 858..881,
+        },
+    ],
+}

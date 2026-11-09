@@ -1,0 +1,15 @@
+---
+source: tests/run.rs
+expression: json
+---
+[
+  {
+    "code": "allow",
+    "column": 8,
+    "file": "w.korin",
+    "help": "add it to the `allow` header, or run a different program",
+    "line": 5,
+    "message": "`aws` is not in the `allow` list",
+    "severity": "error"
+  }
+]

@@ -1,0 +1,13 @@
+---
+source: tests/parse.rs
+expression: "errors(&with_header(concat!(\"stage \\\"s\\\"\\n\", \"  frobnicate x\\n\", \"  read\\n\",\n\"  read x\\n\", \"    capture = jq .x\\n\", \"    retry 3\\n\",\n\"  assert x == \\\"y\\\"\\n\", \"  poll every 30s for 2h\\n\", \"    read x\\n\",\n\"  read \\\"unterminated\\n\", \"  note \\\"{bad name}\\\"\\n\",\n\"  capture y = text\\n\",)))"
+---
+test.korin:4:3: unknown-step: unknown step `frobnicate`
+test.korin:5:7: syntax: expected a command
+test.korin:7:13: syntax: expected a capture name
+test.korin:8:5: syntax: expected a command option: `capture`, `expect`, `env` or `timeout`
+test.korin:9:18: syntax: expected `else`
+test.korin:10:3: syntax: the poll has no `until` condition
+test.korin:12:8: syntax: this string is not closed
+test.korin:13:9: syntax: invalid interpolation
+test.korin:14:3: misplaced: `capture` is an option and belongs indented under a command

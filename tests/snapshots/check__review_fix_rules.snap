@@ -1,0 +1,9 @@
+---
+source: tests/check.rs
+expression: "check(&[(\"main.korin\",\nconcat!(\"korin 1\\ntitle \\\"t\\\"\\n\", \"use \\\"./lib/m.korin\\\"\\n\",\n\"param pw secret\\n\", \"param conn = \\\"postgres://app:{pw}@db\\\"\\n\",\n\"stage \\\"a\\\"\\n\", \"  interactive psql {conn}\\n\", \"  poll every 1s for 5s\\n\",\n\"    mutate tool restart\\n\", \"    confirm \\\"again?\\\"\\n\",\n\"    read tool status\\n\", \"      capture s = text\\n\",\n\"    until s == \\\"ok\\\"\\n\", \"  read tool\\n\",\n\"    capture secret t = file {korin.out}/../escape text\\n\",\n\"  m.show({korin.out})\\n\",),),\n(\"lib/m.korin\", \"define show(p)\\n  note \\\"path {p}\\\"\\n\"),])"
+---
+error main.korin:7:20: secret: secret `conn` cannot appear in an `interactive` command, whose screen korin cannot redact
+error main.korin:9:5: poll: a `poll` repeats reads only, so it cannot contain `mutate`
+error main.korin:10:5: poll: a `poll` repeats reads only, so it cannot contain `confirm`
+error main.korin:15:29: secret: a secret file capture must read from inside `{korin.out}`
+error ./lib/m.korin:2:14: name: `p` holds `{korin.out}`, which can be used only in a command, an `env` value or a file path

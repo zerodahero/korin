@@ -1,0 +1,6 @@
+---
+source: tests/check.rs
+expression: "wizard(concat!(\"stage \\\"a\\\"\\n\", \"  read tool\\n\", \"    expect gone = exit 3\\n\",\n\"    capture why = text on gone\\n\", \"    capture maybe? = jq .x\\n\",\n\"  note \\\"{why}\\\"\\n\", \"  when gone\\n\", \"    note \\\"{why}\\\"\\n\",\n\"  when not gone\\n\", \"    note \\\"{maybe}\\\"\\n\", \"    when exists maybe\\n\",\n\"      note \\\"{maybe}\\\"\\n\",))"
+---
+error main.korin:8:9: guard: `why` exists only when `expect gone` matched
+error main.korin:12:11: guard: `maybe` is optional and may be absent
