@@ -1,0 +1,49 @@
+<pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Restart the shop</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">2 stages</span>
+<span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run restart.korin
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Before</span>
+
+  <span class="k-fg-dim">1.1.1</span> <span class="k-blue k-bold">❯</span> kubectl get deployment web -n <span class="k-cyan">shop</span> -o json
+      <span class="k-border">│</span> {
+      <span class="k-border">│</span>   "metadata": {"name": "web", "namespace": "shop"},
+      <span class="k-border">│</span>   "spec": {
+      <span class="k-border">│</span>     "replicas": 3,
+      <span class="k-border">│</span>     "template": {"spec": {"containers": [{"name": "web", "image": "registry.example.com/web:
+2.3.1"}]}}
+      <span class="k-border">│</span>   },
+      <span class="k-border">│</span>   "status": {
+      <span class="k-border">│</span>     "readyReplicas": 3,
+      <span class="k-border">│</span>     "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
+      <span class="k-border">│</span>   }
+      <span class="k-border">│</span> }
+
+  <span class="k-fg-dim">1.2.1</span> <span class="k-blue k-bold">❯</span> kubectl get deployment api -n <span class="k-cyan">shop</span> -o json
+      <span class="k-border">│</span> {
+      <span class="k-border">│</span>   "metadata": {"name": "api", "namespace": "shop"},
+      <span class="k-border">│</span>   "spec": {
+      <span class="k-border">│</span>     "replicas": 2,
+      <span class="k-border">│</span>     "template": {"spec": {"containers": [{"name": "api", "image": "registry.example.com/api:
+2.3.1"}]}}
+      <span class="k-border">│</span>   },
+      <span class="k-border">│</span>   "status": {
+      <span class="k-border">│</span>     "readyReplicas": 2,
+      <span class="k-border">│</span>     "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
+      <span class="k-border">│</span>   }
+      <span class="k-border">│</span> }
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Restart</span>
+
+  <span class="k-fg-dim">2.1.1</span> <span class="k-blue k-bold">❯</span> kubectl rollout restart deployment/web -n <span class="k-cyan">shop</span>
+      <span class="k-border">│</span> deployment.apps/web restarted
+
+  <span class="k-fg-dim">2.1.2</span> <span class="k-blue k-bold">❯</span> kubectl rollout status deployment/web -n <span class="k-cyan">shop</span> --timeout 5m
+      <span class="k-border">│</span> deployment "web" successfully rolled out
+
+  <span class="k-fg-dim">2.2.1</span> <span class="k-blue k-bold">❯</span> kubectl rollout restart deployment/api -n <span class="k-cyan">shop</span>
+      <span class="k-border">│</span> deployment.apps/api restarted
+
+  <span class="k-fg-dim">2.2.2</span> <span class="k-blue k-bold">❯</span> kubectl rollout status deployment/api -n <span class="k-cyan">shop</span> --timeout 5m
+      <span class="k-border">│</span> deployment "api" successfully rolled out
+
+<span class="k-green k-bold">✓</span> <span class="k-bold">Restart the shop completed</span>
+  <span class="k-fg-dim">journal: /home/ada/project/.korin/runs/20260115T100000Z-restart-the-shop</span></code></pre>

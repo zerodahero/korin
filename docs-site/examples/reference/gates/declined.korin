@@ -1,0 +1,12 @@
+korin 1
+title "Drain a node"
+
+param node required
+
+stage "Pods on the node"
+  read kubectl get pods --all-namespaces --field-selector spec.nodeName={node} -o name
+    capture pods = lines
+  note "{node} runs pods that will move."
+
+stage "Drain"
+  mutate kubectl drain {node} --ignore-daemonsets --delete-emptydir-data

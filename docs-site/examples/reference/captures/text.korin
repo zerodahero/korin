@@ -1,0 +1,14 @@
+korin 1
+title "Describe this checkout"
+allow git, kubectl
+
+stage "Checkout"
+  read git rev-parse --short HEAD
+    capture commit = text
+  read git tag --list v*
+    capture tags = lines
+  read kubectl version --client
+    capture client = regex /Client Version: v(\S+)/
+  note "Commit {commit}, kubectl {client}."
+  each tag in tags
+    note "Tag {tag}"

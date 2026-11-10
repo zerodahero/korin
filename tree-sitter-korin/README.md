@@ -37,6 +37,7 @@ mirror.
 
 ## Neovim
 
+<!-- --8<-- [start:neovim] -->
 This uses the `main` branch of nvim-treesitter.
 
 ```lua
@@ -60,9 +61,11 @@ vim.api.nvim_create_autocmd('User', {
 
 Then run `:TSInstall korin`. The jq and regex injections need the `jq` and `regex`
 parsers too.
+<!-- --8<-- [end:neovim] -->
 
 ## Helix
 
+<!-- --8<-- [start:helix] -->
 Add this to `languages.toml`:
 
 ```toml
@@ -80,6 +83,7 @@ source = { git = "https://github.com/zerodahero/tree-sitter-korin", rev = "<comm
 
 Then run `hx --grammar fetch` and `hx --grammar build`. Copy `queries/` to
 `~/.config/helix/runtime/queries/korin/`.
+<!-- --8<-- [end:helix] -->
 
 ## Changing the grammar
 

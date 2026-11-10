@@ -1,0 +1,16 @@
+korin 1
+title "Delete merged branches"
+
+param base = "main"
+
+stage "Find merged branches"
+  read git branch --merged {base} --format=%(refname:short)
+    capture merged = lines
+  each branch in merged
+    when branch != base
+      note "{branch} is merged into {base}."
+
+stage "Delete them"
+  each branch in merged
+    when branch != base
+      mutate git branch --delete {branch}

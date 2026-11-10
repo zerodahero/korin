@@ -1,0 +1,3 @@
+fakes = true
+params = { version = "2.4.0" }
+answers = ["y", "y", "y"]

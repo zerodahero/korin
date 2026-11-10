@@ -1,0 +1,12 @@
+korin 1
+title "Find the owner of a service"
+
+param service required
+
+stage "Owner"
+  read kubectl get service {service} -n shop -o json
+    capture owner? = jq .metadata.annotations["example.com/owner"]
+  when exists owner
+    note "{service} belongs to {owner}."
+  when not exists owner
+    warn "{service} has no owner annotation."

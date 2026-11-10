@@ -1,0 +1,7 @@
+place = "tutorial"
+cwd = "tutorial/work"
+run_as = "release.korin"
+wizard = "release-1.korin"
+setup = "sh setup.sh && echo 'total = 1' >> work/cart.txt"
+answers = ["y"]
+exit = 1

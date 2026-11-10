@@ -1,0 +1,9 @@
+<pre class="k-term"><code><span class="k-red k-bold">korin::guard</span>
+
+  <span class="k-red k-bold">×</span> `url` exists only when no `expect` of its step matched
+   ╭─[<span class="k-blue k-bold">unguarded.korin:8:30</span>]
+ <span class="k-fg-dim">7</span> │     capture url = jq .url
+ <span class="k-fg-dim">8</span> │   note "Already published at {url}."
+   ·                              <span class="k-red k-bold">─────</span>
+   ╰────
+  <span class="k-fg-dim">help:</span> use it inside `when not missing`</code></pre>

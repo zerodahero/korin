@@ -1,0 +1,13 @@
+korin 1
+title "Release the shop"
+
+# --8<-- [start:stage]
+stage "Check the working tree"
+  read git branch --show-current
+    capture branch = text
+  assert branch == "main" else "Releases come from main, but this is {branch}."
+  read git status --porcelain
+    capture changes = text
+  assert changes == "" else "Commit or stash these changes first:\n{changes}"
+  note "On main, with a clean working tree."
+# --8<-- [end:stage]

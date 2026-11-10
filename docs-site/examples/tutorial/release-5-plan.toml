@@ -1,0 +1,6 @@
+place = "tutorial"
+cwd = "tutorial/work"
+run_as = "release.korin"
+wizard = "release-5.korin"
+command = "plan"
+setup = "sh setup.sh"

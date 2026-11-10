@@ -1,0 +1,11 @@
+<pre class="k-term"><code><span class="k-red k-bold">korin::from</span>
+
+  <span class="k-red k-bold">×</span> cannot start at stage 4: `tag.untagged` comes from skipped stage 3 "Is it released?"
+    ╭─[<span class="k-blue k-bold">../release.korin:44:8</span>]
+ <span class="k-fg-dim">43</span> │ stage "Release"
+ <span class="k-fg-dim">44</span> │   when tag.untagged
+    ·        <span class="k-red k-bold">──────┬─────</span>
+    ·              <span class="k-red k-bold">╰── used here</span>
+ <span class="k-fg-dim">45</span> │     mutate git tag --annotate {version} --message "Release {version}"
+    ╰────
+  <span class="k-fg-dim">help:</span> start at stage 3 or earlier</code></pre>

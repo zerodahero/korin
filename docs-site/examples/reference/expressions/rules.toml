@@ -1,0 +1,3 @@
+fakes = true
+params = { env = "production" }
+answers = ["y"]

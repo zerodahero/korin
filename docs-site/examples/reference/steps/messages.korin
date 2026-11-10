@@ -1,0 +1,13 @@
+korin 1
+title "Check the last release"
+
+param tag = "v2.3.0"
+
+stage "Release"
+  read gh release view {tag} --json publishedAt,assets
+    capture published = jq .publishedAt
+    capture assets    = jq .assets | length
+  note "{tag} was published at {published}."
+  when assets < 1
+    warn "{tag} has no downloadable assets."
+  record "checked {tag}: published {published}, {assets} assets"

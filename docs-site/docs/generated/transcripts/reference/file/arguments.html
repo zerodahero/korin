@@ -1,0 +1,11 @@
+<pre class="k-term"><code>How arguments are built
+params: name = <span class="k-green">"Ada Lovelace"</span>, namespace = <span class="k-green">"shop"</span>
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Arguments</span>  <span class="k-fg-dim">[mutating, gate; valid --from start]</span>
+  <span class="k-fg-dim">1.1</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> git log --author <span class="k-cyan">&lt;name&gt;</span> --oneline -5
+  <span class="k-fg-dim">1.2</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> kubectl get pods --namespace=<span class="k-cyan">&lt;namespace&gt;</span>
+  <span class="k-fg-dim">1.3</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> git log --grep 'fix: retry' --oneline
+  <span class="k-fg-dim">1.4</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> kubectl get deployment web -n <span class="k-cyan">&lt;namespace&gt;</span> -o 'jsonpath={.spec.replicas}'
+  <span class="k-fg-dim">1.5</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> kubectl get pods -n <span class="k-cyan">&lt;namespace&gt;</span> -o name
+        <span class="k-border">→</span> <span class="k-teal">pods [list]</span>
+  <span class="k-fg-dim">1.6</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> kubectl delete -n <span class="k-cyan">&lt;namespace&gt; &lt;pods ← 1.5&gt;</span>...</code></pre>

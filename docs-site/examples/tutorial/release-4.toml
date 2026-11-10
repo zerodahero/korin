@@ -1,0 +1,7 @@
+place = "tutorial"
+cwd = "tutorial/work"
+run_as = "release.korin"
+setup = "sh setup.sh"
+answers = ["v0.2.0", "y", "y"]
+snapshots = [2]
+journal = true

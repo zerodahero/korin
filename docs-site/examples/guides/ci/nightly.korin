@@ -1,0 +1,16 @@
+korin 1
+title "Nightly: prune old preview environments"
+gates mutating
+# This wizard may run with no one watching. It cannot use `confirm` or `interactive`.
+unattended allowed
+allow kubectl
+
+stage "Find stale previews"
+  read kubectl get namespaces -l preview=true -o json
+    capture stale = jq list .items[] | select(.metadata.annotations["example.com/age-days"] | tonumber > 7) | .metadata.name
+  each namespace in stale
+    note "{namespace} is more than 7 days old."
+
+stage "Delete them"
+  each namespace in stale
+    mutate kubectl delete namespace {namespace} --wait=false

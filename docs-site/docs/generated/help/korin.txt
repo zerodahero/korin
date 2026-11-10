@@ -1,0 +1,16 @@
+A guided runbook language: every command is shown before it runs
+
+Usage: korin [OPTIONS] <COMMAND>
+
+Commands:
+  check    Parse and check a wizard without running anything
+  plan     Print every stage and command, with placeholders for values not yet known
+  run      Run a wizard. Each stage is shown, and approved at its gate, before it runs
+  fmt      Format wizard and module files in place
+  modules  List the built-in modules and their templates
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+      --color <COLOR>  When to use color: `auto` colors a terminal unless `NO_COLOR` is set [default: auto] [possible values: auto, always, never]
+  -h, --help           Print help
+  -V, --version        Print version

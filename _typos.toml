@@ -1,0 +1,3 @@
+[files]
+# Written by tools: terminal transcripts wrap mid-word, and the lock file holds hashes.
+extend-exclude = ["docs-site/docs/generated/", "docs-site/uv.lock"]

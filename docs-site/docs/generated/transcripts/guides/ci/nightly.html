@@ -1,0 +1,35 @@
+<pre class="k-term"><code>╭─ korin ─ Nightly: prune old preview environments ─ ~/project ─ 2 stages
+╰─❯ korin run nightly.korin --yes
+
+▸ Stage 1/2 · Find stale previews
+  1.1  read ❯ kubectl get namespaces -l preview=true -o json
+        → stale [list]
+  1.2  each namespace in stale
+    1.2.1  note "&lt;namespace ← 1.2&gt; is more than 7 days old."
+
+  1.1 ❯ kubectl get namespaces -l preview=true -o json
+      │ {
+      │   "items": [
+      │     {"metadata": {"name": "preview-51", "annotations": {"example.com/age-days": "12"}}},
+      │     {"metadata": {"name": "preview-57", "annotations": {"example.com/age-days": "2"}}},
+      │     {"metadata": {"name": "preview-60", "annotations": {"example.com/age-days": "9"}}}
+      │   ]
+      │ }
+
+  preview-51 is more than 7 days old.
+
+  preview-60 is more than 7 days old.
+
+▸ Stage 2/2 · Delete them
+  2.1  each namespace in stale
+    2.1.1  mutate ❯ kubectl delete namespace &lt;namespace ← 2.1&gt; --wait=false
+  approved by --yes
+
+  2.1.1 ❯ kubectl delete namespace preview-51 --wait=false
+      │ namespace "preview-51" deleted
+
+  2.1.1 ❯ kubectl delete namespace preview-60 --wait=false
+      │ namespace "preview-60" deleted
+
+✓ Nightly: prune old preview environments completed
+  journal: /home/ada/project/.korin/runs/20260115T100000Z-nightly-prune-old-preview-environments</code></pre>

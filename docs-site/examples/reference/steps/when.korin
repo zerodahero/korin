@@ -1,0 +1,12 @@
+korin 1
+title "Clean up a preview environment"
+
+param pr required
+
+stage "Preview"
+  read gh pr view {pr} --json state
+    capture state = jq .state
+  when state in ["MERGED", "CLOSED"]
+    mutate kubectl delete namespace preview-{pr}
+  when state == "OPEN"
+    note "PR {pr} is still open; its preview stays."

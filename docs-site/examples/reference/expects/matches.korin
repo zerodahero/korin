@@ -1,0 +1,16 @@
+korin 1
+title "Kinds of match"
+
+stage "Matches"
+  # exit: the exit code, or `exit != 0` for any failure.
+  read kubectl get namespace staging
+    expect absent = exit 1 and stderr ~ /NotFound/
+  # stdout: a regex over standard output. The step succeeds even with exit 0.
+  read curl --silent https://status.example.com/api/v2/status.json
+    expect degraded = stdout ~ /"indicator":"(minor|major|critical)"/
+  # signal: the program died from a signal korin did not send.
+  script read ./scripts/load-test.sh
+    expect interrupted = signal INT
+  # missing: the program did not write this file, or left an old one unchanged.
+  read terraform plan -out tfplan
+    expect no_plan = missing tfplan

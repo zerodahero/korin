@@ -1,0 +1,18 @@
+# Templates for releasing from a git repository.
+
+# Stops unless the working tree is clean and on `branch`.
+define clean_branch(branch)
+  read git branch --show-current
+    capture current = text
+  assert current == branch else "Releases come from {branch}, but this is {current}."
+  read git status --porcelain
+    capture changes = text
+  assert changes == "" else "Commit or stash these changes first:\n{changes}"
+
+# Whether `tag` exists here (`untagged` when not) and on `remote` (`unpushed` when not).
+define tag_state(remote, tag)
+  exports untagged, unpushed
+  read git rev-parse --quiet --verify refs/tags/{tag}
+    expect untagged = exit 1
+  read git ls-remote --exit-code --tags {remote} refs/tags/{tag}
+    expect unpushed = exit 2

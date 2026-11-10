@@ -1,0 +1,58 @@
+#!/bin/sh
+# A stand-in for the GitHub CLI, for the docs examples. It prints canned output for the exact
+# commands the examples run, and fails on anything else.
+
+case "$*" in
+"pr view 42 --json state,mergeable")
+    echo '{"mergeable":"CONFLICTING","state":"OPEN"}'
+    ;;
+"pr view 42 --json title,author,labels,files")
+    cat <<'JSON'
+{
+  "author": {"login": "grace"},
+  "files": [{"path": "src/cart.rs"}, {"path": "src/checkout.rs"}],
+  "labels": [{"name": "bug"}, {"name": "checkout"}],
+  "title": "Keep the cart when a payment fails"
+}
+JSON
+    ;;
+"pr view 57 --json state")
+    echo '{"state":"MERGED"}'
+    ;;
+"pr checks 42 --json name,state")
+    echo '[{"name":"build","state":"SUCCESS"},{"name":"test (linux)","state":"PENDING"},{"name":"test (macos)","state":"PENDING"}]'
+    # gh exits 8 while checks are pending.
+    exit 8
+    ;;
+"release view v2.3.0 --json publishedAt,assets")
+    echo '{"assets":[],"publishedAt":"2026-01-12T16:20:00Z"}'
+    ;;
+"release view v2.4.0")
+    echo "release not found" >&2
+    exit 1
+    ;;
+"release create v2.4.0 --generate-notes")
+    echo "https://github.com/example/shop/releases/tag/v2.4.0"
+    ;;
+"workflow run deploy.yml --ref main -f environment=production")
+    [ -n "${GH_TOKEN:-}" ] || {
+        echo "gh: To use GitHub CLI in automation, set the GH_TOKEN environment variable." >&2
+        exit 4
+    }
+    echo "✓ Created workflow_dispatch event for deploy.yml at main"
+    ;;
+"api user --jq .login")
+    [ -n "${GH_TOKEN:-}" ] || {
+        echo "gh: To use GitHub CLI in automation, set the GH_TOKEN environment variable." >&2
+        exit 4
+    }
+    echo "ada"
+    ;;
+"release edit v2.4.0 --notes "*)
+    echo "https://github.com/example/shop/releases/tag/v2.4.0"
+    ;;
+*)
+    echo "gh (docs fake): no canned output for: $*" >&2
+    exit 2
+    ;;
+esac

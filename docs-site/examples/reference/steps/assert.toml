@@ -1,0 +1,4 @@
+fakes = true
+params = { pr = "42" }
+answers = ["y"]
+exit = 1

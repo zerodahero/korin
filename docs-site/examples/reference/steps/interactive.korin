@@ -1,0 +1,10 @@
+korin 1
+title "Write the release notes"
+allow git, nvim
+
+param since = "v1.4.0"
+
+stage "Draft"
+  read git log --oneline {since}..HEAD
+  interactive nvim RELEASE-NOTES.md
+  read git diff --stat -- RELEASE-NOTES.md

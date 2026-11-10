@@ -1,0 +1,52 @@
+<pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Release the shop</span> <span class="k-border">─</span> <span class="k-cyan">~/tutorial/work</span> <span class="k-border">─</span> <span class="k-fg-dim">4 stages</span>
+<span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run ../release.korin
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 1/4</span> <span class="k-border">·</span> <span class="k-bold">Check the working tree</span>
+
+  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> git branch --show-current
+      <span class="k-border">│</span> main
+
+  <span class="k-fg-dim">1.3</span> <span class="k-blue k-bold">❯</span> git status --porcelain
+
+  On main, with a clean working tree.
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 2/4</span> <span class="k-border">·</span> <span class="k-bold">Choose the version</span>
+
+  <span class="k-fg-dim">2.1</span> <span class="k-blue k-bold">❯</span> git ls-remote --tags --refs --sort=-version:refname <span class="k-cyan">origin</span>
+      <span class="k-border">│</span> 89c5a47ca11ea20ec8e5ad20036318a256cc3255        refs/tags/v0.1.0
+
+  <span class="k-fg-dim">2.2</span> <span class="k-blue k-bold">❯</span> git rev-list --count <span class="k-cyan">v0.1.0</span>..HEAD
+      <span class="k-border">│</span> 2
+
+  <span class="k-fg-dim">2.4</span> <span class="k-blue k-bold">❯</span> git log --oneline <span class="k-cyan">v0.1.0</span>..HEAD
+      <span class="k-border">│</span> aeb8b5d fix: show the cart total
+      <span class="k-border">│</span> 3f88576 feat: add a cart
+
+  aeb8b5d fix: show the cart total
+
+  3f88576 feat: add a cart
+
+  <span class="k-fg-dim">2.6</span> <span class="k-blue k-bold">❯</span> git rev-parse --short HEAD
+      <span class="k-border">│</span> aeb8b5d
+  Version to release after v0.1.0?
+  <span class="k-magenta">?</span> <span class="k-bold">version:</span> v0.2.0
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 3/4</span> <span class="k-border">·</span> <span class="k-bold">Is it released?</span>
+
+  <span class="k-fg-dim">3.1</span> <span class="k-blue k-bold">❯</span> git rev-parse --quiet --verify refs/tags/<span class="k-cyan">v0.2.0</span>
+    <span class="k-fg-dim">expect:</span> <span class="k-teal">untagged</span>
+
+  <span class="k-fg-dim">3.2</span> <span class="k-blue k-bold">❯</span> git ls-remote --exit-code --tags <span class="k-cyan">origin</span> refs/tags/<span class="k-cyan">v0.2.0</span>
+    <span class="k-fg-dim">expect:</span> <span class="k-teal">unpushed</span>
+
+  v0.2.0 is not tagged yet.
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 4/4</span> <span class="k-border">·</span> <span class="k-bold">Release</span>
+  <span class="k-fg-dim">4.1</span>  <span class="k-blue">when</span> untagged
+    <span class="k-fg-dim">4.1.1</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> git tag --annotate <span class="k-cyan">v0.2.0</span> --message 'Release <span class="k-cyan">v0.2.0</span>'
+    <span class="k-fg-dim">4.1.2</span>  <span class="k-blue">record</span> <span class="k-green">"tagged v0.2.0 at aeb8b5d"</span>
+  <span class="k-fg-dim">4.2</span>  <span class="k-blue">when</span> unpushed
+    <span class="k-fg-dim">4.2.1</span>  <span class="k-blue">confirm</span> <span class="k-green">"Push v0.2.0 to origin? Anyone who fetches will see it."</span>
+    <span class="k-fg-dim">4.2.2</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> git push <span class="k-cyan">origin v0.2.0</span>
+    <span class="k-fg-dim">4.2.3</span>  <span class="k-blue">record</span> <span class="k-green">"pushed v0.2.0 to origin"</span>
+  <span class="k-magenta">?</span> <span class="k-bold">Run stage 4?</span> <span class="k-fg-dim">[y/N]</span></code></pre>

@@ -37,7 +37,7 @@ pub enum Extract {
 }
 
 /// Extracts a value from `input` according to `mode`. See the result-case table in
-/// `docs/language.md`.
+/// `docs-site/docs/reference/captures.md`.
 pub fn extract(mode: &CaptureMode, input: &[u8], optional: bool) -> Extract {
     let Ok(text) = std::str::from_utf8(input) else {
         return Extract::Fail("the output is not valid UTF-8".into());

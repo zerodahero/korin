@@ -1,0 +1,3 @@
+fakes = true
+answers = ["y", "y"]
+snapshots = [2]

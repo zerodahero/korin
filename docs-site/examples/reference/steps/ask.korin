@@ -1,0 +1,7 @@
+korin 1
+title "Tag a hotfix"
+
+stage "Ticket"
+  ask ticket "Change ticket for this hotfix?"
+  assert ticket ~ /^OPS-[0-9]+$/ else "{ticket} is not a ticket ID like OPS-123."
+  note "Recording the hotfix under {ticket}."

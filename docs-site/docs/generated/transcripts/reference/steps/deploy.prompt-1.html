@@ -1,0 +1,8 @@
+<pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Restart the web deployment</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">1 stage</span>
+<span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run deploy.korin
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Restart</span>
+  <span class="k-fg-dim">1.1</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> kubectl get deployment web -n <span class="k-cyan">shop</span>
+  <span class="k-fg-dim">1.2</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> kubectl rollout restart deployment/web -n <span class="k-cyan">shop</span>
+  <span class="k-fg-dim">1.3</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> kubectl rollout status deployment/web -n <span class="k-cyan">shop</span> --timeout 2m
+  <span class="k-magenta">?</span> <span class="k-bold">Run stage 1?</span> <span class="k-fg-dim">[y/N]</span></code></pre>

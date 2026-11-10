@@ -1,0 +1,11 @@
+# A repository with two merged branches and one that is not merged.
+setup = """
+git init --quiet --initial-branch=main repo && cd repo &&
+git commit --quiet --allow-empty --message start &&
+git branch fix-typo && git branch add-logo &&
+git switch --quiet --create wip && git commit --quiet --allow-empty --message wip &&
+git switch --quiet main
+"""
+cwd = "project/repo"
+answers = ["y", "y"]
+snapshots = [2]

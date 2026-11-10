@@ -1,0 +1,12 @@
+Parse and check a wizard without running anything
+
+Usage: korin check [OPTIONS] <FILE>
+
+Arguments:
+  <FILE>  The wizard file
+
+Options:
+      --color <COLOR>    When to use color: `auto` colors a terminal unless `NO_COLOR` is set [default: auto] [possible values: auto, always, never]
+      --format <FORMAT>  Output format for diagnostics [default: human] [possible values: human, json]
+      --from <FROM>      Also check that the run can start at this stage (title or number)
+  -h, --help             Print help

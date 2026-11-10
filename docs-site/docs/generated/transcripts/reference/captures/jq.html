@@ -1,0 +1,23 @@
+<pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Summarize a pull request</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">1 stage</span>
+<span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run jq.korin --param pr=42
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Pull request</span>
+
+  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> gh pr view <span class="k-cyan">42</span> --json title,author,labels,files
+      <span class="k-border">│</span> {
+      <span class="k-border">│</span>   "author": {"login": "grace"},
+      <span class="k-border">│</span>   "files": [{"path": "src/cart.rs"}, {"path": "src/checkout.rs"}],
+      <span class="k-border">│</span>   "labels": [{"name": "bug"}, {"name": "checkout"}],
+      <span class="k-border">│</span>   "title": "Keep the cart when a payment fails"
+      <span class="k-border">│</span> }
+
+  #42 by grace: Keep the cart when a payment fails
+
+  Files: [<span class="k-green">"src/cart.rs"</span>,<span class="k-green">"src/checkout.rs"</span>]
+
+  Label: bug
+
+  Label: checkout
+
+<span class="k-green k-bold">✓</span> <span class="k-bold">Summarize a pull request completed</span>
+  <span class="k-fg-dim">journal: /home/ada/project/.korin/runs/20260115T100000Z-summarize-a-pull-request</span></code></pre>

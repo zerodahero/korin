@@ -1,0 +1,19 @@
+korin 1
+title "How arguments are built"
+
+param name = "Ada Lovelace"
+param namespace = "shop"
+
+stage "Arguments"
+  # One argument, even with a space inside: "Ada Lovelace".
+  read git log --author {name} --oneline -5
+  # Text around a reference stays in the same argument: "--namespace=shop".
+  read kubectl get pods --namespace={namespace}
+  # Double quotes make one argument from several words.
+  read git log --grep "fix: retry" --oneline
+  # A backslash keeps a brace literal, so kubectl gets "jsonpath={.spec.replicas}".
+  read kubectl get deployment web -n {namespace} -o jsonpath=\{.spec.replicas\}
+  read kubectl get pods -n {namespace} -o name
+    capture pods = lines
+  # {pods...} gives one argument per item.
+  mutate kubectl delete -n {namespace} {pods...}

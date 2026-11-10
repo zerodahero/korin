@@ -1,3 +1,16 @@
 [global]
 # Prose wraps where it reads best; code blocks and tables often cannot wrap at all.
 disable = ["MD013"]
+# Written by tools: git-cliff writes the changelog, and tests/docs.rs writes generated/.
+exclude = ["CHANGELOG.md", "docs-site/docs/generated/**"]
+# hk passes files by name; apply the exclusions to them too.
+force_exclude = true
+
+# The docs site uses Zensical (MkDocs) syntax: admonitions, content tabs and snippets, whose
+# bodies are indented.
+[per-file-flavor]
+"docs-site/docs/**/*.md" = "mkdocs"
+
+[per-file-ignores]
+# The page is a single snippet that includes CHANGELOG.md, heading and all.
+"docs-site/docs/changelog.md" = ["MD041"]

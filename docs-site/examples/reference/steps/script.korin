@@ -1,0 +1,9 @@
+korin 1
+title "Rotate the app logs"
+
+param logs = "/var/log/app"
+
+stage "Rotate"
+  # Relative paths resolve against this file's directory, so helpers ship beside it.
+  script read ./scripts/log-size.sh {logs}
+  script mutate ./scripts/rotate-logs.sh {logs}

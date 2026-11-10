@@ -1,0 +1,12 @@
+<pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Find the owner of a service</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">1 stage</span>
+<span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run optional.korin --param service=checkout
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Owner</span>
+
+  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> kubectl get service <span class="k-cyan">checkout</span> -n shop -o json
+      <span class="k-border">│</span> {"metadata": {"name": "checkout", "annotations": {}}, "spec": {"type": "ClusterIP"}}
+
+  <span class="k-magenta">⚠ checkout has no owner annotation.</span>
+
+<span class="k-green k-bold">✓</span> <span class="k-bold">Find the owner of a service completed</span>
+  <span class="k-fg-dim">journal: /home/ada/project/.korin/runs/20260115T100000Z-find-the-owner-of-a-service</span></code></pre>

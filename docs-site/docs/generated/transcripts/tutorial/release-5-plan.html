@@ -1,0 +1,52 @@
+<pre class="k-term"><code>Release the shop
+params: remote = <span class="k-green">"origin"</span>, branch = <span class="k-green">"main"</span>
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 1/4</span> <span class="k-border">·</span> <span class="k-bold">Check the working tree</span>  <span class="k-fg-dim">[read-only, no gate; valid --from start]</span>
+  <span class="k-fg-dim">1.1</span>  git.clean_branch({branch})
+    <span class="k-fg-dim">1.1.1</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> git branch --show-current
+          <span class="k-border">→</span> <span class="k-teal">$call1$current</span>
+    <span class="k-fg-dim">1.1.2</span>  <span class="k-blue">assert</span> $call1$current == <span class="k-green">"&lt;branch&gt;"</span> else <span class="k-green">"Releases come from &lt;branch&gt;, but this is &lt;$call</span>
+<span class="k-green">1$current ← 1.1.1&gt;."</span>
+    <span class="k-fg-dim">1.1.3</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> git status --porcelain
+          <span class="k-border">→</span> <span class="k-teal">$call1$changes</span>
+    <span class="k-fg-dim">1.1.4</span>  <span class="k-blue">assert</span> $call1$changes == <span class="k-green">""</span> else "Commit or stash these changes first:
+&lt;$call1$changes ← 1.1.3&gt;"
+  <span class="k-fg-dim">1.2</span>  <span class="k-blue">note</span> <span class="k-green">"On &lt;branch&gt;, with a clean working tree."</span>
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 2/4</span> <span class="k-border">·</span> <span class="k-bold">Choose the version</span>  <span class="k-fg-dim">[read-only, no gate; valid --from start]</span>
+  <span class="k-fg-dim">2.1</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> git ls-remote --tags --refs --sort=-version:refname <span class="k-cyan">&lt;remote&gt;</span>
+        <span class="k-border">→</span> <span class="k-teal">last</span>
+  <span class="k-fg-dim">2.2</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> git rev-list --count <span class="k-cyan">&lt;last ← 2.1&gt;</span>..HEAD
+        <span class="k-border">→</span> <span class="k-teal">ahead</span>
+  <span class="k-fg-dim">2.3</span>  <span class="k-blue">assert</span> ahead &gt; 0 else <span class="k-green">"Nothing to release: HEAD is &lt;last ← 2.1&gt;."</span>
+  <span class="k-fg-dim">2.4</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> git log --oneline <span class="k-cyan">&lt;last ← 2.1&gt;</span>..HEAD
+        <span class="k-border">→</span> <span class="k-teal">commits [list]</span>
+  <span class="k-fg-dim">2.5</span>  <span class="k-blue">each</span> commit in commits
+    <span class="k-fg-dim">2.5.1</span>  <span class="k-blue">note</span> <span class="k-green">"&lt;commit ← 2.5&gt;"</span>
+  <span class="k-fg-dim">2.6</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> git rev-parse --short HEAD
+        <span class="k-border">→</span> <span class="k-teal">head</span>
+  <span class="k-fg-dim">2.7</span>  <span class="k-blue">ask</span> version <span class="k-green">"Version to release after &lt;last ← 2.1&gt;?"</span>
+  <span class="k-fg-dim">2.8</span>  <span class="k-blue">assert</span> version ~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ else <span class="k-green">"&lt;version ← 2.7&gt; is not a version like v1.2</span>
+<span class="k-green">.3."</span>
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 3/4</span> <span class="k-border">·</span> <span class="k-bold">Is it released?</span>  <span class="k-fg-dim">[read-only, no gate; not a --from start: uses `version` (line 35)]</span>
+  <span class="k-fg-dim">3.1</span>  git.tag_state({remote}, {version}) as tag
+    <span class="k-fg-dim">3.1.1</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> git rev-parse --quiet --verify refs/tags/<span class="k-cyan">&lt;version ← 2.7&gt;</span>
+          <span class="k-fg-dim">?</span> <span class="k-teal">tag.untagged</span>
+    <span class="k-fg-dim">3.1.2</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> git ls-remote --exit-code --tags <span class="k-cyan">&lt;remote&gt;</span> refs/tags/<span class="k-cyan">&lt;version ← 2.7&gt;</span>
+          <span class="k-fg-dim">?</span> <span class="k-teal">tag.unpushed</span>
+  <span class="k-fg-dim">3.2</span>  <span class="k-blue">when</span> tag.untagged
+    <span class="k-fg-dim">3.2.1</span>  <span class="k-blue">note</span> <span class="k-green">"&lt;version ← 2.7&gt; is not tagged yet."</span>
+  <span class="k-fg-dim">3.3</span>  <span class="k-blue">when</span> not tag.untagged and tag.unpushed
+    <span class="k-fg-dim">3.3.1</span>  <span class="k-blue">note</span> <span class="k-green">"&lt;version ← 2.7&gt; is tagged here, but not pushed yet."</span>
+  <span class="k-fg-dim">3.4</span>  <span class="k-blue">when</span> not tag.untagged and not tag.unpushed
+    <span class="k-fg-dim">3.4.1</span>  <span class="k-blue">note</span> <span class="k-green">"&lt;version ← 2.7&gt; is already tagged and pushed. Nothing to do."</span>
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 4/4</span> <span class="k-border">·</span> <span class="k-bold">Release</span>  <span class="k-fg-dim">[mutating, gate; not a --from start: uses `tag.untagged` (line 44)]</span>
+  <span class="k-fg-dim">4.1</span>  <span class="k-blue">when</span> tag.untagged
+    <span class="k-fg-dim">4.1.1</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> git tag --annotate <span class="k-cyan">&lt;version ← 2.7&gt;</span> --message Release <span class="k-cyan">&lt;version ← 2.7&gt;</span>
+    <span class="k-fg-dim">4.1.2</span>  <span class="k-blue">record</span> <span class="k-green">"tagged &lt;version ← 2.7&gt; at &lt;head ← 2.6&gt;"</span>
+  <span class="k-fg-dim">4.2</span>  <span class="k-blue">when</span> tag.unpushed
+    <span class="k-fg-dim">4.2.1</span>  <span class="k-blue">confirm</span> <span class="k-green">"Push &lt;version ← 2.7&gt; to &lt;remote&gt;? Anyone who fetches will see it."</span>
+    <span class="k-fg-dim">4.2.2</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> git push <span class="k-cyan">&lt;remote&gt; &lt;version ← 2.7&gt;</span>
+    <span class="k-fg-dim">4.2.3</span>  <span class="k-blue">record</span> <span class="k-green">"pushed &lt;version ← 2.7&gt; to &lt;remote&gt;"</span></code></pre>

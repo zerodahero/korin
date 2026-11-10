@@ -42,19 +42,24 @@ korin fmt wizard.korin       # canonical layout; --check to verify only
 korin modules                # list the built-in aws and rds templates
 ```
 
-In a terminal, korin colors its output with the carbonfox palette and keeps the view tidy:
-once you approve a stage, its preview folds away, and the steps still to run stay dimmed
-below the output of the one running now. `--color never`, or the `NO_COLOR` environment
-variable, turns color off and prints every line in order instead; `--color always` keeps
-color on in a pipe. Output that is not a terminal, and the journal, are always plain.
+## Write wizards with an agent
 
-Each run writes a journal to `.korin/runs/<time>-<wizard>/`: every event as JSON lines, a
-`report.md` summary, and the full output of every command, with secrets redacted.
+The korin skill teaches coding agents to write and check wizards. In Claude Code:
+
+```text
+/plugin install korin --marketplace zerodahero/korin
+```
+
+Other agents can copy [`skills/korin/`](skills/korin/). See
+[Write wizards with an agent](https://zerodahero.github.io/korin/guides/agents/).
 
 ## Documentation
 
-- [Language reference](docs/language.md)
+**<https://zerodahero.github.io/korin/>**: install, a tutorial, guides, and the full
+language reference. The site's source is in [`docs-site/`](docs-site/).
+
 - [Editor support: tree-sitter grammar](tree-sitter-korin/README.md)
+- [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 
