@@ -395,10 +395,20 @@ fn transcript(sidecar_path: &Path) -> Result<Transcript, String> {
             .unwrap()
             .path();
         let ts = regex::Regex::new(r#""ts":"[^"]+""#).unwrap();
+        // A real program's path depends on the machine (git is /usr/bin/git on one,
+        // /opt/homebrew/bin/git on another). Fakes live under the home, which is already fixed.
+        let exe = regex::Regex::new(r#""exe":"(?:/[^"/]+)*/([^"/]+)""#).unwrap();
         for (file, ext) in [("report.md", "report.md"), ("events.jsonl", "events.jsonl")] {
             let bytes = std::fs::read(run.join(file)).map_err(|e| format!("{file}: {e}"))?;
             let text = String::from_utf8(normalize(&bytes, &home)).unwrap();
             let text = ts.replace_all(&text, r#""ts":"2026-01-15T10:00:00.000000Z""#);
+            let text = exe.replace_all(&text, |c: &regex::Captures| {
+                if c[0].starts_with(r#""exe":"/home/ada/"#) {
+                    c[0].to_string()
+                } else {
+                    format!(r#""exe":"/usr/bin/{}""#, &c[1])
+                }
+            });
             journal.push((ext, text.into_owned()));
         }
     }
