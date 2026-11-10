@@ -22,6 +22,8 @@ shfmt = "latest"
 # Exact: the generated tree-sitter-korin/src/parser.c is committed, and CI checks that
 # regenerating it changes nothing.
 tree-sitter = "0.27.1"
+uv = "latest"
+git-cliff = "latest"
 
 [tasks.build]
 description = "Build the korin binary"
@@ -40,19 +42,37 @@ description = "Apply every hk fixer on the whole repo"
 run = "hk fix --all"
 
 [tasks.check-examples]
-description = "Run korin check and korin plan on every example wizard"
+description = "Run korin check and korin plan on every example wizard, including the docs site's"
 depends = ["build"]
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 status=0
 # Module files under lib/ hold only `use` and `define`; the wizard that imports them checks them.
+# Files under invalid/ are docs examples of what `korin check` reports.
 while IFS= read -r file; do
   ./target/debug/korin check "$file" || status=1
   ./target/debug/korin plan "$file" >/dev/null || status=1
-done < <(find examples -name '*.korin' -not -path '*/lib/*' | sort)
+done < <(find examples docs-site/examples -name '*.korin' -not -path '*/lib/*' -not -path '*/invalid/*' | sort)
 exit "$status"
 '''
+
+[tasks.docs]
+description = "Serve the docs site with live reload"
+dir = "docs-site"
+run = "uv run --locked zensical serve"
+
+[tasks.docs-build]
+description = "Build the docs site in strict mode and check the korin lexer"
+dir = "docs-site"
+run = [
+  "uv run --locked zensical build --strict --clean",
+  "uv run --locked python -m korin_docs.check_lexer",
+]
+
+[tasks.changelog]
+description = "Regenerate CHANGELOG.md from Conventional Commits"
+run = "git cliff -o CHANGELOG.md"
 
 [tasks.grammar]
 description = "Regenerate the tree-sitter grammar, run its tests and parse every .korin file"

@@ -1,0 +1,12 @@
+korin 1
+title "Wait for the rollout"
+
+stage "Wait"
+  poll every 2s for 5m
+    read kubectl get deployment checkout -n shop -o json
+      capture ready  = jq .status.readyReplicas // 0
+      capture wanted = jq .spec.replicas
+      capture reason = jq .status.conditions[-1].reason
+    until ready == wanted
+    fail reason == "ProgressDeadlineExceeded"
+  note "checkout has {ready} of {wanted} replicas ready."

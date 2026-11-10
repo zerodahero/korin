@@ -1,0 +1,5 @@
+fakes = true
+wizard = "mutating.korin"
+params = { image = "registry.example.com/api:2.4.0" }
+args = ["--from", "Roll"]
+answers = ["y"]

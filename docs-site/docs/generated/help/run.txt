@@ -1,0 +1,14 @@
+Run a wizard. Each stage is shown, and approved at its gate, before it runs
+
+Usage: korin run [OPTIONS] <FILE>
+
+Arguments:
+  <FILE>  The wizard file
+
+Options:
+      --color <COLOR>            When to use color: `auto` colors a terminal unless `NO_COLOR` is set [default: auto] [possible values: auto, always, never]
+      --param <NAME=VALUE>       A value for a param or an `ask`, as `name=value`. Repeatable
+      --yes                      Approve every gate. Allowed only without a terminal, for wizards that declare `unattended allowed`
+      --from <FROM>              Start at this stage (title or number), skipping earlier ones
+      --kill-grace <KILL_GRACE>  Seconds between SIGTERM and SIGKILL when korin ends a command (at most 3600) [default: 10]
+  -h, --help                     Print help

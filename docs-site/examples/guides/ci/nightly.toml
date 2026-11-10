@@ -1,0 +1,3 @@
+terminal = false
+fakes = true
+args = ["--yes"]

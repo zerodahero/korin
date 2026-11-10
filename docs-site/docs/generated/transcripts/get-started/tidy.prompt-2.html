@@ -1,0 +1,19 @@
+<pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Delete merged branches</span> <span class="k-border">─</span> <span class="k-cyan">~/project/repo</span> <span class="k-border">─</span> <span class="k-fg-dim">2 stages</span>
+<span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run ../tidy.korin
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Find merged branches</span>
+
+  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> git branch --merged <span class="k-cyan">main</span> '--format=%(refname:short)'
+      <span class="k-border">│</span> add-logo
+      <span class="k-border">│</span> fix-typo
+      <span class="k-border">│</span> main
+
+  add-logo is merged into main.
+
+  fix-typo is merged into main.
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Delete them</span>
+  <span class="k-fg-dim">2.1</span>  <span class="k-blue">each</span> branch in merged
+    <span class="k-fg-dim">2.1.1</span>  <span class="k-blue">when</span> branch != base
+      <span class="k-fg-dim">2.1.1.1</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> git branch --delete <span class="k-cyan">&lt;branch ← 2.1&gt;</span>
+  <span class="k-magenta">?</span> <span class="k-bold">Run stage 2?</span> <span class="k-fg-dim">[y/N]</span></code></pre>

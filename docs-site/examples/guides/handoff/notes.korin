@@ -1,0 +1,15 @@
+korin 1
+title "Write the v2.4.0 release notes"
+allow gh, nvim
+
+stage "Draft"
+  # nvim gets the terminal until you quit. korin then reads the file you saved.
+  interactive nvim {korin.out}/notes.md
+    expect skipped = missing {korin.out}/notes.md
+    capture notes = file {korin.out}/notes.md text
+
+stage "Publish"
+  when skipped
+    warn "No notes were saved, so the release keeps its current notes."
+  when not skipped
+    mutate gh release edit v2.4.0 --notes {notes}

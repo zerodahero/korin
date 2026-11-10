@@ -1,0 +1,22 @@
+korin 1
+title "Promote a build to production"
+gates mutating
+allow gh, kubectl
+
+use "../templates/lib/k8s.korin"
+
+param tag required
+param namespace = "production"
+param image = "registry.example.com/web:{tag}"
+param registry_token secret
+
+stage "Build"
+  read gh release view {tag} --json tagName,isDraft
+    capture draft = jq .isDraft
+  assert draft == "false" else "{tag} is still a draft."
+
+stage "Deploy"
+  k8s.deployment({namespace}, web) as web
+  assert web.ready == web.wanted else "web is mid-rollout: {web.ready} of {web.wanted} ready."
+  mutate kubectl set image deployment/web web={image} -n {namespace}
+    env REGISTRY_TOKEN={registry_token}

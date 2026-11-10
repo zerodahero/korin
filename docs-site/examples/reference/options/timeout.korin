@@ -1,0 +1,10 @@
+korin 1
+title "Run the nightly migration"
+
+stage "Health"
+  read curl --fail --silent --show-error https://shop.example.com/healthz
+    timeout 30s
+
+stage "Migrate"
+  mutate kubectl exec deploy/web -n shop -- bin/migrate
+    timeout 45m

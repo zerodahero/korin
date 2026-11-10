@@ -1,0 +1,33 @@
+#!/bin/sh
+# A stand-in for curl, for the docs examples. It writes canned responses for the exact URLs
+# the examples fetch, and fails on anything else.
+
+out=""
+url=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --output | -o)
+        out=$2
+        shift
+        ;;
+    -*) ;;
+    *) url=$1 ;;
+    esac
+    shift
+done
+
+case "$url" in
+"https://status.example.com/api/v2/status.json")
+    body='{"page":{"name":"Shop"},"status":{"indicator":"none","description":"All Systems Operational"}}'
+    ;;
+*)
+    echo "curl (docs fake): no canned response for: $url" >&2
+    exit 6
+    ;;
+esac
+
+if [ -n "$out" ]; then
+    printf '%s\n' "$body" >"$out"
+else
+    printf '%s\n' "$body"
+fi

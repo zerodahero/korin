@@ -1,0 +1,12 @@
+korin 1
+title "Restart the API pods"
+
+param namespace = "shop"
+
+stage "Restart"
+  read kubectl get pods -n {namespace} -l app=api -o name
+    capture pods = lines
+  each pod in pods
+    mutate kubectl delete {pod} -n {namespace} --wait=true
+  each deployment in ["api", "worker"]
+    read kubectl rollout status deployment/{deployment} -n {namespace}

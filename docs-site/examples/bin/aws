@@ -1,0 +1,37 @@
+#!/bin/sh
+# A stand-in for the AWS CLI, for the docs examples. It prints canned output for the exact
+# commands the examples run, and fails on anything else. 123456789012 is AWS's own example
+# account ID.
+
+case "$*" in
+"sts get-caller-identity --output json")
+    cat <<'JSON'
+{
+    "UserId": "AIDASAMPLEUSERID",
+    "Account": "123456789012",
+    "Arn": "arn:aws:iam::123456789012:user/ada"
+}
+JSON
+    ;;
+"ssm get-parameter --name /shop/release --output json")
+    cat <<'JSON'
+{
+    "Parameter": {"Name": "/shop/release", "Type": "String", "Value": "2.3.1", "Version": 6}
+}
+JSON
+    ;;
+"ssm put-parameter --name /shop/release --value 2.4.0 --type String --overwrite --output json")
+    echo '{"Version": 7, "Tier": "Standard"}'
+    ;;
+"ssm get-parameter --name /ci/deploy-bot-token --with-decryption --output json")
+    cat <<'JSON'
+{
+    "Parameter": {"Name": "/ci/deploy-bot-token", "Type": "SecureString", "Value": "ghs_docsExampleBotToken0001", "Version": 3}
+}
+JSON
+    ;;
+*)
+    echo "aws (docs fake): no canned output for: $*" >&2
+    exit 2
+    ;;
+esac

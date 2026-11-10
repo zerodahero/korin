@@ -40,20 +40,6 @@ fn intro_example_parses() {
 }
 
 #[test]
-fn intro_example_matches_docs() {
-    let example = std::fs::read_to_string("examples/intro/intro.korin").unwrap();
-    let docs = std::fs::read_to_string("docs/language.md").unwrap();
-    let start = docs.find("<!-- intro:start -->\n```text\n").unwrap()
-        + "<!-- intro:start -->\n```text\n".len();
-    let end = docs.find("```\n<!-- intro:end -->").unwrap();
-    assert_eq!(
-        &docs[start..end],
-        example,
-        "docs/language.md and examples/intro/intro.korin differ"
-    );
-}
-
-#[test]
 fn intro_module_parses() {
     let src = std::fs::read_to_string("examples/intro/lib/local.korin").unwrap();
     let file = SourceFile::new("local.korin", "local.korin", src);

@@ -1,0 +1,12 @@
+korin 1
+title "Publish v2.4.0"
+
+param tag = "v2.4.0"
+
+stage "Release"
+  read gh release view {tag}
+    expect missing = exit 1 and stderr ~ /release not found/
+  when missing
+    mutate gh release create {tag} --generate-notes
+  when not missing
+    note "{tag} is already published."

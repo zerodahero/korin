@@ -1,0 +1,5 @@
+fakes = true
+params = { node = "node-7" }
+answers = ["y", "n"]
+exit = 1
+snapshots = [1]

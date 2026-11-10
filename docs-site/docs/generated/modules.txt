@@ -1,0 +1,12 @@
+use aws
+  aws.identity() as <alias>  → account, arn
+  aws.ssm_get(name) as <alias>  → value, missing
+  aws.ssm_put(name, value)
+
+use rds
+  rds.cluster(id) as <alias>  → status, arn, version, endpoint, writer, security_groups
+  rds.instance(id) as <alias>  → status, version, endpoint
+  rds.await_cluster(id, want)
+  rds.await_snapshot(id)
+  rds.delete_cluster(id)
+

@@ -1,0 +1,33 @@
+korin 1
+title "Release the shop"
+
+# --8<-- [start:param]
+param remote = "origin"
+# --8<-- [end:param]
+
+stage "Check the working tree"
+  read git branch --show-current
+    capture branch = text
+  assert branch == "main" else "Releases come from main, but this is {branch}."
+  read git status --porcelain
+    capture changes = text
+  assert changes == "" else "Commit or stash these changes first:\n{changes}"
+  note "On main, with a clean working tree."
+
+# --8<-- [start:stage]
+stage "Choose the version"
+  # Tags on the remote, newest version first. The first match is the last release.
+  read git ls-remote --tags --refs --sort=-version:refname {remote}
+    capture last = regex /refs\/tags\/(v[0-9]+\.[0-9]+\.[0-9]+)/
+  read git rev-list --count {last}..HEAD
+    capture ahead = text
+  assert ahead > 0 else "Nothing to release: HEAD is {last}."
+  read git log --oneline {last}..HEAD
+    capture commits = lines
+  each commit in commits
+    note "{commit}"
+  read git rev-parse --short HEAD
+    capture head = text
+  ask version "Version to release after {last}?"
+  assert version ~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ else "{version} is not a version like v1.2.3."
+# --8<-- [end:stage]

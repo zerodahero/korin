@@ -1,0 +1,3 @@
+fakes = true
+params = { image = "registry.example.com/api:2.4.0" }
+answers = ["y"]

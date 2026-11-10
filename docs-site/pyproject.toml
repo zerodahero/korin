@@ -1,0 +1,17 @@
+[project]
+name = "korin-docs"
+version = "0.0.0"
+description = "Build tools for the korin docs site: Zensical and a Pygments lexer for .korin files"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = ["zensical==0.1.0"]
+
+[project.entry-points."pygments.lexers"]
+korin = "korin_docs.lexer:KorinLexer"
+
+[build-system]
+requires = ["uv_build>=0.9,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""

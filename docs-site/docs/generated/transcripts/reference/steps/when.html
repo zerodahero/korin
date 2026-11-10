@@ -1,0 +1,13 @@
+<pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Clean up a preview environment</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">1 stage</span>
+<span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run when.korin --param pr=57
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Preview</span>
+
+  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> gh pr view <span class="k-cyan">57</span> --json state
+      <span class="k-border">│</span> {"state":"MERGED"}
+
+  <span class="k-fg-dim">1.2.1</span> <span class="k-blue k-bold">❯</span> kubectl delete namespace preview-<span class="k-cyan">57</span>
+      <span class="k-border">│</span> namespace "preview-57" deleted
+
+<span class="k-green k-bold">✓</span> <span class="k-bold">Clean up a preview environment completed</span>
+  <span class="k-fg-dim">journal: /home/ada/project/.korin/runs/20260115T100000Z-clean-up-a-preview-environment</span></code></pre>

@@ -1,0 +1,4 @@
+terminal = false
+fakes = true
+wizard = "nightly.korin"
+exit = 1

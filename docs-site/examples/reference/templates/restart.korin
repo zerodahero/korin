@@ -1,0 +1,16 @@
+korin 1
+title "Restart the shop"
+
+use "./lib/k8s.korin"
+
+param namespace = "shop"
+
+stage "Before"
+  k8s.deployment({namespace}, web) as web
+  k8s.deployment({namespace}, api) as api
+  assert web.ready == web.wanted else "web has {web.ready} of {web.wanted} replicas ready."
+  assert api.ready == api.wanted else "api has {api.ready} of {api.wanted} replicas ready."
+
+stage "Restart"
+  k8s.restart({namespace}, web)
+  k8s.restart({namespace}, api)

@@ -40,3 +40,21 @@ jobs:
         run: |
           mise run grammar
           git diff --exit-code -- tree-sitter-korin/src
+
+  docs:
+    name: docs site
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3.6.3
+        with:
+          # The site needs uv only; it installs the Python packages from uv.lock.
+          install_args: uv
+      # Builds with --strict, so a broken link or a missing example fails the PR. The
+      # transcripts the site shows are checked by tests/docs.rs in the test job.
+      - name: build
+        run: mise run docs-build

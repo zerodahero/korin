@@ -60,6 +60,8 @@ missing_panics_doc = "allow"
 insta = { version = "1.49.0", features = ["json", "yaml"] }
 portable-pty = "0.9.0"
 tempfile = "3.27.0"
+toml = "1.2.1"
+vt100 = "0.18.1"
 
 # The profile that 'dist' will build with
 [profile.dist]

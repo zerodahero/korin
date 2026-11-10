@@ -1,0 +1,11 @@
+[
+  {
+    "file": "unguarded.korin",
+    "line": 8,
+    "column": 30,
+    "severity": "error",
+    "code": "guard",
+    "message": "`url` exists only when no `expect` of its step matched",
+    "help": "use it inside `when not missing`"
+  }
+]

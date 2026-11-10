@@ -1,0 +1,112 @@
+# Build with `mise run docs-build`; preview with `mise run docs`.
+[project]
+site_name = "korin"
+site_description = "Guided runbooks: run long command series under human oversight."
+site_url = "https://zerodahero.github.io/korin/"
+repo_url = "https://github.com/zerodahero/korin"
+repo_name = "zerodahero/korin"
+edit_uri = "edit/main/docs-site/docs/"
+docs_dir = "docs"
+site_dir = "site"
+strict = true
+copyright = "Apache-2.0"
+extra_css = ["stylesheets/carbonfox.css"]
+
+nav = [
+  { "Home" = "index.md" },
+  { "Get started" = [
+    "get-started/install.md",
+    "get-started/first-wizard.md",
+  ] },
+  { "Tutorial" = [
+    "tutorial/index.md",
+    "tutorial/1-look.md",
+    "tutorial/2-values.md",
+    "tutorial/3-expects.md",
+    "tutorial/4-changes.md",
+    "tutorial/5-reuse.md",
+  ] },
+  { "Guides" = [
+    "guides/secrets.md",
+    "guides/ci.md",
+    "guides/resume.md",
+    "guides/handoff.md",
+    "guides/editors.md",
+  ] },
+  { "Reference" = [
+    "reference/file.md",
+    "reference/steps.md",
+    "reference/options.md",
+    "reference/captures.md",
+    "reference/expects.md",
+    "reference/expressions.md",
+    "reference/templates.md",
+    "reference/gates.md",
+    "reference/secrets.md",
+    "reference/journal.md",
+    "reference/cli.md",
+    "reference/stdlib.md",
+  ] },
+  { "Changelog" = "changelog.md" },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.action.copy",
+  "content.action.edit",
+  "content.code.copy",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.sections",
+  "navigation.top",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[project.markdown_extensions.admonition]
+[project.markdown_extensions.attr_list]
+[project.markdown_extensions.md_in_html]
+[project.markdown_extensions.toc]
+permalink = true
+[project.markdown_extensions.pymdownx.details]
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+[project.markdown_extensions.pymdownx.inlinehilite]
+[project.markdown_extensions.pymdownx.superfences]
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+[project.markdown_extensions.pymdownx.snippets]
+# Paths resolve against the repo root first, so pages include the real example files.
+base_path = ["..", "."]
+check_paths = true
+
+[project.plugins.search]
+
+[project.plugins.llmstxt]
+markdown_description = "korin runs .korin wizard files: long series of shell-free commands, each shown before it runs, gated by a human."
+full_output = "llms-full.txt"
+
+[project.plugins.llmstxt.sections]
+"Get started" = ["index.md", "get-started/*.md"]
+"Tutorial" = ["tutorial/*.md"]
+"Guides" = ["guides/*.md"]
+"Reference" = ["reference/*.md"]

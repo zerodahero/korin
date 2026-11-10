@@ -2,7 +2,7 @@
  * @file Tree-sitter grammar for korin wizard and module files (`.korin`).
  * @license Apache-2.0
  *
- * The reference parser is `src/parser.rs`; `docs/language.md` describes the language. This
+ * The reference parser is `src/parser.rs`; the docs site (`docs-site/`) describes the language. This
  * grammar is for editors: it accepts everything the reference parser accepts, and is looser
  * about ordering rules (header before stages, `define` only in modules) that `korin check`
  * reports anyway.

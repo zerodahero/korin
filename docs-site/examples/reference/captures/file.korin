@@ -1,0 +1,10 @@
+korin 1
+title "Read the status page"
+
+stage "Status"
+  # {korin.out} is an empty, private directory made for this one command.
+  read curl --fail --silent --output {korin.out}/status.json https://status.example.com/api/v2/status.json
+    capture indicator = file {korin.out}/status.json jq .status.indicator
+    capture summary   = file {korin.out}/status.json jq .status.description
+  assert indicator == "none" else "The status page reports: {summary}."
+  note "{summary}"

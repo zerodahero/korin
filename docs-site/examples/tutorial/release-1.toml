@@ -1,0 +1,5 @@
+place = "tutorial"
+cwd = "tutorial/work"
+run_as = "release.korin"
+setup = "sh setup.sh"
+answers = ["y"]

@@ -1,0 +1,8 @@
+korin 1
+title "Scale down the old workers"
+
+stage "Scale down"
+  read kubectl get deployment worker-v1 -n shop -o json
+    capture replicas = jq .spec.replicas
+  confirm "worker-v1 runs {replicas} replicas. Scale it to zero?"
+  mutate kubectl scale deployment/worker-v1 -n shop --replicas 0

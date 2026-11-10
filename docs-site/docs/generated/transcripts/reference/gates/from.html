@@ -1,0 +1,13 @@
+<pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Roll the api to a new image</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">2 stages</span>
+<span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run mutating.korin --param image=registry.example.com/api:2.4.0 --from Roll
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Roll</span>
+
+  <span class="k-fg-dim">2.1</span> <span class="k-blue k-bold">❯</span> kubectl set image deployment/api api=<span class="k-cyan">registry.example.com/api:2.4.0</span> -n shop
+      <span class="k-border">│</span> deployment.apps/api image updated
+
+  <span class="k-fg-dim">2.2</span> <span class="k-blue k-bold">❯</span> kubectl rollout status deployment/api -n shop --timeout 5m
+      <span class="k-border">│</span> deployment "api" successfully rolled out
+
+<span class="k-green k-bold">✓</span> <span class="k-bold">Roll the api to a new image completed</span>
+  <span class="k-fg-dim">journal: /home/ada/project/.korin/runs/20260115T100000Z-roll-the-api-to-a-new-image</span></code></pre>

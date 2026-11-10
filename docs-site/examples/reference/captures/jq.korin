@@ -1,0 +1,15 @@
+korin 1
+title "Summarize a pull request"
+
+param pr required
+
+stage "Pull request"
+  read gh pr view {pr} --json title,author,labels,files
+    capture title  = jq .title
+    capture author = jq .author.login
+    capture labels = jq list .labels[].name
+    capture files  = jq json [.files[].path]
+  note "#{pr} by {author}: {title}"
+  note "Files: {files}"
+  each label in labels
+    note "Label: {label}"

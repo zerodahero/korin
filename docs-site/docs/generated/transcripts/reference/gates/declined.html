@@ -1,0 +1,18 @@
+<pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Drain a node</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">2 stages</span>
+<span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run declined.korin --param node=node-7
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Pods on the node</span>
+
+  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> kubectl get pods --all-namespaces --field-selector spec.nodeName=<span class="k-cyan">node-7</span> -o name
+      <span class="k-border">│</span> pod/web-6b8d9c7f5-hx2lq
+      <span class="k-border">│</span> pod/api-7d9f8b6c4-2xkqp
+      <span class="k-border">│</span> pod/fluent-bit-8kq2v
+
+  node-7 runs pods that will move.
+
+<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Drain</span>
+  <span class="k-fg-dim">2.1</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> kubectl drain <span class="k-cyan">node-7</span> --ignore-daemonsets --delete-emptydir-data
+  <span class="k-magenta">?</span> <span class="k-bold">Run stage 2?</span> <span class="k-fg-dim">[y/N]</span> n
+
+<span class="k-red k-bold">✗</span> <span class="k-bold">stage 2 was not approved; nothing in it ran</span>
+  <span class="k-fg-dim">journal: /home/ada/project/.korin/runs/20260115T100000Z-drain-a-node</span></code></pre>

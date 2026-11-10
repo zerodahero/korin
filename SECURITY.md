@@ -19,4 +19,5 @@ korin's core promises are security properties, so a break in any of them is in s
 - A `{value}` interpolation changes the number of arguments a command receives.
 
 Output that an `interactive` child writes to the terminal is outside korin's control. So is
-argv that other local users can read through `ps`. See `docs/language.md`.
+argv that other local users can read through `ps`. See
+[Secrets](https://zerodahero.github.io/korin/reference/secrets/) in the docs.

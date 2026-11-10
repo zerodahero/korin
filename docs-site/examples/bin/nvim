@@ -1,0 +1,12 @@
+#!/bin/sh
+# A stand-in for nvim, for the docs examples. Instead of opening an editor, it writes canned
+# release notes to the file it was given, as if a person had typed and saved them.
+[ $# -eq 1 ] || {
+    echo "nvim (docs fake): expected one file, got: $*" >&2
+    exit 2
+}
+cat >"$1" <<'NOTES'
+## Fixes
+
+- The cart keeps its items when a payment fails.
+NOTES

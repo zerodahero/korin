@@ -1,0 +1,8 @@
+korin 1
+title "Publish a release"
+
+stage "Release"
+  read gh release view v2.4.0 --json url
+    expect missing = exit 1 and stderr ~ /release not found/
+    capture url = jq .url
+  note "Already published at {url}."

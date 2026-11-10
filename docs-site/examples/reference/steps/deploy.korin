@@ -1,0 +1,9 @@
+korin 1
+title "Restart the web deployment"
+
+param namespace = "shop"
+
+stage "Restart"
+  read kubectl get deployment web -n {namespace}
+  mutate kubectl rollout restart deployment/web -n {namespace}
+  read kubectl rollout status deployment/web -n {namespace} --timeout 2m

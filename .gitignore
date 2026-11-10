@@ -6,3 +6,8 @@
 /.claude/settings.local.json
 /.claude/plan/
 /.serena/
+
+# Docs site build output and its Python environment
+/docs-site/site/
+/docs-site/.venv/
+__pycache__/

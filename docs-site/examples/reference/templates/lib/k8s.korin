@@ -1,0 +1,14 @@
+# Templates for Kubernetes deployments. A module file holds only `use` and `define`.
+
+# Reads a deployment.
+define deployment(namespace, name)
+  exports image, ready, wanted
+  read kubectl get deployment {name} -n {namespace} -o json
+    capture image  = jq .spec.template.spec.containers[0].image
+    capture ready  = jq .status.readyReplicas // 0
+    capture wanted = jq .spec.replicas
+
+# Restarts a deployment and waits until the rollout finishes.
+define restart(namespace, name)
+  mutate kubectl rollout restart deployment/{name} -n {namespace}
+  read kubectl rollout status deployment/{name} -n {namespace} --timeout 5m

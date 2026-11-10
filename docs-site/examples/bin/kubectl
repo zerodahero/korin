@@ -1,0 +1,97 @@
+#!/bin/sh
+# A stand-in for kubectl, for the docs examples. It prints canned output for the exact
+# commands the examples run, and fails on anything else.
+
+# deployment <name> <image> <replicas> <ready> [reason]: a deployment as `-o json` prints it.
+deployment() {
+    cat <<JSON
+{
+  "metadata": {"name": "$1", "namespace": "shop"},
+  "spec": {
+    "replicas": $3,
+    "template": {"spec": {"containers": [{"name": "$1", "image": "$2"}]}}
+  },
+  "status": {
+    "readyReplicas": $4,
+    "conditions": [{"type": "Progressing", "reason": "${5:-NewReplicaSetAvailable}"}]
+  }
+}
+JSON
+}
+
+case "$*" in
+"get deployment web -n shop")
+    echo "NAME   READY   UP-TO-DATE   AVAILABLE   AGE"
+    echo "web    3/3     3            3           41d"
+    ;;
+"rollout restart deployment/"*)
+    name=${3#deployment/}
+    echo "deployment.apps/$name restarted"
+    ;;
+"rollout status deployment/"*)
+    name=${3#deployment/}
+    echo "deployment \"$name\" successfully rolled out"
+    ;;
+"get deployment worker-v1 -n shop -o json")
+    deployment worker-v1 registry.example.com/worker:1.9.2 4 4
+    ;;
+"scale deployment/worker-v1 -n shop --replicas 0")
+    echo "deployment.apps/worker-v1 scaled"
+    ;;
+"get pods -n shop -l app=api -o name")
+    echo "pod/api-7d9f8b6c4-2xkqp"
+    echo "pod/api-7d9f8b6c4-9mwzt"
+    ;;
+"delete pod/"*)
+    echo "pod \"${2#pod/}\" deleted"
+    ;;
+"get deployment checkout -n shop -o json")
+    # Each call finds one more replica ready, as a rollout would.
+    state="$HOME/.fake-state/checkout"
+    mkdir -p "$(dirname "$state")"
+    calls=$(($(cat "$state" 2>/dev/null || echo 0) + 1))
+    echo "$calls" >"$state"
+    deployment checkout registry.example.com/checkout:3.1.0 3 "$((calls < 3 ? calls : 3))" ReplicaSetUpdated
+    ;;
+"get service checkout -n shop -o json")
+    echo '{"metadata": {"name": "checkout", "annotations": {}}, "spec": {"type": "ClusterIP"}}'
+    ;;
+"get deployment web -n production -o json")
+    deployment web registry.example.com/web:latest 4 4
+    ;;
+"get deployment web -n shop -o json")
+    deployment web registry.example.com/web:2.3.1 3 3
+    ;;
+"get deployment api -n shop -o json")
+    deployment api registry.example.com/api:2.3.1 2 2
+    ;;
+"set image deployment/api api=registry.example.com/api:2.4.0 -n shop")
+    echo "deployment.apps/api image updated"
+    ;;
+"get pods --all-namespaces --field-selector spec.nodeName=node-7 -o name")
+    echo "pod/web-6b8d9c7f5-hx2lq"
+    echo "pod/api-7d9f8b6c4-2xkqp"
+    echo "pod/fluent-bit-8kq2v"
+    ;;
+"delete namespace preview-57")
+    echo "namespace \"preview-57\" deleted"
+    ;;
+"get namespaces -l preview=true -o json")
+    cat <<'JSON'
+{
+  "items": [
+    {"metadata": {"name": "preview-51", "annotations": {"example.com/age-days": "12"}}},
+    {"metadata": {"name": "preview-57", "annotations": {"example.com/age-days": "2"}}},
+    {"metadata": {"name": "preview-60", "annotations": {"example.com/age-days": "9"}}}
+  ]
+}
+JSON
+    ;;
+"delete namespace "*" --wait=false")
+    echo "namespace \"$3\" deleted"
+    ;;
+*)
+    echo "kubectl (docs fake): no canned output for: $*" >&2
+    exit 2
+    ;;
+esac

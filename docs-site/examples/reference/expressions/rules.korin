@@ -1,0 +1,15 @@
+korin 1
+title "Check a deployment before a change"
+
+param env = "staging"
+
+stage "Deployment"
+  assert env in ["staging", "production"] else "Unknown environment {env}."
+  read kubectl get deployment web -n {env} -o json
+    capture replicas = jq .spec.replicas
+    capture image    = jq .spec.template.spec.containers[0].image
+  assert replicas >= 2 else "web runs {replicas} replica; a rolling change needs at least 2."
+  when image ~ /:latest$/ and env == "production"
+    warn "Production runs a :latest image: {image}."
+  when not (replicas > 10 or env == "staging")
+    note "web runs {replicas} replicas in {env}."

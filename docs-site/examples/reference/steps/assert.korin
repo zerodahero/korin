@@ -1,0 +1,11 @@
+korin 1
+title "Check a pull request"
+
+param pr required
+
+stage "Checks"
+  read gh pr view {pr} --json state,mergeable
+    capture state     = jq .state
+    capture mergeable = jq .mergeable
+  assert state == "OPEN" else "PR {pr} is {state}."
+  assert mergeable == "MERGEABLE" else "PR {pr} cannot be merged: {mergeable}."

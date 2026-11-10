@@ -1,0 +1,45 @@
+korin 1
+title "Release the shop"
+
+param remote = "origin"
+
+stage "Check the working tree"
+  read git branch --show-current
+    capture branch = text
+  assert branch == "main" else "Releases come from main, but this is {branch}."
+  read git status --porcelain
+    capture changes = text
+  assert changes == "" else "Commit or stash these changes first:\n{changes}"
+  note "On main, with a clean working tree."
+
+stage "Choose the version"
+  # Tags on the remote, newest version first. The first match is the last release.
+  read git ls-remote --tags --refs --sort=-version:refname {remote}
+    capture last = regex /refs\/tags\/(v[0-9]+\.[0-9]+\.[0-9]+)/
+  read git rev-list --count {last}..HEAD
+    capture ahead = text
+  assert ahead > 0 else "Nothing to release: HEAD is {last}."
+  read git log --oneline {last}..HEAD
+    capture commits = lines
+  each commit in commits
+    note "{commit}"
+  read git rev-parse --short HEAD
+    capture head = text
+  ask version "Version to release after {last}?"
+  assert version ~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ else "{version} is not a version like v1.2.3."
+
+# --8<-- [start:stage]
+stage "Is it released?"
+  # Exits 1, printing nothing, when the tag does not exist here.
+  read git rev-parse --quiet --verify refs/tags/{version}
+    expect untagged = exit 1
+  # Exits 2 when the remote has no such tag.
+  read git ls-remote --exit-code --tags {remote} refs/tags/{version}
+    expect unpushed = exit 2
+  when untagged
+    note "{version} is not tagged yet."
+  when not untagged and unpushed
+    note "{version} is tagged here, but not pushed yet."
+  when not untagged and not unpushed
+    note "{version} is already tagged and pushed. Nothing to do."
+# --8<-- [end:stage]

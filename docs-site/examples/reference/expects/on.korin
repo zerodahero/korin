@@ -1,0 +1,20 @@
+korin 1
+title "Are the checks green?"
+
+param pr required
+
+stage "Checks"
+  # gh exits 8 while checks are still running, and 1 when any failed.
+  read gh pr checks {pr} --json name,state
+    expect pending = exit 8
+    expect failed  = exit 1
+    capture waiting = jq list .[] | select(.state == "PENDING") | .name on pending
+    capture broken  = jq list .[] | select(.state == "FAILURE") | .name on failed
+  when pending
+    each check in waiting
+      note "{check} is still running."
+  when failed
+    each check in broken
+      warn "{check} failed."
+  when not pending and not failed
+    note "Every check passed."

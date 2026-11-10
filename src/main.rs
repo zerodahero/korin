@@ -38,6 +38,7 @@ impl From<ColorArg> for Choice {
 enum Cmd {
     /// Parse and check a wizard without running anything.
     Check {
+        /// The wizard file.
         file: PathBuf,
         /// Output format for diagnostics.
         #[arg(long, value_enum, default_value_t = Format::Human)]
@@ -47,9 +48,13 @@ enum Cmd {
         from: Option<String>,
     },
     /// Print every stage and command, with placeholders for values not yet known.
-    Plan { file: PathBuf },
+    Plan {
+        /// The wizard file.
+        file: PathBuf,
+    },
     /// Run a wizard. Each stage is shown, and approved at its gate, before it runs.
     Run {
+        /// The wizard file.
         file: PathBuf,
         /// A value for a param or an `ask`, as `name=value`. Repeatable.
         #[arg(long = "param", value_name = "NAME=VALUE", value_parser = parse_param)]
@@ -66,6 +71,7 @@ enum Cmd {
     },
     /// Format wizard and module files in place.
     Fmt {
+        /// Wizard and module files to format.
         files: Vec<PathBuf>,
         /// Report files that are not formatted, without changing them.
         #[arg(long)]

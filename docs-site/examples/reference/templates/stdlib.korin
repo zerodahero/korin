@@ -1,0 +1,16 @@
+korin 1
+title "Record the release in SSM"
+
+use aws
+
+param version required
+
+stage "Account"
+  aws.identity() as me
+  confirm "Write to account {me.account} as {me.arn}?"
+
+stage "Release marker"
+  aws.ssm_get(/shop/release) as current
+  when not current.missing
+    note "The current release is {current.value}."
+  aws.ssm_put(/shop/release, {version})

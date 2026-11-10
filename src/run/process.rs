@@ -201,7 +201,7 @@ struct Cancelling {
 /// Runs a command in its own process group and collects its output.
 ///
 /// `on_output` receives each chunk as it arrives (`true` for stderr). Cancellation follows the
-/// protocol in `docs/language.md`: `SIGTERM` to the group, a grace period, `SIGKILL` to the
+/// protocol in `docs-site/docs/reference/options.md`: `SIGTERM` to the group, a grace period, `SIGKILL` to the
 /// group, reap, then at most two more seconds of draining.
 ///
 /// # Errors

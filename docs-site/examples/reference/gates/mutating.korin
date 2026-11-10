@@ -1,0 +1,14 @@
+korin 1
+title "Roll the api to a new image"
+gates mutating
+
+param image required
+
+stage "Current state"
+  read kubectl get deployment api -n shop -o json
+    capture current = jq .spec.template.spec.containers[0].image
+  note "api runs {current}."
+
+stage "Roll"
+  mutate kubectl set image deployment/api api={image} -n shop
+  read kubectl rollout status deployment/api -n shop --timeout 5m
