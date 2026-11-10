@@ -74,6 +74,53 @@ run = [
 description = "Regenerate CHANGELOG.md from Conventional Commits"
 run = "git cliff -o CHANGELOG.md"
 
+[tasks.release]
+description = "Bump the version, write the changelog, commit and tag a release, then push on confirm"
+usage = 'arg "<version>" help="The new version, without the v: 0.2.0 or 0.2.0-rc.1"'
+# raw: the push confirmation reads from the terminal.
+raw = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+version="${usage_version#v}"
+tag="v$version"
+
+fail() { echo "release: $*" >&2; exit 1; }
+
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || fail "not a version: $version"
+[[ "$(git branch --show-current)" == main ]] || fail "check out main first"
+git diff --quiet HEAD || fail "commit or stash your changes first"
+git fetch --quiet origin main --tags
+[[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || fail "main differs from origin/main"
+! git rev-parse --quiet --verify "refs/tags/$tag" >/dev/null || fail "$tag already exists"
+# cargo-dist takes the release notes from this version's changelog section. git-cliff writes
+# no section when every commit since the last tag is a skipped type, such as chore.
+git cliff --tag "$tag" 2>/dev/null | grep -qF "## [$version]" ||
+  fail "no feat, fix, perf, docs or ci commits since the last release"
+
+# cargo-dist refuses a tag that differs from the Cargo.toml version.
+sed -i.bak -E 's/^version = "[^"]*"/version = "'"$version"'"/' Cargo.toml
+sed -i.bak -E 's/^(    "version": )"[^"]*"/\1"'"$version"'"/' tree-sitter-korin/tree-sitter.json
+# The Neovim setup pins the grammar to a tag that the mirror receives with this release.
+sed -i.bak -E "s/revision = 'v[^']*'/revision = '$tag'/" tree-sitter-korin/README.md
+rm Cargo.toml.bak tree-sitter-korin/tree-sitter.json.bak tree-sitter-korin/README.md.bak
+cargo update --workspace --offline --quiet
+git cliff --tag "$tag" -o CHANGELOG.md
+
+git --no-pager diff --stat
+git add Cargo.toml Cargo.lock CHANGELOG.md tree-sitter-korin/tree-sitter.json tree-sitter-korin/README.md
+git commit --quiet -m "chore(release): $tag"
+git tag --annotate "$tag" -m "Release $tag"
+echo "Committed and tagged $tag."
+
+read -r -p "Push main and $tag to origin? [y/N] " answer
+if [[ "$answer" == y ]]; then
+  git push --atomic origin main "$tag"
+else
+  echo "Not pushed. Push later with: git push --atomic origin main $tag"
+fi
+'''
+
 [tasks.grammar]
 description = "Regenerate the tree-sitter grammar, run its tests and parse every .korin file"
 dir = "tree-sitter-korin"
