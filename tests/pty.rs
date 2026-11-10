@@ -548,3 +548,15 @@ fn live_view_erases_the_preview_and_ghosts_the_steps_to_come() {
     );
     assert!(s.text().contains("still-to-come"));
 }
+
+#[test]
+fn check_shows_graphical_diagnostics_in_a_terminal() {
+    let dir = setup("stage \"a\"\n  note \"{nope}\"\n", &[]);
+    let mut s = start(dir.path(), &["check", "w.korin"]);
+    assert_eq!(s.wait(), 1, "{}", s.text());
+    let text = s.text();
+    // Graphical diagnostics draw the source with a frame; narrated ones spell it out.
+    assert!(text.contains("unknown name `nope`"), "{text}");
+    assert!(!text.contains("Diagnostic severity"), "{text}");
+    assert!(text.contains("╭─["), "{text}");
+}

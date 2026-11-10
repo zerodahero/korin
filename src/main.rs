@@ -85,11 +85,12 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let choice = Choice::from(cli.color);
     let diagnostics = Theme::stderr(choice).diagnostics();
+    // Diagnostics are always graphical; the theme alone decides color. `force_graphical(false)`
+    // would mean "narrated", the screen-reader format, so it is never set.
     let _ = miette::set_hook(Box::new(move |_| {
         Box::new(
             miette::MietteHandlerOpts::new()
                 .graphical_theme(diagnostics.clone())
-                .force_graphical(choice == Choice::Always)
                 .build(),
         )
     }));
