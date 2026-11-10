@@ -10,6 +10,10 @@
 //! onto. It never erases more rows than the terminal shows: rows that scrolled off the top
 //! cannot be reached, and moving up past them would overwrite other lines.
 //!
+//! Under the ghost sits the footer: one line naming the current stage and step, so the
+//! operator always knows where the run is, however fast the output scrolls. It is drawn and
+//! erased with the ghost.
+//!
 //! When the view is not live (no terminal, or no color), every print goes straight to stdout.
 
 use std::io::Write as _;
@@ -27,7 +31,9 @@ pub struct Screen {
     live: bool,
     /// Ghost lines, already themed, without trailing newlines.
     ghost: Vec<String>,
-    /// How many rows the ghost takes on screen, or `None` while it is not drawn.
+    /// The footer line, already themed, without a trailing newline.
+    footer: Option<String>,
+    /// How many rows the ghost and the footer take on screen, or `None` while not drawn.
     ghost_rows: Option<usize>,
     /// Rows written since [`Screen::mark`], for erasing a gate's preview.
     since_mark: Option<usize>,
@@ -39,6 +45,7 @@ impl Screen {
         Self {
             live,
             ghost: Vec::new(),
+            footer: None,
             ghost_rows: None,
             since_mark: None,
             theme,
@@ -85,7 +92,17 @@ impl Screen {
         self.show();
     }
 
-    /// Erases the ghost from the screen. The next print draws it again.
+    /// Replaces the footer line.
+    pub fn set_footer(&mut self, footer: Option<String>) {
+        if !self.live || footer == self.footer {
+            return;
+        }
+        self.hide();
+        self.footer = footer;
+        self.show();
+    }
+
+    /// Erases the ghost and the footer from the screen. The next print draws them again.
     pub fn hide(&mut self) {
         if let Some(rows) = self.ghost_rows.take()
             && rows > 0
@@ -95,10 +112,16 @@ impl Screen {
         }
     }
 
-    /// Erases the ghost and forgets it, as at the end of a stage or a run.
+    /// Erases the ghost and forgets it, as before a `confirm` lists the steps left.
     pub fn clear(&mut self) {
         self.hide();
         self.ghost.clear();
+    }
+
+    /// Erases the ghost and the footer and forgets both, as at the end of a stage or a run.
+    pub fn clear_all(&mut self) {
+        self.clear();
+        self.footer = None;
     }
 
     /// Starts counting rows, so [`Screen::erase_to_mark`] can remove them later.
@@ -127,11 +150,15 @@ impl Screen {
     }
 
     fn show(&mut self) {
-        if self.ghost_rows.is_some() || self.ghost.is_empty() {
+        if self.ghost_rows.is_some() || (self.ghost.is_empty() && self.footer.is_none()) {
             return;
         }
         let cols = width();
-        let budget = (height() / GHOST_SHARE).max(3);
+        let footer_rows = self
+            .footer
+            .as_ref()
+            .map_or(0, |footer| rows(&format!("{footer}\n"), cols));
+        let budget = (height() / GHOST_SHARE).max(3).saturating_sub(footer_rows);
         let mut text = String::new();
         let mut used = 0;
         for (index, line) in self.ghost.iter().enumerate() {
@@ -152,6 +179,11 @@ impl Screen {
             text.push_str(line);
             text.push('\n');
         }
+        if let Some(footer) = &self.footer {
+            used += footer_rows;
+            text.push_str(footer);
+            text.push('\n');
+        }
         print!("{text}");
         flush();
         self.ghost_rows = Some(used);
@@ -160,7 +192,7 @@ impl Screen {
 
 impl Drop for Screen {
     fn drop(&mut self) {
-        self.clear();
+        self.clear_all();
     }
 }
 
@@ -168,7 +200,8 @@ fn flush() {
     let _ = std::io::stdout().flush();
 }
 
-fn width() -> usize {
+/// The terminal's width in columns, or 80 when it cannot be measured.
+pub fn width() -> usize {
     terminal_size::terminal_size().map_or(80, |(w, _)| usize::from(w.0).max(1))
 }
 

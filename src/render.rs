@@ -2,6 +2,8 @@
 
 use std::fmt::Write as _;
 
+use unicode_width::UnicodeWidthStr as _;
+
 use crate::ast::{CaptureMode, CmpOp, GateMode, SayKind};
 use crate::ir::{Expr, IPart, Interpolated, Program, Step, StepKind, Sym, SymKind};
 
@@ -154,29 +156,140 @@ pub fn interpolated(
     out
 }
 
-/// A command as the operator sees it: each argument quoted once it is fully known, so a value
-/// with spaces reads as one argument and a control character cannot hide.
+/// The widest a stage rule gets, however wide the terminal is.
+pub const RULE_MAX: usize = 80;
+/// The width to lay out for when the output is not a terminal.
+pub const DEFAULT_WIDTH: usize = 100;
+/// A command with this many flags is broken across lines, even when it fits.
+const BREAK_FLAGS: usize = 3;
+
+/// The header that starts a stage: `━━ Stage 2/4 · Title ━━━━`, filled to `width` (at most
+/// [`RULE_MAX`]).
+pub fn stage_rule(number: usize, total: usize, title: &str, width: usize) -> String {
+    let head = format!("━━ Stage {number}/{total} · {} ", escape_controls(title));
+    let fill = width.min(RULE_MAX).saturating_sub(head.width()).max(2);
+    head + &"━".repeat(fill)
+}
+
+/// A command as the operator sees it, on one line: each argument quoted once it is fully
+/// known, so a value with spaces reads as one argument and a control character cannot hide.
 pub fn argv(program: &Program, argv: &[Interpolated], values: &dyn Values) -> String {
-    argv.iter()
-        .map(|t| argument(program, t, values))
-        .collect::<Vec<_>>()
-        .join(" ")
+    words(program, argv, values).join(" ")
+}
+
+/// A command laid out to read well. It stays on one line when it fits in `width` after a
+/// prefix `indent` columns wide and has few flags. Otherwise the executable and its leading
+/// words take the first line, and each flag (with its value) or later word takes a line of
+/// its own. Every line but the last ends in ` \`, and later lines are indented to two
+/// columns past the executable, so the lines still paste into a shell as one command.
+///
+/// Joining the lines with [`join_breaks`] gives exactly [`argv`].
+pub fn command_lines(
+    program: &Program,
+    argv: &[Interpolated],
+    values: &dyn Values,
+    indent: usize,
+    width: usize,
+) -> Vec<String> {
+    layout(&words(program, argv, values), indent, width)
+}
+
+/// Undoes the breaks [`command_lines`] adds: each ` \`, newline and indent becomes a space.
+pub fn join_breaks(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut lines = text.split('\n').peekable();
+    while let Some(line) = lines.next() {
+        match line.strip_suffix(" \\") {
+            Some(body) if lines.peek().is_some_and(|next| next.starts_with(' ')) => {
+                out.push_str(body);
+                out.push(' ');
+                if let Some(next) = lines.peek_mut() {
+                    *next = next.trim_start_matches(' ');
+                }
+            }
+            _ => {
+                out.push_str(line);
+                if lines.peek().is_some() {
+                    out.push('\n');
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Whether a shown word is a flag: it starts with `-` and is more than a lone `-`.
+fn is_flag(word: &str) -> bool {
+    let plain = strip_marks(word);
+    plain.len() > 1 && plain.starts_with('-') && plain != "--"
+}
+
+fn layout(words: &[String], indent: usize, width: usize) -> Vec<String> {
+    let one = words.join(" ");
+    let end = words
+        .iter()
+        .position(|w| strip_marks(w) == "--")
+        .unwrap_or(words.len());
+    let flags = words[..end].iter().filter(|w| is_flag(w)).count();
+    if indent + strip_marks(&one).width() <= width && flags < BREAK_FLAGS {
+        return vec![one];
+    }
+    let head = 1 + words
+        .iter()
+        .skip(1)
+        .take_while(|w| !is_flag(w) && strip_marks(w) != "--")
+        .count();
+    let head = head.min(words.len());
+    let mut groups: Vec<String> = Vec::new();
+    let mut index = head;
+    while index < words.len() {
+        let word = &words[index];
+        let pairs = index < end
+            && is_flag(word)
+            && !strip_marks(word).contains('=')
+            && index + 1 < end
+            && !is_flag(&words[index + 1]);
+        if pairs {
+            groups.push(format!("{word} {}", words[index + 1]));
+            index += 2;
+        } else {
+            groups.push(word.clone());
+            index += 1;
+        }
+    }
+    if groups.is_empty() {
+        return vec![one];
+    }
+    let pad = " ".repeat(indent + 2);
+    let mut lines = vec![words[..head].join(" ")];
+    lines.extend(groups.into_iter().map(|g| format!("{pad}{g}")));
+    let last = lines.len() - 1;
+    for line in &mut lines[..last] {
+        line.push_str(" \\");
+    }
+    lines
+}
+
+/// The shown words of a command, one per argument (a known list gives one per item).
+fn words(program: &Program, argv: &[Interpolated], values: &dyn Values) -> Vec<String> {
+    let mut out = Vec::new();
+    for t in argv {
+        if let [
+            IPart::Sym {
+                sym, splat: true, ..
+            },
+        ] = t.parts.as_slice()
+            && let Some(items) = values.shown_arg(program, *sym)
+        {
+            out.extend(items.iter().map(|i| quote_segments(&[(i, true)])));
+            continue;
+        }
+        out.push(argument(program, t, values));
+    }
+    out
 }
 
 fn argument(program: &Program, t: &Interpolated, values: &dyn Values) -> String {
-    if let [
-        IPart::Sym {
-            sym, splat: true, ..
-        },
-    ] = t.parts.as_slice()
-        && let Some(items) = values.shown_arg(program, *sym)
-    {
-        return items
-            .iter()
-            .map(|i| quote_segments(&[(i, true)]))
-            .collect::<Vec<_>>()
-            .join(" ");
-    }
     let mut segments: Vec<(String, bool)> = Vec::new();
     for part in &t.parts {
         match part {
@@ -262,23 +375,28 @@ pub fn expr(program: &Program, e: &Expr, values: &dyn Values) -> String {
     }
 }
 
-/// The lines of one step and its body, indented by `depth`.
+/// The lines of one step and its body, indented by `depth`. With a `width`, long commands
+/// break across lines ([`command_lines`]); without one, each command takes one line.
 pub fn step_lines(
     program: &Program,
     step: &Step,
     depth: usize,
     values: &dyn Values,
+    width: Option<usize>,
     out: &mut Vec<String>,
 ) {
     let pad = "  ".repeat(depth);
     let id = &step.id;
     match &step.kind {
         StepKind::Command(c) => {
-            out.push(format!(
-                "{pad}{id}  {} ❯ {}",
-                c.kind.keyword(),
-                argv(program, &c.argv, values)
-            ));
+            let prefix = format!("{pad}{id}  {} ❯ ", c.kind.keyword());
+            let lines = match width {
+                Some(width) => command_lines(program, &c.argv, values, prefix.width(), width),
+                None => vec![argv(program, &c.argv, values)],
+            };
+            let mut lines = lines.into_iter();
+            out.push(format!("{prefix}{}", lines.next().unwrap_or_default()));
+            out.extend(lines);
             for (name, value) in &c.env {
                 out.push(format!(
                     "{pad}      env {name}={}",
@@ -337,7 +455,7 @@ pub fn step_lines(
         StepKind::When { cond, body } => {
             out.push(format!("{pad}{id}  when {}", expr(program, cond, values)));
             for s in body {
-                step_lines(program, s, depth + 1, values, out);
+                step_lines(program, s, depth + 1, values, width, out);
             }
         }
         StepKind::Each { var, list, body } => {
@@ -347,7 +465,7 @@ pub fn step_lines(
                 expr(program, list, values)
             ));
             for s in body {
-                step_lines(program, s, depth + 1, values, out);
+                step_lines(program, s, depth + 1, values, width, out);
             }
         }
         StepKind::Poll {
@@ -359,7 +477,7 @@ pub fn step_lines(
         } => {
             out.push(format!("{pad}{id}  poll every {every}s for {limit}s"));
             for s in body {
-                step_lines(program, s, depth + 1, values, out);
+                step_lines(program, s, depth + 1, values, width, out);
             }
             out.push(format!("{pad}      until {}", expr(program, until, values)));
             if let Some(fail) = fail {
@@ -380,14 +498,14 @@ pub fn step_lines(
         StepKind::Call { label, body, .. } => {
             out.push(format!("{pad}{id}  {label}"));
             for s in body {
-                step_lines(program, s, depth + 1, values, out);
+                step_lines(program, s, depth + 1, values, width, out);
             }
         }
     }
 }
 
-/// The whole static plan.
-pub fn plan(program: &Program) -> String {
+/// The whole static plan, with commands laid out for `width` columns.
+pub fn plan(program: &Program, width: usize) -> String {
     let mut out = Vec::new();
     out.push(program.title.clone());
     let params: Vec<String> = program
@@ -427,10 +545,9 @@ pub fn plan(program: &Program) -> String {
                 )
             }
         };
+        out.push(stage_rule(stage.number, total, &stage.title, width));
         out.push(format!(
-            "▸ Stage {}/{total} · {}  [{}, {}; {from}]",
-            stage.number,
-            stage.title,
+            "  {}, {}; {from}",
             if stage.mutating {
                 "mutating"
             } else {
@@ -439,7 +556,7 @@ pub fn plan(program: &Program) -> String {
             if gated { "gate" } else { "no gate" },
         ));
         for step in &stage.steps {
-            step_lines(program, step, 1, &Placeholders, &mut out);
+            step_lines(program, step, 1, &Placeholders, Some(width), &mut out);
         }
     }
     out.join("\n") + "\n"
@@ -472,5 +589,125 @@ mod tests {
     fn a_mark_inside_a_value_is_escaped_not_trusted() {
         assert_eq!(quote("x\u{e000}y"), "$'x\\xe000y'");
         assert_eq!(escape_controls("x\u{e001}y"), "x\\xe001y");
+    }
+
+    fn laid_out(words: &[&str], indent: usize, width: usize) -> Vec<String> {
+        let words: Vec<String> = words.iter().map(|w| (*w).to_string()).collect();
+        let lines = layout(&words, indent, width);
+        assert_eq!(
+            join_breaks(&lines.join("\n")),
+            words.join(" "),
+            "{lines:#?}"
+        );
+        lines
+    }
+
+    #[test]
+    fn a_short_command_stays_on_one_line() {
+        assert_eq!(
+            laid_out(&["git", "branch", "--show-current"], 8, 100),
+            ["git branch --show-current"]
+        );
+        assert_eq!(laid_out(&["echo", "a", "b", "c"], 8, 10), ["echo a b c"]);
+    }
+
+    #[test]
+    fn three_flags_break_even_when_the_line_fits() {
+        assert_eq!(
+            laid_out(
+                &[
+                    "git",
+                    "ls-remote",
+                    "--tags",
+                    "--refs",
+                    "--sort=-version:refname",
+                    "origin"
+                ],
+                8,
+                100
+            ),
+            [
+                "git ls-remote \\",
+                "          --tags \\",
+                "          --refs \\",
+                "          --sort=-version:refname \\",
+                "          origin",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_wide_command_breaks_and_pairs_flags_with_values() {
+        assert_eq!(
+            laid_out(
+                &[
+                    "aws",
+                    "rds",
+                    "describe",
+                    "--profile",
+                    "prod",
+                    "--file",
+                    "/a/very/long/path.json"
+                ],
+                8,
+                40
+            ),
+            [
+                "aws rds describe \\",
+                "          --profile prod \\",
+                "          --file /a/very/long/path.json",
+            ]
+        );
+    }
+
+    #[test]
+    fn flags_after_a_double_dash_are_words() {
+        assert_eq!(
+            laid_out(&["git", "log", "-n", "1", "--", "--weird-file", "x"], 0, 10),
+            [
+                "git log \\",
+                "  -n 1 \\",
+                "  -- \\",
+                "  --weird-file \\",
+                "  x",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_flag_pairs_with_a_lone_dash_but_not_with_another_flag() {
+        assert_eq!(
+            laid_out(&["x", "--a", "--b", "-", "--c=1"], 0, 5),
+            ["x \\", "  --a \\", "  --b - \\", "  --c=1"]
+        );
+    }
+
+    #[test]
+    fn marked_values_and_placeholders_lay_out_like_words() {
+        let flag = "\u{e000}--id\u{e001}";
+        let lines = laid_out(&["x", flag, "<snap ← 2.1>", "--y", "'a b'", "--z"], 0, 100);
+        assert_eq!(
+            lines,
+            [
+                "x \\".to_string(),
+                format!("  {flag} <snap ← 2.1> \\"),
+                "  --y 'a b' \\".to_string(),
+                "  --z".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_stage_rule_fills_to_the_width_with_a_cap() {
+        let rule = stage_rule(2, 4, "Greet", 40);
+        assert_eq!(rule.width(), 40);
+        assert!(rule.starts_with("━━ Stage 2/4 · Greet ━"), "{rule}");
+        assert_eq!(stage_rule(1, 1, "x", 200).width(), RULE_MAX);
+        assert!(stage_rule(1, 1, &"t".repeat(100), 40).ends_with(" ━━"));
+    }
+
+    #[test]
+    fn join_breaks_leaves_other_lines_alone() {
+        assert_eq!(join_breaks("a \\\n  b\nc \\"), "a b\nc \\");
     }
 }

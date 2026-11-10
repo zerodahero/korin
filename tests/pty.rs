@@ -533,8 +533,19 @@ fn live_view_erases_the_preview_and_ghosts_the_steps_to_come() {
     s.send("y\r");
     s.wait_for("started");
     let running = s.raw()[before..].to_string();
-    // The preview (two step lines and the prompt) is erased back to the stage header.
-    assert!(running.contains("\x1b[3A\x1b[J"), "{running:?}");
+    // The preview (a blank line, two step lines and the prompt) is erased back to the stage
+    // header.
+    assert!(running.contains("\x1b[4A\x1b[J"), "{running:?}");
+    // The footer under the ghost names the stage and the step running now.
+    let dim = "\x1b[38;2;123;124;126m";
+    assert!(
+        running.contains(&format!("{dim}Stage 1/1 · a\x1b[0m")),
+        "{running:?}"
+    );
+    assert!(
+        running.contains(&format!("{dim}step 1.1\x1b[0m")),
+        "{running:?}"
+    );
     // The note still to come is drawn in carbonfox's comment color under the output.
     let ghost = "\x1b[38;2;110;111;112m  1.2  note \"still-to-come\"\x1b[0m";
     assert!(running.contains(ghost), "{running:?}");
@@ -547,6 +558,17 @@ fn live_view_erases_the_preview_and_ghosts_the_steps_to_come() {
         "the ghost was never erased"
     );
     assert!(s.text().contains("still-to-come"));
+    // The footer is erased once the stage ends, and the stage-end line closes the stage.
+    let last_footer = raw.rfind(&format!("{dim}step 1.2\x1b[0m")).unwrap();
+    assert!(
+        raw[last_footer..].contains("\x1b[J"),
+        "the footer was never erased"
+    );
+    assert!(
+        s.text().contains("✓ stage 1 done · 1 command"),
+        "{}",
+        s.text()
+    );
 }
 
 #[test]

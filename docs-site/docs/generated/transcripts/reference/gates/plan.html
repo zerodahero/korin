@@ -1,11 +1,13 @@
 <pre class="k-term"><code>Roll the api to a new image
 params: image (required)
 
-<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Current state</span>  <span class="k-fg-dim">[read-only, no gate; valid --from start]</span>
-  <span class="k-fg-dim">1.1</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> kubectl get deployment api -n shop -o json
+<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Current state</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+  <span class="k-fg-dim">read-only, no gate; valid --from start</span>
+  <span class="k-fg-dim">1.1</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> kubectl get deployment api <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
         <span class="k-border">→</span> <span class="k-teal">current</span>
   <span class="k-fg-dim">1.2</span>  <span class="k-blue">note</span> <span class="k-green">"api runs &lt;current ← 1.1&gt;."</span>
 
-<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Roll</span>  <span class="k-fg-dim">[mutating, gate; valid --from start]</span>
-  <span class="k-fg-dim">2.1</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> kubectl set image deployment/api api=<span class="k-cyan">&lt;image&gt;</span> -n shop
-  <span class="k-fg-dim">2.2</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> kubectl rollout status deployment/api -n shop --timeout 5m</code></pre>
+<span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Roll</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+  <span class="k-fg-dim">mutating, gate; valid --from start</span>
+  <span class="k-fg-dim">2.1</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> kubectl set image <span class="k-fg-dim">deployment/</span>api api=<span class="k-cyan">&lt;image&gt;</span> <span class="k-blue">-n</span> shop
+  <span class="k-fg-dim">2.2</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> kubectl rollout status <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> shop <span class="k-blue">--timeout</span> 5m</code></pre>

@@ -1,9 +1,9 @@
 <pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Are the checks green?</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">1 stage</span>
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run on.korin --param pr=42
 
-<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Checks</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Checks</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
-  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> gh pr checks <span class="k-cyan">42</span> --json name,state
+  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> gh pr checks <span class="k-cyan">42</span> <span class="k-blue">--json</span> name,state
       <span class="k-border">│</span> [{"name":"build","state":"SUCCESS"},{"name":"test (linux)","state":"PENDING"},{"name":"test
 (macos)","state":"PENDING"}]
     <span class="k-fg-dim">expect:</span> <span class="k-teal">pending</span>
@@ -11,6 +11,7 @@
   test (linux) is still running.
 
   test (macos) is still running.
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Are the checks green? completed</span>
   <span class="k-fg-dim">journal: /home/ada/project/.korin/runs/20260115T100000Z-are-the-checks-green</span></code></pre>

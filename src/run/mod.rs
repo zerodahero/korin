@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 use serde_json::json;
+use unicode_width::UnicodeWidthStr as _;
 
 use crate::ast::{CmpOp, CommandKind, GateMode, SayKind, Span};
 use crate::diag::Diag;
@@ -244,6 +245,8 @@ struct Runner<'p> {
     rests: Vec<&'p [Step]>,
     /// The terminal view: with a live view, steps still to run stay below the output.
     screen: RefCell<Screen>,
+    /// The footer's text while a stage runs: the stage, then the step running now.
+    footer: Option<(String, String)>,
 }
 
 impl<'p> Runner<'p> {
@@ -366,6 +369,7 @@ impl<'p> Runner<'p> {
             from,
             rests: Vec::new(),
             screen: RefCell::new(Screen::new(live, theme)),
+            footer: None,
         })
     }
 
@@ -426,7 +430,7 @@ impl<'p> Runner<'p> {
                         .map(|d| self.redactor.redact(d))
                         .collect(),
                 };
-                self.screen.borrow_mut().clear();
+                self.screen.borrow_mut().clear_all();
                 print_stop(self.opts.theme, &redacted, Some(self.journal.dir()));
                 stop.ending
             }
@@ -444,6 +448,44 @@ impl<'p> Runner<'p> {
         self.screen.borrow_mut().print(&format!("{shown}\n"));
     }
 
+    /// Prints a block that holds commands, laid out to read well (`broken`), or on one line
+    /// each (`one`) if the broken form would redact differently. Redaction must never depend
+    /// on where a command breaks.
+    fn say_block(&self, one: &str, broken: &str) {
+        let one = self.redact_marked(one);
+        let broken = self.redact_marked(broken);
+        let chosen =
+            if render::strip_marks(&render::join_breaks(&broken)) == render::strip_marks(&one) {
+                broken
+            } else {
+                one
+            };
+        let shown = self.opts.theme.lines(&chosen);
+        self.screen.borrow_mut().print(&format!("{shown}\n"));
+    }
+
+    /// Prints steps, with their commands laid out to read well.
+    fn say_steps(&self, steps: &[&Step]) {
+        let mut one = Vec::new();
+        let mut broken = Vec::new();
+        for step in steps {
+            render::step_lines(self.p, step, 1, self, None, &mut one);
+            render::step_lines(self.p, step, 1, self, Some(self.width()), &mut broken);
+        }
+        if !one.is_empty() {
+            self.say_block(&one.join("\n"), &broken.join("\n"));
+        }
+    }
+
+    /// The width to lay out for: the terminal's in a live view, else a fixed width.
+    fn width(&self) -> usize {
+        if self.screen.borrow().live() {
+            screen::width()
+        } else {
+            render::DEFAULT_WIDTH
+        }
+    }
+
     /// Redacts a line that may mark values, keeping the marks only if they split no secret.
     fn redact_marked(&self, line: &str) -> String {
         let redacted_plain = self.redactor.redact(&render::strip_marks(line));
@@ -455,16 +497,14 @@ impl<'p> Runner<'p> {
         }
     }
 
-    /// The lines for every step still to run in the stage: this block's remaining steps,
-    /// then each enclosing block's, innermost first.
-    fn remaining_lines(&self) -> Vec<String> {
-        let mut lines = Vec::new();
-        for block in self.rests.iter().rev() {
-            for s in *block {
-                render::step_lines(self.p, s, 1, self, &mut lines);
-            }
-        }
-        lines
+    /// Every step still to run in the stage: this block's remaining steps, then each
+    /// enclosing block's, innermost first.
+    fn remaining(&self) -> Vec<&'p Step> {
+        self.rests
+            .iter()
+            .rev()
+            .flat_map(|block| block.iter())
+            .collect()
     }
 
     /// With a live view, shows the steps still to run as ghost lines under the output.
@@ -473,12 +513,20 @@ impl<'p> Runner<'p> {
             return;
         }
         let theme = self.opts.theme;
-        let lines = self
-            .remaining_lines()
+        let mut lines = Vec::new();
+        for step in self.remaining() {
+            render::step_lines(self.p, step, 1, self, None, &mut lines);
+        }
+        let lines = lines
             .iter()
             .map(|line| theme.ghost(&self.redact_marked(line)))
             .collect();
-        self.screen.borrow_mut().set_ghost(lines);
+        let footer = self.footer.as_ref().map(|(stage, step)| {
+            theme.footer(&self.redactor.redact(stage), &self.redactor.redact(step))
+        });
+        let mut screen = self.screen.borrow_mut();
+        screen.set_ghost(lines);
+        screen.set_footer(footer);
     }
 
     /// The intro, shaped like a shell prompt: the wizard, where it runs, then the command.
@@ -566,17 +614,14 @@ impl<'p> Runner<'p> {
     fn stage(&mut self, stage: &'p ir::Stage) -> Result<(), Stop> {
         let total = self.p.stages.len();
         self.say(&format!(
-            "\n▸ Stage {}/{total} · {}",
-            stage.number, stage.title
+            "\n{}",
+            render::stage_rule(stage.number, total, &stage.title, self.width())
         ));
         // Everything after the header is the preview; a live view erases it once approved.
         self.screen.borrow_mut().mark();
-        let mut lines = Vec::new();
-        for step in &stage.steps {
-            render::step_lines(self.p, step, 1, self, &mut lines);
-        }
-        for line in &lines {
-            self.say(line);
+        if !stage.steps.is_empty() {
+            self.say("");
+            self.say_steps(&stage.steps.iter().collect::<Vec<_>>());
         }
         self.journal.event(
             "stage_start",
@@ -607,9 +652,28 @@ impl<'p> Runner<'p> {
         }
         self.screen.borrow_mut().erase_to_mark();
         let prefix = format!("s{}", stage.number);
+        let before = self.seq;
+        self.footer = Some((
+            format!(
+                "Stage {}/{total} · {}",
+                stage.number,
+                render::escape_controls(&stage.title)
+            ),
+            String::new(),
+        ));
         let result = self.steps(&stage.steps, &prefix, "", None);
-        self.screen.borrow_mut().clear();
-        result
+        self.footer = None;
+        self.screen.borrow_mut().clear_all();
+        result?;
+        // The stage-end line.
+        let commands = self.seq - before;
+        let tail = match commands {
+            0 => String::new(),
+            1 => " · 1 command".into(),
+            n => format!(" · {n} commands"),
+        };
+        self.say(&format!("  ✓ stage {} done{tail}", stage.number));
+        Ok(())
     }
 
     /// Stops before a gate if any command in the stage would receive a value that is already
@@ -679,6 +743,9 @@ impl<'p> Runner<'p> {
         if self.signals.take_terminate() {
             return Err(Stop::cancelled("korin received SIGTERM or SIGHUP"));
         }
+        if let Some((_, current)) = &mut self.footer {
+            current.clone_from(&step.id);
+        }
         self.update_ghost();
         match &step.kind {
             StepKind::Command(command) => self.command(command, step, path, suffix, deadline),
@@ -687,14 +754,12 @@ impl<'p> Runner<'p> {
                 // Everything left in the stage, shown in full as at a gate. A live view
                 // erases the list once confirmed, and the ghost takes over again.
                 let _ = rest;
-                let lines = self.remaining_lines();
+                let steps = self.remaining();
                 self.screen.borrow_mut().clear();
                 self.screen.borrow_mut().mark();
-                if !lines.is_empty() {
+                if !steps.is_empty() {
                     self.say("  next:");
-                    for line in &lines {
-                        self.say(line);
-                    }
+                    self.say_steps(&steps);
                 }
                 if self.ask_yes(&text)? {
                     self.screen.borrow_mut().erase_to_mark();
@@ -957,7 +1022,13 @@ impl<'p> Runner<'p> {
                 ))
             })?;
         let shown = render::argv(self.p, &command.argv, self);
-        self.say(&format!("\n  {} ❯ {shown}", step.id));
+        let prefix = format!("  {} ❯ ", step.id);
+        let broken =
+            render::command_lines(self.p, &command.argv, self, prefix.width(), self.width());
+        self.say_block(
+            &format!("\n{prefix}{shown}"),
+            &format!("\n{prefix}{}", broken.join("\n")),
+        );
         let shown = render::strip_marks(&shown);
         self.journal.event(
             "command_start",

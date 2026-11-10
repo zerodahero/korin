@@ -1,9 +1,9 @@
 <pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Check a deployment before a change</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">1 stage</span>
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run rules.korin --param env=production
 
-<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Deployment</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Deployment</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
-  <span class="k-fg-dim">1.2</span> <span class="k-blue k-bold">❯</span> kubectl get deployment web -n <span class="k-cyan">production</span> -o json
+  <span class="k-fg-dim">1.2</span> <span class="k-blue k-bold">❯</span> kubectl get deployment web <span class="k-blue">-n</span> <span class="k-cyan">production</span> <span class="k-blue">-o</span> json
       <span class="k-border">│</span> {
       <span class="k-border">│</span>   "metadata": {"name": "web", "namespace": "shop"},
       <span class="k-border">│</span>   "spec": {
@@ -20,6 +20,7 @@ latest"}]}}
   <span class="k-magenta">⚠ Production runs a :latest image: registry.example.com/web:latest.</span>
 
   web runs 4 replicas in production.
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Check a deployment before a change completed</span>
   <span class="k-fg-dim">journal: /home/ada/project/.korin/runs/20260115T100000Z-check-a-deployment-before-a-change</span></code></pre>

@@ -17,10 +17,17 @@ stage "Snapshot"
 At the gate, korin shows that the second command depends on the first:
 
 ```text
-▸ Stage 3/5 · Snapshot
-  3.1  mutate ❯ aws rds create-db-cluster-snapshot --db-cluster-identifier main-db-cluster --db-cluster-snapshot-identifier main-db-cluster-rehearsal-snap --output json
+━━ Stage 3/5 · Snapshot ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  3.1  mutate ❯ aws rds create-db-cluster-snapshot \
+                  --db-cluster-identifier main-db-cluster \
+                  --db-cluster-snapshot-identifier main-db-cluster-rehearsal-snap \
+                  --output json
         → snap_arn
-  3.2  mutate ❯ aws ssm put-parameter --name /rehearsal/main-db-cluster/snapshot --value <snap_arn ← 3.1> --overwrite
+  3.2  mutate ❯ aws ssm put-parameter \
+                  --name /rehearsal/main-db-cluster/snapshot \
+                  --value <snap_arn ← 3.1> \
+                  --overwrite
   ? Run stage 3? [y/N]
 ```
 

@@ -54,7 +54,7 @@ fn from(body: &str, stage: &str) -> String {
 fn intro_example_is_valid() {
     let (program, warnings) = compile_path(Path::new("examples/intro/intro.korin")).unwrap();
     assert!(warnings.is_empty());
-    insta::assert_snapshot!(korin::render::plan(&program));
+    insta::assert_snapshot!(korin::render::plan(&program, korin::render::DEFAULT_WIDTH));
 }
 
 #[test]
@@ -350,9 +350,14 @@ fn interactive_inside_when_makes_a_stage_mutating() {
     let (program, _) = compile_path(&path).unwrap();
     assert!(program.stages[0].mutating);
     assert!(!program.stages[1].mutating);
-    let plan = korin::render::plan(&program);
-    assert!(plan.contains("· a  [mutating, gate;"), "{plan}");
-    assert!(plan.contains("· b  [read-only, no gate;"), "{plan}");
+    let plan = korin::render::plan(&program, korin::render::DEFAULT_WIDTH);
+    let tags: Vec<&str> = plan
+        .lines()
+        .skip_while(|l| !l.starts_with("━━ Stage"))
+        .filter(|l| l.ends_with("from start"))
+        .collect();
+    assert!(tags[0].starts_with("  mutating, gate;"), "{plan}");
+    assert!(tags[1].starts_with("  read-only, no gate;"), "{plan}");
 }
 
 #[test]
@@ -388,7 +393,7 @@ fn rendered_conditions_keep_their_grouping() {
     )
     .unwrap();
     let (program, _) = compile_path(&path).unwrap();
-    let plan = korin::render::plan(&program);
+    let plan = korin::render::plan(&program, korin::render::DEFAULT_WIDTH);
     assert!(plan.contains("when not (a or b)"), "{plan}");
     assert!(plan.contains("when (a or b) and not a"), "{plan}");
 }

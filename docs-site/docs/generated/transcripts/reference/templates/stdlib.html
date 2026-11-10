@@ -1,27 +1,33 @@
 <pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Record the release in SSM</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">2 stages</span>
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run stdlib.korin --param version=2.4.0
 
-<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Account</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Account</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
-  <span class="k-fg-dim">1.1.1</span> <span class="k-blue k-bold">❯</span> aws sts get-caller-identity --output json
+  <span class="k-fg-dim">1.1.1</span> <span class="k-blue k-bold">❯</span> aws sts get-caller-identity <span class="k-blue">--output</span> json
       <span class="k-border">│</span> {
       <span class="k-border">│</span>     "UserId": "AIDASAMPLEUSERID",
       <span class="k-border">│</span>     "Account": "123456789012",
       <span class="k-border">│</span>     "Arn": "arn:aws:iam::123456789012:user/ada"
       <span class="k-border">│</span> }
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command</span>
 
-<span class="k-blue k-bold">▸</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Release marker</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Release marker</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
-  <span class="k-fg-dim">2.1.1</span> <span class="k-blue k-bold">❯</span> aws ssm get-parameter --name /shop/release --output json
+  <span class="k-fg-dim">2.1.1</span> <span class="k-blue k-bold">❯</span> aws ssm get-parameter <span class="k-blue">--name</span> <span class="k-fg-dim">/shop/</span>release <span class="k-blue">--output</span> json
       <span class="k-border">│</span> {
       <span class="k-border">│</span>     "Parameter": {"Name": "/shop/release", "Type": "String", "Value": "2.3.1", "Version": 6}
       <span class="k-border">│</span> }
 
   The current release is 2.3.1.
 
-  <span class="k-fg-dim">2.3.1</span> <span class="k-blue k-bold">❯</span> aws ssm put-parameter --name /shop/release --value <span class="k-cyan">2.4.0</span> --type String --overwrite --outpu
-t json
+  <span class="k-fg-dim">2.3.1</span> <span class="k-blue k-bold">❯</span> aws ssm put-parameter <span class="k-border">\</span>
+            <span class="k-blue">--name</span> <span class="k-fg-dim">/shop/</span>release <span class="k-border">\</span>
+            <span class="k-blue">--value</span> <span class="k-cyan">2.4.0</span> <span class="k-border">\</span>
+            <span class="k-blue">--type</span> String <span class="k-border">\</span>
+            <span class="k-blue">--overwrite</span> <span class="k-border">\</span>
+            <span class="k-blue">--output</span> json
       <span class="k-border">│</span> {"Version": 7, "Tier": "Standard"}
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 2 commands</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Record the release in SSM completed</span>
   <span class="k-fg-dim">journal: /home/ada/project/.korin/runs/20260115T100000Z-record-the-release-in-ssm</span></code></pre>

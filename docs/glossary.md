@@ -219,3 +219,10 @@ A `note`, `warn` or `record` step: a line shown to the human, and for `record` a
 the report. Code: `Say`.
 
 - Avoid: Message
+
+### Footer
+
+The live line under the ghost that names the current stage and the step running now. It is
+drawn only in a live terminal view and erased when the stage ends. Code: `Screen::set_footer`.
+
+- Avoid: status bar, status line

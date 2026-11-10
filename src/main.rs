@@ -1,3 +1,4 @@
+use std::io::IsTerminal as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -168,7 +169,13 @@ fn plan(file: &std::path::Path, theme: Theme) -> ExitCode {
     match compile_path(file) {
         Ok((program, diags)) => {
             report(&diags, Format::Human);
-            print!("{}", theme.lines(&korin::render::plan(&program)));
+            let width = if std::io::stdout().is_terminal() {
+                terminal_size::terminal_size()
+                    .map_or(korin::render::DEFAULT_WIDTH, |(w, _)| usize::from(w.0))
+            } else {
+                korin::render::DEFAULT_WIDTH
+            };
+            print!("{}", theme.lines(&korin::render::plan(&program, width)));
             ExitCode::SUCCESS
         }
         Err(diags) => {

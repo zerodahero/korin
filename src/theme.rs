@@ -105,6 +105,17 @@ impl Role {
     }
 }
 
+/// How [`Theme::inline`] colors the text between values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Text {
+    /// Left as it is.
+    Plain,
+    /// Quoted strings are green.
+    Strings,
+    /// A command: flags take the keyword color, and paths dim their directory part.
+    Command,
+}
+
 /// The colors for one output stream.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Theme {
@@ -190,16 +201,24 @@ impl Theme {
 
     /// Colors one or more lines of run or plan output. The text must already be redacted.
     /// Value marks from [`crate::render::argv`] become color, and are removed either way.
+    /// A command broken across lines ([`crate::render::command_lines`]) must come in one
+    /// call, so its later lines are colored as part of it.
     pub fn lines(self, text: &str) -> String {
         if !self.enabled() {
             return strip_marks(text);
         }
         let mut out = String::with_capacity(text.len() * 2);
+        let mut continues = false;
         for (i, line) in text.split('\n').enumerate() {
             if i > 0 {
                 out.push('\n');
             }
-            self.line(line, &mut out);
+            let command = if continues {
+                self.continuation(line, &mut out)
+            } else {
+                self.line(line, &mut out)
+            };
+            continues = command && strip_marks(line).ends_with(" \\");
         }
         out
     }
@@ -208,6 +227,17 @@ impl Theme {
     pub fn ghost(self, line: &str) -> String {
         let mut out = String::new();
         self.paint(Role::Ghost, &strip_marks(line), &mut out);
+        out
+    }
+
+    /// The footer under the ghost: `─ Stage 3/4 · Title ─ step 3.2`, dim. The text must
+    /// already be redacted.
+    pub fn footer(self, stage: &str, step: &str) -> String {
+        let mut out = String::from("  ");
+        self.paint(Role::Frame, "─ ", &mut out);
+        self.paint(Role::Dim, &strip_marks(stage), &mut out);
+        self.paint(Role::Frame, " ─ ", &mut out);
+        self.paint(Role::Dim, &format!("step {}", strip_marks(step)), &mut out);
         out
     }
 
@@ -274,7 +304,8 @@ impl Theme {
 
     // ---- the line highlighter ----
 
-    fn line(self, line: &str, out: &mut String) {
+    /// Colors one line, and tells whether it was a command, which a later line may continue.
+    fn line(self, line: &str, out: &mut String) -> bool {
         let p = patterns();
         if let Some(rest) = line.strip_prefix("╭─ korin ─ ") {
             self.intro_top(rest, out);
@@ -282,24 +313,27 @@ impl Theme {
             self.paint(Role::Frame, "╰─", out);
             self.paint(Role::Prompt, "❯", out);
             out.push(' ');
-            self.inline(rest, None, false, out);
+            self.inline(rest, None, Text::Plain, out);
         } else if let Some(c) = p.stage.captures(line) {
             out.push_str(&c[1]);
-            self.paint(Role::Prompt, "▸", out);
+            self.paint(Role::Frame, "━━", out);
             out.push(' ');
             self.paint(Role::Dim, &c[2], out);
             self.paint(Role::Frame, " · ", out);
             self.paint(Role::Title, &c[3], out);
-            if let Some(tags) = c.get(4) {
-                self.paint(Role::Dim, tags.as_str(), out);
-            }
+            out.push(' ');
+            self.paint(Role::Frame, &c[4], out);
+        } else if let Some(c) = p.tags.captures(line) {
+            out.push_str(&c[1]);
+            self.paint(Role::Dim, &c[2], out);
         } else if let Some(c) = p.ran.captures(line) {
             out.push_str(&c[1]);
             self.paint(Role::Dim, &c[2], out);
             out.push(' ');
             self.paint(Role::Prompt, "❯", out);
             out.push(' ');
-            self.inline(&c[3], None, false, out);
+            self.command(&c[3], out);
+            return true;
         } else if let Some(c) = p.planned_command.captures(line) {
             out.push_str(&c[1]);
             self.paint(Role::Dim, &c[2], out);
@@ -308,18 +342,19 @@ impl Theme {
             out.push(' ');
             self.paint(Role::Prompt, "❯", out);
             out.push(' ');
-            self.inline(&c[4], None, false, out);
+            self.command(&c[4], out);
+            return true;
         } else if let Some(c) = p.planned_step.captures(line) {
             out.push_str(&c[1]);
             self.paint(Role::Dim, &c[2], out);
             out.push_str("  ");
             self.paint(Role::Keyword, &c[3], out);
-            self.inline(&c[4], None, true, out);
+            self.inline(&c[4], None, Text::Strings, out);
         } else if let Some(c) = p.call.captures(line) {
             out.push_str(&c[1]);
             self.paint(Role::Dim, &c[2], out);
             out.push_str("  ");
-            self.inline(&c[3], None, true, out);
+            self.inline(&c[3], None, Text::Strings, out);
         } else if let Some(c) = p.detail.captures(line) {
             out.push_str(&c[1]);
             match &c[2] {
@@ -333,9 +368,14 @@ impl Theme {
                 }
                 keyword => {
                     self.paint(Role::Keyword, keyword, out);
-                    self.inline(&c[3], None, true, out);
+                    self.inline(&c[3], None, Text::Strings, out);
                 }
             }
+        } else if let Some(c) = p.stage_end.captures(line) {
+            out.push_str(&c[1]);
+            self.paint(Role::Ok, "✓", out);
+            out.push(' ');
+            self.paint(Role::Dim, &c[2], out);
         } else if let Some(c) = p.status.captures(line) {
             out.push_str(&c[1]);
             let (mark_role, text_role) = match &c[2] {
@@ -346,13 +386,69 @@ impl Theme {
             };
             self.paint(mark_role, &c[2], out);
             out.push(' ');
-            self.inline(&c[3], text_role, true, out);
+            self.inline(&c[3], text_role, Text::Strings, out);
         } else if let Some(c) = p.quiet.captures(line) {
             out.push_str(&c[1]);
             self.paint(Role::Dim, &c[2], out);
-            self.inline(&c[3], Some(Role::Dim), false, out);
+            self.inline(&c[3], Some(Role::Dim), Text::Plain, out);
         } else {
-            self.inline(line, None, true, out);
+            self.inline(line, None, Text::Strings, out);
+        }
+        false
+    }
+
+    /// A later line of a command broken across lines: its indent, then more of the command.
+    fn continuation(self, line: &str, out: &mut String) -> bool {
+        let body = line.trim_start_matches(' ');
+        out.push_str(&line[..line.len() - body.len()]);
+        self.command(body, out);
+        true
+    }
+
+    /// The words of a command, with the ` \` that ends a broken line in the frame color.
+    fn command(self, text: &str, out: &mut String) {
+        match text.strip_suffix(" \\") {
+            Some(body) => {
+                self.inline(body, None, Text::Command, out);
+                out.push(' ');
+                self.paint(Role::Frame, "\\", out);
+            }
+            None => self.inline(text, None, Text::Command, out),
+        }
+    }
+
+    /// Plain command text: a word that starts with `-` is a flag, and any word holding `/`
+    /// dims its directory part. `word_start` tells whether `text` starts a word, as opposed
+    /// to continuing one after a value.
+    fn command_words(self, text: &str, word_start: bool, out: &mut String) {
+        let text = strip_marks(text);
+        for (index, word) in text.split(' ').enumerate() {
+            if index > 0 {
+                out.push(' ');
+            }
+            let starts = index > 0 || word_start;
+            if starts && word.len() > 1 && word.starts_with('-') {
+                match word.split_once('=') {
+                    Some((flag, value)) => {
+                        self.paint(Role::Keyword, &format!("{flag}="), out);
+                        self.path(value, out);
+                    }
+                    None => self.paint(Role::Keyword, word, out),
+                }
+            } else {
+                self.path(word, out);
+            }
+        }
+    }
+
+    /// A word that may be a path: everything up to the last `/` is dim.
+    fn path(self, word: &str, out: &mut String) {
+        match word.rfind('/') {
+            Some(slash) => {
+                self.paint(Role::Dim, &word[..=slash], out);
+                out.push_str(&word[slash + 1..]);
+            }
+            None => out.push_str(word),
         }
     }
 
@@ -372,16 +468,16 @@ impl Theme {
             self.paint(Role::Dim, count, out);
         } else {
             self.paint(Role::Frame, " ─ ", out);
-            self.inline(rest, None, false, out);
+            self.inline(rest, None, Text::Plain, out);
         }
     }
 
-    /// Colors the values, masked secrets, placeholders and (when `strings` is set) quoted
-    /// strings inside a piece of text. Other text takes `base`, or no color.
-    fn inline(self, text: &str, base: Option<Role>, strings: bool, out: &mut String) {
+    /// Colors the values, masked secrets and placeholders inside a piece of text, and the
+    /// text between them as `mode` says. Other text takes `base`, or no color.
+    fn inline(self, text: &str, base: Option<Role>, mode: Text, out: &mut String) {
         let mut last = 0;
         for m in patterns().inline.find_iter(text) {
-            self.plain(&text[last..m.start()], base, out);
+            self.between(text, last, m.start(), base, mode, out);
             let token = m.as_str();
             if let Some(value) = token
                 .strip_prefix(VALUE_OPEN)
@@ -392,15 +488,33 @@ impl Theme {
                 self.paint(Role::Secret, token, out);
             } else if token.starts_with('<') {
                 self.paint(Role::Value, token, out);
-            } else if strings {
+            } else if mode == Text::Strings {
                 // A quoted string: green, with any placeholders inside it still marked.
-                self.inline(token, Some(Role::Str), false, out);
+                self.inline(token, Some(Role::Str), Text::Plain, out);
             } else {
-                self.plain(token, base, out);
+                self.between(text, m.start(), m.end(), base, mode, out);
             }
             last = m.end();
         }
-        self.plain(&text[last..], base, out);
+        self.between(text, last, text.len(), base, mode, out);
+    }
+
+    /// The text from `start` to `end` that holds no value, colored as `mode` says.
+    fn between(
+        self,
+        text: &str,
+        start: usize,
+        end: usize,
+        base: Option<Role>,
+        mode: Text,
+        out: &mut String,
+    ) {
+        if mode == Text::Command {
+            let word_start = text[..start].is_empty() || text[..start].ends_with(' ');
+            self.command_words(&text[start..end], word_start, out);
+        } else {
+            self.plain(&text[start..end], base, out);
+        }
     }
 
     fn plain(self, text: &str, base: Option<Role>, out: &mut String) {
@@ -414,6 +528,8 @@ impl Theme {
 
 struct Patterns {
     stage: Regex,
+    tags: Regex,
+    stage_end: Regex,
     ran: Regex,
     planned_command: Regex,
     planned_step: Regex,
@@ -429,8 +545,12 @@ fn patterns() -> &'static Patterns {
     PATTERNS.get_or_init(|| {
         let re = |s: &str| Regex::new(s).expect("theme pattern compiles");
         Patterns {
-            // `▸ Stage 1/2 · Title`, with plan tags such as `  [read-only, gate; …]`.
-            stage: re(r"^(\s*)▸ (Stage \d+/\d+) · (.*?)(  \[[^\]]*\])?$"),
+            // The rule that starts a stage: `━━ Stage 1/2 · Title ━━━━`.
+            stage: re(r"^(\s*)━━ (Stage \d+/\d+) · (.*?) (━+)$"),
+            // The plan's tags under a stage rule: `  read-only, gate; valid --from start`.
+            tags: re(r"^(\s+)((?:read-only|mutating), (?:gate|no gate); .*)$"),
+            // The stage-end line: `  ✓ stage 2 done · 4 commands`.
+            stage_end: re(r"^(\s*)✓ (stage \d+ done(?: · .*)?)$"),
             // A command as it runs: `  2.1 ❯ echo hi`.
             ran: re(r"^(\s*)(\d+(?:\.\d+)*) ❯ (.*)$"),
             // A command in a plan or at a gate: `  2.1  read ❯ echo hi`.
@@ -513,7 +633,11 @@ mod tests {
         let lines = [
             "╭─ korin ─ Say ─ hello ─ ~/demo ─ 2 stages",
             "╰─❯ korin run w.korin",
-            "▸ Stage 1/2 · Greet  [read-only, gate; valid --from start]",
+            "━━ Stage 1/2 · Greet ━━━━━━━━━━",
+            "  read-only, gate; valid --from start",
+            "  ✓ stage 1 done · 2 commands",
+            "  2.1 ❯ aws s3 cp \\\n          --profile \u{e000}prod\u{e001} \\\n          /a/b/c.json",
+            "  2.2  read ❯ x --out=/tmp/y \u{e000}dir\u{e001}/rest-of \\\n    ./rel 'a b/c'",
             "  1.1  read ❯ echo 'hi' <message ← 2.1> «secret:pw»",
             "  1.2  note \"greeted {x}\"",
             "  2.1 ❯ echo \u{e000}'hi susan'\u{e001}",
@@ -540,6 +664,38 @@ mod tests {
         assert!(
             shown.contains("\x1b[38;2;238;83;150m«secret:pw»\x1b[0m"),
             "{shown:?}"
+        );
+    }
+
+    #[test]
+    fn broken_commands_color_flags_paths_and_continuations() {
+        let shown = TRUE.lines("  2.1 ❯ aws s3 cp \\\n      --file /a/b/c.json");
+        let dim = "\x1b[38;2;123;124;126m";
+        let keyword = "\x1b[38;2;120;169;255m";
+        assert!(
+            shown.contains(&format!("{keyword}--file\x1b[0m")),
+            "{shown:?}"
+        );
+        assert!(
+            shown.contains(&format!("{dim}/a/b/\x1b[0mc.json")),
+            "{shown:?}"
+        );
+        assert!(shown.contains("\x1b[38;2;83;83;83m\\\x1b[0m"), "{shown:?}");
+        // A dash after a value continues the value's word; it is not a flag.
+        let shown = TRUE.lines("  2.1 ❯ echo \u{e000}x\u{e001}-backup");
+        assert!(!shown.contains(keyword), "{shown:?}");
+    }
+
+    #[test]
+    fn the_footer_reads_as_one_dim_line() {
+        let footer = TRUE.footer("Stage 3/4 · Is it released?", "3.2");
+        assert_eq!(
+            strip_ansi(&footer),
+            "  ─ Stage 3/4 · Is it released? ─ step 3.2"
+        );
+        assert_eq!(
+            Theme::PLAIN.footer("Stage 1/1 · x", "1.1"),
+            "  ─ Stage 1/1 · x ─ step 1.1"
         );
     }
 
