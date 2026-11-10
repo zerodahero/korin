@@ -42,6 +42,17 @@ korin fmt wizard.korin       # canonical layout; --check to verify only
 korin modules                # list the built-in aws and rds templates
 ```
 
+## Write wizards with an agent
+
+The korin skill teaches coding agents to write and check wizards. In Claude Code:
+
+```text
+/plugin install korin --marketplace zerodahero/korin
+```
+
+Other agents can copy [`skills/korin/`](skills/korin/). See
+[Write wizards with an agent](https://zerodahero.github.io/korin/guides/agents/).
+
 ## Documentation
 
 **<https://zerodahero.github.io/korin/>**: install, a tutorial, guides, and the full

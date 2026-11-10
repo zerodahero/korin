@@ -1,5 +1,6 @@
-//! Keeps the docs site honest. Every example under `docs-site/examples/` must pass
-//! `korin check` and `korin plan`, except those under `invalid/`, which show diagnostics. Examples with a sidecar (`<name>.toml`) run in a pty,
+//! Keeps the docs site honest. Every example under `docs-site/examples/` and
+//! `skills/korin/examples/` must pass `korin check` and `korin plan`, except those under
+//! `invalid/`, which show diagnostics. Examples with a sidecar (`<name>.toml`) run in a pty,
 //! and what the terminal shows at the end is saved as HTML for the site. CLI help and `korin modules` are
 //! saved too. A test fails when a saved file no longer matches; `KORIN_UPDATE_DOCS=1`
 //! rewrites them.
@@ -180,6 +181,8 @@ fn first_difference(old: &str, new: &str) -> String {
 fn every_docs_example_checks_and_plans() {
     let mut wizards = Vec::new();
     files(&examples(), "korin", &mut wizards);
+    // The agent skill's examples teach the language too, so they must stay valid.
+    files(&root().join("skills/korin/examples"), "korin", &mut wizards);
     assert_ne!(
         wizards.len(),
         0,

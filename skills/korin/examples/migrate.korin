@@ -1,0 +1,46 @@
+korin 1
+title "Migrate the orders database"
+# Read-only stages run after they are shown; stages that change something wait at a gate.
+gates mutating
+# Every program this wizard may start. `korin check` rejects anything else.
+allow aws, kubectl, curl
+
+param cluster = "orders-db"
+param namespace = "shop"
+param release required
+
+stage "Preflight"
+  # Ask the CLI for JSON, and take values with jq.
+  read kubectl get deployment orders -n {namespace} -o json
+    capture ready  = jq .status.readyReplicas // 0
+    capture wanted = jq .spec.replicas
+  assert ready == wanted else "orders has {ready} of {wanted} replicas ready; wait for it to settle."
+
+stage "Snapshot"
+  # Guard every change: read whether it is done, name the "not done" answer, act only then.
+  read aws rds describe-db-cluster-snapshots --db-cluster-snapshot-identifier {cluster}-pre-{release} --output json
+    expect missing = exit 254 and stderr ~ /DBClusterSnapshotNotFound/
+  when missing
+    mutate aws rds create-db-cluster-snapshot --db-cluster-identifier {cluster} --db-cluster-snapshot-identifier {cluster}-pre-{release} --output json
+    record "snapshot {cluster}-pre-{release} created"
+  poll every 30s for 1h
+    read aws rds describe-db-cluster-snapshots --db-cluster-snapshot-identifier {cluster}-pre-{release} --output json
+      capture status = jq .DBClusterSnapshots[0].Status
+    until status == "available"
+    fail status ~ /^(failed|deleted)$/
+
+stage "Migrate"
+  read kubectl exec deploy/orders -n {namespace} -- bin/migrate status
+    capture pending = regex /(?m)^pending: ([0-9]+)$/
+  when pending > 0
+    # A second question right before the step that cannot be undone, with the facts in it.
+    confirm "Apply {pending} migrations for {release} to {cluster}? The snapshot is ready."
+    mutate kubectl exec deploy/orders -n {namespace} -- bin/migrate up
+      timeout 30m
+    record "applied {pending} migrations for {release}"
+  when pending == 0
+    note "No migrations are pending."
+
+stage "Verify"
+  read curl --fail --silent --show-error https://orders.example.com/healthz
+    timeout 30s

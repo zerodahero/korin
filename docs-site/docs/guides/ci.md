@@ -61,9 +61,7 @@ jobs:
 Keep the journal as an artifact. It has every command's full output, and the reason for a
 failure.
 
-## Checks for coding agents
+## Wizards written by agents
 
-`korin check --format json` reports problems as JSON, with file, line, column and a fix hint.
-An agent writing a wizard can run it in a loop until the wizard is valid. Add
-[`allow`](../reference/file.md#allow) so you can see at a glance what it may run. See
-[Command line](../reference/cli.md#korin-check).
+See [Write wizards with an agent](agents.md) for the skill, the check loop, and how to review
+what an agent wrote.

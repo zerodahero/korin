@@ -36,6 +36,8 @@ the next, and korin checks the whole file before anything runs.
 - **Keeps secrets secret.** Tokens are [hidden](reference/secrets.md) in the terminal, the
   journal and the report.
 - **A journal of every run**: each command, its full output, and each answer.
+- **Written by agents, run by people.** A [skill](guides/agents.md) teaches coding agents to
+  write wizards and check them; you read and approve every stage.
 
 ## Start here
 

@@ -1,0 +1,12 @@
+{
+  "name": "korin",
+  "description": "The korin skill: write and check korin wizards for commands a human approves.",
+  "owner": { "name": "zerodahero" },
+  "plugins": [
+    {
+      "name": "korin",
+      "source": "./",
+      "description": "Write korin wizards: runbooks whose commands a human reviews and approves stage by stage."
+    }
+  ]
+}

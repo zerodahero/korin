@@ -53,7 +53,7 @@ status=0
 while IFS= read -r file; do
   ./target/debug/korin check "$file" || status=1
   ./target/debug/korin plan "$file" >/dev/null || status=1
-done < <(find examples docs-site/examples -name '*.korin' -not -path '*/lib/*' -not -path '*/invalid/*' | sort)
+done < <(find examples docs-site/examples skills/korin/examples -name '*.korin' -not -path '*/lib/*' -not -path '*/invalid/*' | sort)
 exit "$status"
 '''
 
