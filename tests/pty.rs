@@ -1,124 +1,40 @@
 //! Tests that need a real terminal: gates, `interactive` handoffs and job control. korin runs
 //! in a new session with a pty as its controlling terminal.
 
-use std::io::{Read, Write};
+mod common;
+
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use common::pty::Session;
+use portable_pty::CommandBuilder;
 
-struct Session {
-    output: Arc<Mutex<String>>,
-    writer: Box<dyn Write + Send>,
-    child: Box<dyn portable_pty::Child + Send + Sync>,
-    master: Box<dyn portable_pty::MasterPty + Send>,
+fn start(dir: &Path, args: &[&str]) -> Session {
+    start_with_env(dir, args, &[])
 }
 
-impl Session {
-    fn start(dir: &Path, args: &[&str]) -> Self {
-        Self::start_with_env(dir, args, &[])
+fn start_with_env(dir: &Path, args: &[&str], env: &[(&str, PathBuf)]) -> Session {
+    let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_korin"));
+    cmd.args(args);
+    cmd.cwd(dir);
+    cmd.env(
+        "PATH",
+        format!(
+            "{}:{}",
+            dir.join("bin").display(),
+            std::env::var("PATH").unwrap()
+        ),
+    );
+    cmd.env("TMPDIR", dir.join("tmp"));
+    // Color follows the test, not the developer's shell.
+    cmd.env_remove("NO_COLOR");
+    cmd.env_remove("CLICOLOR_FORCE");
+    cmd.env("TERM", "xterm-256color");
+    for (key, value) in env {
+        cmd.env(key, value);
     }
-
-    fn start_with_env(dir: &Path, args: &[&str], env: &[(&str, PathBuf)]) -> Self {
-        let pty = native_pty_system()
-            .openpty(PtySize {
-                rows: 40,
-                cols: 200,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .unwrap();
-        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_korin"));
-        cmd.args(args);
-        cmd.cwd(dir);
-        cmd.env(
-            "PATH",
-            format!(
-                "{}:{}",
-                dir.join("bin").display(),
-                std::env::var("PATH").unwrap()
-            ),
-        );
-        cmd.env("TMPDIR", dir.join("tmp"));
-        // Color follows the test, not the developer's shell.
-        cmd.env_remove("NO_COLOR");
-        cmd.env_remove("CLICOLOR_FORCE");
-        cmd.env("TERM", "xterm-256color");
-        for (key, value) in env {
-            cmd.env(key, value);
-        }
-        let child = pty.slave.spawn_command(cmd).unwrap();
-        let mut reader = pty.master.try_clone_reader().unwrap();
-        let writer = pty.master.take_writer().unwrap();
-        let output = Arc::new(Mutex::new(String::new()));
-        let sink = Arc::clone(&output);
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            while let Ok(n) = reader.read(&mut buf) {
-                if n == 0 {
-                    break;
-                }
-                sink.lock()
-                    .unwrap()
-                    .push_str(&String::from_utf8_lossy(&buf[..n]));
-            }
-        });
-        Self {
-            output,
-            writer,
-            child,
-            master: pty.master,
-        }
-    }
-
-    fn wait_for(&self, text: &str) {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while Instant::now() < deadline {
-            if self.text().contains(text) {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        panic!("timed out waiting for {text:?}; output:\n{}", self.text());
-    }
-
-    fn send(&mut self, text: &str) {
-        self.writer.write_all(text.as_bytes()).unwrap();
-        self.writer.flush().unwrap();
-    }
-
-    fn wait(&mut self) -> u32 {
-        let deadline = Instant::now() + Duration::from_secs(15);
-        loop {
-            if let Some(status) = self.child.try_wait().unwrap() {
-                // Let the reader thread catch up with the last output.
-                std::thread::sleep(Duration::from_millis(100));
-                return status.exit_code();
-            }
-            assert!(
-                Instant::now() < deadline,
-                "korin did not exit; output:\n{}",
-                self.text()
-            );
-            std::thread::sleep(Duration::from_millis(50));
-        }
-    }
-
-    /// What the terminal shows: the output without color codes.
-    fn text(&self) -> String {
-        visible(&self.raw())
-    }
-
-    /// The output as korin wrote it, color codes included.
-    fn raw(&self) -> String {
-        self.output.lock().unwrap().clone()
-    }
-
-    fn pid(&self) -> i32 {
-        i32::try_from(self.child.process_id().unwrap()).unwrap()
-    }
+    Session::spawn(cmd, 40, 200)
 }
 
 fn setup(wizard: &str, scripts: &[(&str, &str)]) -> tempfile::TempDir {
@@ -159,7 +75,7 @@ fn declined_gate_runs_nothing() {
         "stage \"a\"\n  mutate touchit\n",
         &[("touchit", "touch \"$PWD/touched\"")],
     );
-    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.send("n\r");
     assert_eq!(s.wait(), 1, "{}", s.text());
@@ -173,13 +89,13 @@ fn approved_gate_runs_and_yes_is_rejected_with_a_terminal() {
         "stage \"a\"\n  mutate touchit\n",
         &[("touchit", "touch \"$PWD/touched\"")],
     );
-    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.send("y\r");
     assert_eq!(s.wait(), 0, "{}", s.text());
     assert!(marker(dir.path(), "touched").exists());
 
-    let mut s = Session::start(dir.path(), &["run", "w.korin", "--yes"]);
+    let mut s = start(dir.path(), &["run", "w.korin", "--yes"]);
     assert_eq!(s.wait(), 1, "{}", s.text());
     assert!(
         s.text().contains("`--yes` is for runs without a terminal"),
@@ -199,7 +115,7 @@ fn interactive_handoff_with_file_capture() {
         ),
         &[("fakeui", "echo 'looks good' > \"$KORIN_OUT/notes.md\"")],
     );
-    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.send("y\r");
     assert_eq!(s.wait(), 0, "{}", s.text());
@@ -230,7 +146,7 @@ fn suspendable() -> tempfile::TempDir {
 #[test]
 fn ctrl_z_then_resume_continues() {
     let dir = suspendable();
-    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.send("y\r");
     s.wait_for("ui-ready");
@@ -245,7 +161,7 @@ fn ctrl_z_then_resume_continues() {
 #[test]
 fn ctrl_z_then_kill_cancels() {
     let dir = suspendable();
-    let mut s = Session::start(dir.path(), &["run", "w.korin", "--kill-grace", "1"]);
+    let mut s = start(dir.path(), &["run", "w.korin", "--kill-grace", "1"]);
     s.wait_for("Run stage 1?");
     s.send("y\r");
     s.wait_for("ui-ready");
@@ -274,7 +190,7 @@ fn sigterm_during_handoff_restores_and_stops() {
                 ("touchit", "touch \"$PWD/next-step-ran\""),
             ],
         );
-        let mut s = Session::start(dir.path(), &["run", "w.korin", "--kill-grace", "1"]);
+        let mut s = start(dir.path(), &["run", "w.korin", "--kill-grace", "1"]);
         s.wait_for("Run stage 1?");
         s.send("y\r");
         s.wait_for("ui-ready");
@@ -404,7 +320,7 @@ fn rds_rehearsal_example_end_to_end() {
         0,
     );
 
-    let mut s = Session::start_with_env(
+    let mut s = start_with_env(
         root,
         &["run", "w.korin", "--param", "cluster=main-db-cluster"],
         &[("FAKE_AWS_DIR", root.join("aws"))],
@@ -466,7 +382,7 @@ fn type_ahead_never_answers_a_gate() {
         "stage \"a\"\n  mutate sleepy\nstage \"b\"\n  mutate touchit\n",
         &[("sleepy", "sleep 1"), ("touchit", "touch \"$PWD/touched\"")],
     );
-    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.send("y\r");
     // Typed while stage 1 runs, before stage 2 is shown.
@@ -489,7 +405,7 @@ fn handoff_returns_the_terminal_and_its_modes() {
         "stage \"a\"\n  interactive fakeui\nstage \"b\"\n  mutate touchit\n",
         &[("fakeui", "stty raw -echo; sleep 0.3"), ("touchit", "true")],
     );
-    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     let before = s.modes();
     assert_eq!(s.foreground(), Some(s.pid()));
@@ -509,7 +425,7 @@ fn handoff_returns_the_terminal_and_its_modes() {
 #[test]
 fn korin_is_not_stopped_while_the_program_is_suspended() {
     let dir = suspendable();
-    let mut s = Session::start(dir.path(), &["run", "w.korin", "--kill-grace", "1"]);
+    let mut s = start(dir.path(), &["run", "w.korin", "--kill-grace", "1"]);
     s.wait_for("Run stage 1?");
     s.send("y\r");
     s.wait_for("ui-ready");
@@ -538,7 +454,7 @@ fn nested_confirm_shows_the_rest_of_the_stage() {
         ),
         &[("tool", "true")],
     );
-    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.send("y\r");
     s.wait_for("Continue? [y/N]");
@@ -565,7 +481,7 @@ fn deeply_nested_confirm_shows_every_remaining_step() {
         ),
         &[("tool", "true")],
     );
-    let mut s = Session::start(dir.path(), &["run", "w.korin"]);
+    let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.send("y\r");
     s.wait_for("Continue? [y/N]");
@@ -576,14 +492,6 @@ fn deeply_nested_confirm_shows_every_remaining_step() {
     }
     s.send("n\r");
     assert_eq!(s.wait(), 1, "{}", s.text());
-}
-
-/// Removes color and cursor codes, so tests match the text korin wrote.
-fn visible(text: &str) -> String {
-    regex::Regex::new("\x1b\\[[0-9;?]*[A-Za-z]")
-        .unwrap()
-        .replace_all(text, "")
-        .into_owned()
 }
 
 #[test]
@@ -597,7 +505,7 @@ fn a_terminal_gets_carbonfox_colors_unless_no_color_is_set() {
             ],
             None => vec![("COLORTERM", "truecolor".into())],
         };
-        let mut s = Session::start_with_env(dir.path(), &["run", "w.korin"], &env);
+        let mut s = start_with_env(dir.path(), &["run", "w.korin"], &env);
         s.wait_for("Run stage 1?");
         // Blue (78a9ff) for the prompt mark, as in carbonfox.
         assert_eq!(
@@ -619,7 +527,7 @@ fn live_view_erases_the_preview_and_ghosts_the_steps_to_come() {
         &[("slow", "echo started; sleep 1; echo finished")],
     );
     let env = vec![("COLORTERM", PathBuf::from("truecolor"))];
-    let mut s = Session::start_with_env(dir.path(), &["run", "w.korin"], &env);
+    let mut s = start_with_env(dir.path(), &["run", "w.korin"], &env);
     s.wait_for("Run stage 1?");
     let before = s.raw().len();
     s.send("y\r");
