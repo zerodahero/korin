@@ -4,7 +4,7 @@ Notable changes to korin, by release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0] - 2026-11-10
 
 ### Features
 
@@ -19,6 +19,7 @@ Notable changes to korin, by release. The format follows
 ### Documentation
 
 - Note about name
+- Add conform.nvim setup
 
 ### CI
 

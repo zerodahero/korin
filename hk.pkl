@@ -78,4 +78,9 @@ hooks {
     fix = true
     steps = linters
   }
+  ["commit-msg"] {
+    steps {
+      ["conventional-commit"] = Builtins.check_conventional_commit
+    }
+  }
 }
