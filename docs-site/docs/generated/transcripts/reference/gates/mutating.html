@@ -3,7 +3,7 @@
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Current state</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
-  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> kubectl get deployment api <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
+  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> get deployment api <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
       <span class="k-border">│</span> {
       <span class="k-border">│</span>   "metadata": {"name": "api", "namespace": "shop"},
       <span class="k-border">│</span>   "spec": {
@@ -22,10 +22,10 @@
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Roll</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
-  <span class="k-fg-dim">2.1</span> <span class="k-blue k-bold">❯</span> kubectl set image <span class="k-fg-dim">deployment/</span>api api=<span class="k-cyan">registry.example.com/api:2.4.0</span> <span class="k-blue">-n</span> shop
+  <span class="k-fg-dim">2.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> set image <span class="k-fg-dim">deployment/</span>api api=<span class="k-cyan">registry.example.com/api:2.4.0</span> <span class="k-blue">-n</span> shop
       <span class="k-border">│</span> deployment.apps/api image updated
 
-  <span class="k-fg-dim">2.2</span> <span class="k-blue k-bold">❯</span> kubectl rollout status <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> shop <span class="k-blue">--timeout</span> 5m
+  <span class="k-fg-dim">2.2</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> shop <span class="k-blue">--timeout</span> 5m
       <span class="k-border">│</span> deployment "api" successfully rolled out
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 2 commands</span>
 

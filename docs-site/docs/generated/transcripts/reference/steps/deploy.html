@@ -3,14 +3,14 @@
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Restart</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
-  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> kubectl get deployment web <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
+  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> get deployment web <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
       <span class="k-border">│</span> NAME   READY   UP-TO-DATE   AVAILABLE   AGE
       <span class="k-border">│</span> web    3/3     3            3           41d
 
-  <span class="k-fg-dim">1.2</span> <span class="k-blue k-bold">❯</span> kubectl rollout restart <span class="k-fg-dim">deployment/</span>web <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
+  <span class="k-fg-dim">1.2</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>web <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
       <span class="k-border">│</span> deployment.apps/web restarted
 
-  <span class="k-fg-dim">1.3</span> <span class="k-blue k-bold">❯</span> kubectl rollout status <span class="k-fg-dim">deployment/</span>web <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">--timeout</span> 2m
+  <span class="k-fg-dim">1.3</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span>web <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">--timeout</span> 2m
       <span class="k-border">│</span> deployment "web" successfully rolled out
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 3 commands</span>
 

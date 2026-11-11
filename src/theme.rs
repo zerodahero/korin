@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
-use crate::render::{VALUE_CLOSE, VALUE_OPEN, strip_marks};
+use crate::render::{PREFIX_CLOSE, PREFIX_OPEN, VALUE_CLOSE, VALUE_OPEN, strip_marks};
 
 /// A 24-bit color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,6 +82,10 @@ enum Role {
     Error,
     Label,
     Ghost,
+    /// The program a command runs.
+    Exe,
+    /// A shortened path prefix, such as `<pwd>`.
+    Prefix,
 }
 
 impl Role {
@@ -90,7 +94,7 @@ impl Role {
         match self {
             Role::Frame => (BORDER, false),
             Role::Brand | Role::Prompt => (BLUE, true),
-            Role::Title => (FG, true),
+            Role::Title | Role::Exe => (FG, true),
             Role::Path | Role::Value => (CYAN, false),
             Role::Dim => (FG_DIM, false),
             Role::Keyword => (BLUE, false),
@@ -99,7 +103,7 @@ impl Role {
             Role::Ok => (GREEN, true),
             Role::Warn => (MAGENTA, false),
             Role::Error => (RED, true),
-            Role::Label => (TEAL, false),
+            Role::Label | Role::Prefix => (TEAL, false),
             Role::Ghost => (COMMENT, false),
         }
     }
@@ -112,7 +116,8 @@ enum Text {
     Plain,
     /// Quoted strings are green.
     Strings,
-    /// A command: flags take the keyword color, and paths dim their directory part.
+    /// A command: flags take the keyword color, paths dim their directory part, and
+    /// shell-quoted arguments are green.
     Command,
 }
 
@@ -332,7 +337,7 @@ impl Theme {
             out.push(' ');
             self.paint(Role::Prompt, "❯", out);
             out.push(' ');
-            self.command(&c[3], out);
+            self.command(&c[3], true, out);
             return true;
         } else if let Some(c) = p.planned_command.captures(line) {
             out.push_str(&c[1]);
@@ -342,7 +347,7 @@ impl Theme {
             out.push(' ');
             self.paint(Role::Prompt, "❯", out);
             out.push(' ');
-            self.command(&c[4], out);
+            self.command(&c[4], true, out);
             return true;
         } else if let Some(c) = p.planned_step.captures(line) {
             out.push_str(&c[1]);
@@ -401,19 +406,39 @@ impl Theme {
     fn continuation(self, line: &str, out: &mut String) -> bool {
         let body = line.trim_start_matches(' ');
         out.push_str(&line[..line.len() - body.len()]);
-        self.command(body, out);
+        self.command(body, false, out);
         true
     }
 
     /// The words of a command, with the ` \` that ends a broken line in the frame color.
-    fn command(self, text: &str, out: &mut String) {
-        match text.strip_suffix(" \\") {
-            Some(body) => {
-                self.inline(body, None, Text::Command, out);
-                out.push(' ');
-                self.paint(Role::Frame, "\\", out);
+    /// On a command's `first` line, the first word is the executable.
+    fn command(self, text: &str, first: bool, out: &mut String) {
+        let (body, broken) = match text.strip_suffix(" \\") {
+            Some(body) => (body, true),
+            None => (text, false),
+        };
+        let mut rest = body;
+        if first {
+            // Only a plain word is colored as the executable; a value keeps its own color.
+            let end = rest.find(' ').unwrap_or(rest.len());
+            let word = &rest[..end];
+            let plain = !word.is_empty()
+                && !word.starts_with(['\'', '$', '<', '«', VALUE_OPEN, PREFIX_OPEN]);
+            if plain {
+                match word.rfind('/') {
+                    Some(slash) => {
+                        self.paint(Role::Dim, &word[..=slash], out);
+                        self.paint(Role::Exe, &word[slash + 1..], out);
+                    }
+                    None => self.paint(Role::Exe, word, out),
+                }
+                rest = &rest[end..];
             }
-            None => self.inline(text, None, Text::Command, out),
+        }
+        self.inline(rest, None, Text::Command, out);
+        if broken {
+            out.push(' ');
+            self.paint(Role::Frame, "\\", out);
         }
     }
 
@@ -483,7 +508,12 @@ impl Theme {
                 .strip_prefix(VALUE_OPEN)
                 .and_then(|t| t.strip_suffix(VALUE_CLOSE))
             {
-                self.paint(Role::Value, value, out);
+                self.paint(Role::Value, &strip_marks(value), out);
+            } else if let Some(prefix) = token
+                .strip_prefix(PREFIX_OPEN)
+                .and_then(|t| t.strip_suffix(PREFIX_CLOSE))
+            {
+                self.paint(Role::Prefix, prefix, out);
             } else if token.starts_with('«') {
                 self.paint(Role::Secret, token, out);
             } else if token.starts_with('<') {
@@ -510,10 +540,42 @@ impl Theme {
         out: &mut String,
     ) {
         if mode == Text::Command {
-            let word_start = text[..start].is_empty() || text[..start].ends_with(' ');
-            self.command_words(&text[start..end], word_start, out);
+            // Split the piece into runs inside and outside shell quotes. The quote state
+            // comes from the whole text before the piece, values included, because a value
+            // may hold quoting such as `'\''`.
+            let mut state = quote_scan(Quote::None, &text[..start]);
+            let mut run_start = start;
+            let mut at = start;
+            while at < end {
+                let (next, len) = quote_step(state, &text[at..end]);
+                let inside_before = state != Quote::None;
+                let inside_after = next != Quote::None;
+                if inside_after && !inside_before {
+                    self.command_run(text, run_start, at, false, out);
+                    run_start = at;
+                } else if inside_before && !inside_after {
+                    self.command_run(text, run_start, at + len, true, out);
+                    run_start = at + len;
+                }
+                state = next;
+                at += len;
+            }
+            self.command_run(text, run_start, end, state != Quote::None, out);
         } else {
             self.plain(&text[start..end], base, out);
+        }
+    }
+
+    /// One run of command text, inside shell quotes (green) or outside them.
+    fn command_run(self, text: &str, start: usize, end: usize, quoted: bool, out: &mut String) {
+        if start >= end {
+            return;
+        }
+        if quoted {
+            self.paint(Role::Str, &strip_marks(&text[start..end]), out);
+        } else {
+            let word_start = text[..start].is_empty() || text[..start].ends_with(' ');
+            self.command_words(&text[start..end], word_start, out);
         }
     }
 
@@ -524,6 +586,44 @@ impl Theme {
             None => out.push_str(&text),
         }
     }
+}
+
+/// Where a scan of shell-quoted text stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Quote {
+    None,
+    /// Inside `'…'`.
+    Single,
+    /// Inside `$'…'`, where a backslash escapes the next character.
+    Dollar,
+}
+
+/// Reads one shell token from the start of `text` (which must not be empty): a character,
+/// an escape pair, or a `$'` opener. Returns the state after it and its length in bytes.
+fn quote_step(state: Quote, text: &str) -> (Quote, usize) {
+    let mut chars = text.chars();
+    let c = chars.next().expect("quote_step needs text");
+    let next = chars.next();
+    let pair = |n: Option<char>| c.len_utf8() + n.map_or(0, char::len_utf8);
+    match (state, c) {
+        (Quote::None, '\\') => (Quote::None, pair(next)),
+        (Quote::None, '$') if next == Some('\'') => (Quote::Dollar, 2),
+        (Quote::None, '\'') => (Quote::Single, 1),
+        (Quote::Single | Quote::Dollar, '\'') => (Quote::None, 1),
+        (Quote::Dollar, '\\') => (Quote::Dollar, pair(next)),
+        (state, c) => (state, c.len_utf8()),
+    }
+}
+
+/// Scans `text` from `state` and returns the state at its end.
+fn quote_scan(mut state: Quote, text: &str) -> Quote {
+    let mut at = 0;
+    while at < text.len() {
+        let (next, len) = quote_step(state, &text[at..]);
+        state = next;
+        at += len;
+    }
+    state
 }
 
 struct Patterns {
@@ -572,7 +672,7 @@ fn patterns() -> &'static Patterns {
                 r"^(\s+)(journal:|approved by --yes|… waiting|next:|output withheld:|used at|nothing ran)(.*)$",
             ),
             inline: re(&format!(
-                r#"{VALUE_OPEN}[^{VALUE_CLOSE}]*{VALUE_CLOSE}|«[^»]*»|<[A-Za-z_][\w.]*(?: ← [0-9.]+)?>|"(?:[^"\\]|\\.)*""#
+                r#"{PREFIX_OPEN}[^{PREFIX_CLOSE}]*{PREFIX_CLOSE}|{VALUE_OPEN}[^{VALUE_CLOSE}]*{VALUE_CLOSE}|«[^»]*»|<[A-Za-z_][\w.]*(?: ← [0-9.]+)?>|"(?:[^"\\]|\\.)*""#
             )),
         }
     })
@@ -647,6 +747,9 @@ mod tests {
             "  journal: /tmp/x",
             "  ⚠ careful",
             "  3  aws.identity() as me",
+            "  4.1 ❯ git tag --message 'Release v0.2.0' $'a\\'b' 'it'\\''s'",
+            "  4.2 ❯ ./scripts/run.sh \u{e002}<pwd>\u{e003}/a.txt '\u{e002}<work>\u{e003}/my file'",
+            "  4.3 ❯ \u{e000}tool\u{e001} 'hi \u{e000}susan\u{e001}'",
         ];
         for line in lines {
             assert_eq!(strip_ansi(&TRUE.lines(line)), strip_marks(line), "{line}");
@@ -684,6 +787,62 @@ mod tests {
         // A dash after a value continues the value's word; it is not a flag.
         let shown = TRUE.lines("  2.1 ❯ echo \u{e000}x\u{e001}-backup");
         assert!(!shown.contains(keyword), "{shown:?}");
+    }
+
+    #[test]
+    fn the_executable_is_bold_and_a_value_keeps_its_color() {
+        let exe = "\x1b[1;38;2;242;244;248m";
+        let shown = TRUE.lines("  2.1 ❯ git status");
+        assert!(shown.contains(&format!("{exe}git\x1b[0m")), "{shown:?}");
+        let shown = TRUE.lines("  2.1  read ❯ ./scripts/run.sh x");
+        assert!(
+            shown.contains(&format!("\x1b[38;2;123;124;126m./scripts/\x1b[0m{exe}run.sh")),
+            "{shown:?}"
+        );
+        let shown = TRUE.lines("  2.1 ❯ \u{e000}tool\u{e001} x");
+        assert!(!shown.contains(exe), "{shown:?}");
+        // A continuation line has no executable.
+        let shown = TRUE.lines("  2.1 ❯ aws s3 cp \\\n      next");
+        assert_eq!(shown.matches(exe).count(), 1, "{shown:?}");
+    }
+
+    #[test]
+    fn shell_quoted_arguments_are_green() {
+        let green = "\x1b[38;2;37;190;106m";
+        let shown = TRUE.lines("  4.1 ❯ git tag --message 'Release v0.2.0'");
+        assert!(
+            shown.contains(&format!("{green}'Release v0.2.0'\x1b[0m")),
+            "{shown:?}"
+        );
+        let shown = TRUE.lines("  4.1 ❯ echo $'a\\'b'");
+        assert!(shown.contains(&format!("{green}$'a\\'b'\x1b[0m")), "{shown:?}");
+        // A value inside quotes keeps the value color; the quotes around it are green.
+        let shown = TRUE.lines("  4.1 ❯ echo 'hi \u{e000}susan\u{e001}'");
+        assert!(shown.contains(&format!("{green}'hi \x1b[0m")), "{shown:?}");
+        assert!(
+            shown.contains("\x1b[38;2;51;177;255msusan\x1b[0m"),
+            "{shown:?}"
+        );
+        // A flag after a closed quote is still a flag.
+        let shown = TRUE.lines("  4.1 ❯ x 'a b' --flag");
+        assert!(
+            shown.contains("\x1b[38;2;120;169;255m--flag\x1b[0m"),
+            "{shown:?}"
+        );
+    }
+
+    #[test]
+    fn a_shortened_prefix_has_its_own_color() {
+        let shown = TRUE.lines("  2.1 ❯ cat \u{e002}<pwd>\u{e003}/a.txt");
+        assert!(
+            shown.contains("\x1b[38;2;8;189;186m<pwd>\x1b[0m"),
+            "{shown:?}"
+        );
+        let shown = TRUE.lines("      │ wrote \u{e002}<tmp>\u{e003}/x.log");
+        assert!(
+            shown.contains("\x1b[38;2;8;189;186m<tmp>\x1b[0m"),
+            "{shown:?}"
+        );
     }
 
     #[test]

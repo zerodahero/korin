@@ -12,9 +12,13 @@ use crate::ir::{Expr, IPart, Interpolated, Program, Step, StepKind, Sym, SymKind
 pub const VALUE_OPEN: char = '\u{e000}';
 /// Closes a value opened by [`VALUE_OPEN`].
 pub const VALUE_CLOSE: char = '\u{e001}';
+/// Opens a shortened path prefix, such as `<pwd>`, in a rendered line for the terminal.
+pub const PREFIX_OPEN: char = '\u{e002}';
+/// Closes a prefix opened by [`PREFIX_OPEN`].
+pub const PREFIX_CLOSE: char = '\u{e003}';
 
 fn is_mark(c: char) -> bool {
-    c == VALUE_OPEN || c == VALUE_CLOSE
+    matches!(c, VALUE_OPEN | VALUE_CLOSE | PREFIX_OPEN | PREFIX_CLOSE)
 }
 
 /// Removes value marks, for anything that is not the terminal, such as the journal.

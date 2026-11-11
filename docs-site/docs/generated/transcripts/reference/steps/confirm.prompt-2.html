@@ -3,7 +3,7 @@
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Scale down</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
-  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> kubectl get deployment worker-v1 <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
+  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> get deployment worker-v1 <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
       <span class="k-border">│</span> {
       <span class="k-border">│</span>   "metadata": {"name": "worker-v1", "namespace": "shop"},
       <span class="k-border">│</span>   "spec": {
@@ -17,5 +17,5 @@ m/worker:1.9.2"}]}}
       <span class="k-border">│</span>   }
       <span class="k-border">│</span> }
   <span class="k-fg-dim">next:</span>
-  <span class="k-fg-dim">1.3</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> kubectl scale <span class="k-fg-dim">deployment/</span>worker-v1 <span class="k-blue">-n</span> shop <span class="k-blue">--replicas</span> 0
+  <span class="k-fg-dim">1.3</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> scale <span class="k-fg-dim">deployment/</span>worker-v1 <span class="k-blue">-n</span> shop <span class="k-blue">--replicas</span> 0
   <span class="k-magenta">?</span> <span class="k-bold">worker-v1 runs 4 replicas. Scale it to zero?</span> <span class="k-fg-dim">[y/N]</span></code></pre>
