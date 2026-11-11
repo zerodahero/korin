@@ -21,7 +21,7 @@ use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 use serde_json::json;
 use unicode_width::UnicodeWidthStr as _;
 
-use crate::ast::{CmpOp, CommandKind, GateMode, SayKind, Span};
+use crate::ast::{CmpOp, CommandKind, GateMode, Mode, SayKind, Span};
 use crate::diag::Diag;
 use crate::ir::{
     self, Command, Expr, IPart, Interpolated, Match, Program, Step, StepKind, Sym, SymKind,
@@ -626,8 +626,11 @@ impl<'p> Runner<'p> {
         }
         let theme = self.opts.theme;
         let mut lines = Vec::new();
-        for step in self.remaining() {
-            render::step_lines(self.p, step, 1, self, None, &mut lines);
+        // A guide shows no preview, so it shows no steps to come either; the footer stays.
+        if self.p.mode != Mode::Guide {
+            for step in self.remaining() {
+                render::step_lines(self.p, step, 1, self, None, &mut lines);
+            }
         }
         let compact = self.view.get() == View::Compact;
         let width = self.width();
@@ -777,6 +780,52 @@ impl<'p> Runner<'p> {
         }
     }
 
+    /// Waits for the operator in a guide: Enter or Space continues, and Ctrl-C cancels. With
+    /// `toggle`, `f` switches between the compact and the full view and waits again. Other
+    /// keys are ignored. With `--require-enter`, it reads a line: an empty line continues, a
+    /// line of `f` switches the view, and any other line waits again. The prompt is erased
+    /// once answered, where the view allows.
+    fn pause(&self, action: &str, toggle: bool) -> Result<(), Stop> {
+        #[derive(Clone, Copy)]
+        enum Key {
+            Go,
+            Toggle,
+        }
+        self.screen.borrow_mut().mark();
+        loop {
+            let hint = if toggle {
+                format!("f {}", self.view.get().other())
+            } else {
+                "Ctrl-C cancel".to_string()
+            };
+            let prompt = self.opts.theme.pause(action, &hint);
+            let key = if self.opts.require_enter || !std::io::stdin().is_terminal() {
+                match self.read_line(&prompt)?.trim() {
+                    "" => Some(Key::Go),
+                    "f" | "F" if toggle => Some(Key::Toggle),
+                    _ => None,
+                }
+            } else {
+                self.screen.borrow_mut().hide();
+                let (key, echo) =
+                    read_key_interruptible(&self.signals, &prompt, |key| match key {
+                        [b'\r' | b'\n' | b' ', ..] => Some((Key::Go, "")),
+                        [b'f' | b'F', ..] if toggle => Some((Key::Toggle, "f")),
+                        _ => None,
+                    })?;
+                self.screen.borrow_mut().echoed(&format!("{prompt}{echo}"));
+                Some(key)
+            };
+            match key {
+                Some(Key::Go) => break,
+                Some(Key::Toggle) => self.view.set(self.view.get().toggled()),
+                None => {}
+            }
+        }
+        self.screen.borrow_mut().erase_to_mark();
+        Ok(())
+    }
+
     // ---- stages ----
 
     fn stage(&mut self, stage: &'p ir::Stage) -> Result<(), Stop> {
@@ -785,9 +834,11 @@ impl<'p> Runner<'p> {
             "\n{}",
             render::stage_rule(stage.number, total, &stage.title, self.width())
         ));
+        let guide = self.p.mode == Mode::Guide;
         // Everything after the header is the preview; a live view erases it once approved.
+        // A guide shows no preview: its stage just runs, after a pause.
         self.screen.borrow_mut().mark();
-        if !stage.steps.is_empty() {
+        if !guide && !stage.steps.is_empty() {
             self.say("");
             self.say_steps(&stage.steps.iter().collect::<Vec<_>>());
         }
@@ -798,8 +849,18 @@ impl<'p> Runner<'p> {
         self.journal
             .report(&format!("\n## Stage {} · {}\n", stage.number, stage.title));
         self.check_withheld_boundaries(&stage.steps)?;
-        let gated = self.p.gates == GateMode::All || stage.mutating;
-        if gated {
+        let gated = !guide && (self.p.gates == GateMode::All || stage.mutating);
+        if guide {
+            if self.opts.yes {
+                self.journal
+                    .event("pause", json!({"stage": stage.number, "auto": true}));
+                self.journal.report("- continued by `--yes`");
+            } else {
+                self.pause("continue", true)?;
+                self.journal.event("pause", json!({"stage": stage.number}));
+                self.journal.report("- continued");
+            }
+        } else if gated {
             if self.opts.yes {
                 self.say("  approved by --yes");
                 self.journal
@@ -1252,6 +1313,11 @@ impl<'p> Runner<'p> {
         let (status, stdout, stderr, cancelled, escaped) = if command.kind
             == CommandKind::Interactive
         {
+            // A guide has no gate, so it asks before it gives the terminal away. The command
+            // is already on screen above the pause.
+            if self.p.mode == Mode::Guide && !self.opts.yes {
+                self.pause("open", false)?;
+            }
             self.screen.borrow_mut().hide();
             self.journal
                 .event("handoff_start", json!({"invocation_id": invocation}));

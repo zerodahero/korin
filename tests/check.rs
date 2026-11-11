@@ -397,3 +397,53 @@ fn rendered_conditions_keep_their_grouping() {
     assert!(plan.contains("when not (a or b)"), "{plan}");
     assert!(plan.contains("when (a or b) and not a"), "{plan}");
 }
+
+#[test]
+fn a_guide_only_reads() {
+    insta::assert_snapshot!(check(&[
+        (
+            "main.korin",
+            concat!(
+                "korin 1\ntitle \"t\"\n",
+                "mode guide\n",
+                "use \"./lib/m.korin\"\n",
+                "stage \"a\"\n",
+                "  read git status\n",
+                "  script read ./scripts/look.sh\n",
+                "  interactive nvim notes.md\n",
+                "  note \"looked\"\n",
+                "  mutate git push\n",
+                "  each f in [\"a\"]\n",
+                "    script mutate ./scripts/fix.sh\n",
+                "  m.look()\n",
+                "  m.change()\n",
+            ),
+        ),
+        (
+            "lib/m.korin",
+            concat!(
+                "define look()\n  read git log\n",
+                "define change()\n  read git status\n  mutate git commit\n",
+            ),
+        ),
+    ]));
+}
+
+#[test]
+fn a_guide_has_no_gates_and_mode_takes_two_words() {
+    insta::assert_snapshot!(wizard(concat!(
+        "mode guide\n",
+        "gates mutating\n",
+        "stage \"a\"\n",
+        "  read git status\n",
+    )));
+    insta::assert_snapshot!(wizard(concat!(
+        "mode tour\n",
+        "stage \"a\"\n",
+        "  read git status\n",
+    )));
+    assert_eq!(
+        wizard("mode stepwise\nstage \"a\"\n  mutate git push\n"),
+        "ok"
+    );
+}

@@ -851,3 +851,75 @@ fn a_prefix_follows_the_current_value_of_its_name() {
     // Once p is /x/y/z, only the new path shortens.
     assert!(text.contains("│ /a/b/c/old <p>/new"), "{text}");
 }
+
+// ---- guide mode ----
+
+fn guide_setup(body: &str, scripts: &[(&str, &str)]) -> tempfile::TempDir {
+    setup(&format!("mode guide\n{body}"), scripts)
+}
+
+#[test]
+fn a_guide_pauses_before_each_stage_and_shows_no_preview() {
+    let dir = guide_setup(
+        concat!(
+            "stage \"one\"\n  read echo first-ran\n",
+            "stage \"two\"\n  note \"between\"\n  read echo second-ran\n",
+        ),
+        &[],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("↵ continue · f full");
+    // No preview: the step is not on screen before it runs.
+    assert!(!s.text().contains("echo first-ran"), "{}", s.text());
+    assert!(!s.text().contains("Run stage"), "{}", s.text());
+    std::thread::sleep(Duration::from_millis(400));
+    // A key that is not Enter, Space or f is ignored.
+    s.send("x");
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!s.text().contains("first-ran"), "x continued: {}", s.text());
+    s.send("\r");
+    s.wait_for("1.1 ❯ echo first-ran");
+    s.wait_for("Stage 2/2");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send(" ");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(s.text().contains("2.2 ❯ echo second-ran"), "{}", s.text());
+    let events = events(dir.path());
+    assert_eq!(events.matches("\"pause\"").count(), 2, "{events}");
+    assert!(!events.contains("\"gate\""), "{events}");
+}
+
+#[test]
+fn a_guide_pause_takes_a_line_with_require_enter() {
+    let dir = guide_setup("stage \"one\"\n  read echo ran\n", &[]);
+    let mut s = start(dir.path(), &["run", "w.korin", "--require-enter"]);
+    s.wait_for("↵ continue · f full");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("f\r");
+    s.wait_for("↵ continue · f compact");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("\r");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(s.text().contains("1.1 ❯ echo ran"), "{}", s.text());
+}
+
+#[test]
+fn a_guide_pauses_before_an_interactive_step() {
+    let dir = guide_setup(
+        "stage \"one\"\n  interactive fakeui\n",
+        &[("fakeui", "touch \"$PWD/opened\"")],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("↵ continue");
+    s.answer("");
+    s.wait_for("↵ open · Ctrl-C cancel");
+    assert!(s.text().contains("1.1 ❯ fakeui"), "{}", s.text());
+    std::thread::sleep(Duration::from_millis(400));
+    assert!(
+        !marker(dir.path(), "opened").exists(),
+        "opened before the pause"
+    );
+    s.send("\r");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(marker(dir.path(), "opened").exists());
+}

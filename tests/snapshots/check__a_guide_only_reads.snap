@@ -1,0 +1,7 @@
+---
+source: tests/check.rs
+expression: "check(&[(\"main.korin\",\nconcat!(\"korin 1\\ntitle \\\"t\\\"\\n\", \"mode guide\\n\", \"use \\\"./lib/m.korin\\\"\\n\",\n\"stage \\\"a\\\"\\n\", \"  read git status\\n\", \"  script read ./scripts/look.sh\\n\",\n\"  interactive nvim notes.md\\n\", \"  note \\\"looked\\\"\\n\", \"  mutate git push\\n\",\n\"  each f in [\\\"a\\\"]\\n\", \"    script mutate ./scripts/fix.sh\\n\",\n\"  m.look()\\n\", \"  m.change()\\n\",),),\n(\"lib/m.korin\",\nconcat!(\"define look()\\n  read git log\\n\",\n\"define change()\\n  read git status\\n  mutate git commit\\n\",),),])"
+---
+error main.korin:10:3: guide: a guide only reads, so it cannot contain `mutate`
+error main.korin:12:5: guide: a guide only reads, so it cannot contain `script mutate`
+error main.korin:14:3: guide: `m.change()` runs `mutate`, and a guide only reads

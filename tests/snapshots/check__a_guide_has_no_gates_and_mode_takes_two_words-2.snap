@@ -1,0 +1,5 @@
+---
+source: tests/check.rs
+expression: "wizard(concat!(\"mode tour\\n\", \"stage \\\"a\\\"\\n\", \"  read git status\\n\",))"
+---
+error main.korin:3:6: syntax: expected `stepwise` or `guide`

@@ -9,6 +9,7 @@
   "korin"
   "title"
   "gates"
+  "mode"
   "unattended"
   "allow"
   "param"
@@ -76,6 +77,8 @@
 [
   "all"
   "mutating"
+  "stepwise"
+  "guide"
   "allowed"
   "required"
   "secret"

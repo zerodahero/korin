@@ -891,6 +891,26 @@
     }
   },
   {
+    "type": "mode",
+    "named": true,
+    "fields": {
+      "mode": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "guide",
+            "named": false
+          },
+          {
+            "type": "stepwise",
+            "named": false
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "not",
     "named": true,
     "fields": {
@@ -1177,6 +1197,10 @@
         },
         {
           "type": "gates",
+          "named": true
+        },
+        {
+          "type": "mode",
           "named": true
         },
         {
@@ -1569,6 +1593,10 @@
     "named": false
   },
   {
+    "type": "guide",
+    "named": false
+  },
+  {
     "type": "identifier",
     "named": true
   },
@@ -1602,6 +1630,10 @@
   },
   {
     "type": "missing",
+    "named": false
+  },
+  {
+    "type": "mode",
     "named": false
   },
   {
@@ -1682,6 +1714,10 @@
   },
   {
     "type": "stdout",
+    "named": false
+  },
+  {
+    "type": "stepwise",
     "named": false
   },
   {

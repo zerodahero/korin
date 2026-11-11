@@ -669,6 +669,10 @@ pub fn step_lines(
 pub fn plan(program: &Program, width: usize) -> String {
     let mut out = Vec::new();
     out.push(program.title.clone());
+    let guide = program.mode == crate::ast::Mode::Guide;
+    if guide {
+        out.push("mode: guide".into());
+    }
     let params: Vec<String> = program
         .params
         .iter()
@@ -714,7 +718,13 @@ pub fn plan(program: &Program, width: usize) -> String {
             } else {
                 "read-only"
             },
-            if gated { "gate" } else { "no gate" },
+            if guide {
+                "pause"
+            } else if gated {
+                "gate"
+            } else {
+                "no gate"
+            },
         ));
         for step in &stage.steps {
             step_lines(program, step, 1, &Placeholders, Some(width), &mut out);

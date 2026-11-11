@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::ast::{CaptureMode, CmpOp, CommandKind, GateMode, SayKind, Span};
+use crate::ast::{CaptureMode, CmpOp, CommandKind, GateMode, Mode, SayKind, Span};
 use crate::diag::SourceFile;
 
 /// A resolved name.
@@ -253,6 +253,7 @@ pub struct Program {
     pub file: Arc<SourceFile>,
     pub title: String,
     pub gates: GateMode,
+    pub mode: Mode,
     pub unattended: bool,
     pub params: Vec<Param>,
     pub stages: Vec<Stage>,

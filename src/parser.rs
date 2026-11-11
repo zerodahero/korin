@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::ast::{
     Call, Capture, CaptureMode, CmpOp, Command, CommandKind, Define, Duration, Expect, Expr,
-    GateMode, Header, Ident, Interpolated, Match, Module, Param, ParamKind, Part, Poll, Ref,
+    GateMode, Header, Ident, Interpolated, Match, Mode, Module, Param, ParamKind, Part, Poll, Ref,
     SayKind, Span, Spanned, Stage, Step, Use, UseTarget, Wizard,
 };
 use crate::diag::{Diag, SourceFile};
@@ -169,6 +169,7 @@ impl<'a> Parser<'a> {
         let version = self.recover(|p| p.version_line(first))?;
         let mut title: Option<Spanned<String>> = None;
         let mut gates: Option<(GateMode, Span)> = None;
+        let mut mode: Option<(Mode, Span)> = None;
         let mut unattended: Option<Span> = None;
         let mut allow: Option<(Vec<Spanned<String>>, Span)> = None;
         let mut uses = Vec::new();
@@ -185,8 +186,10 @@ impl<'a> Parser<'a> {
                 ));
                 continue;
             };
-            let header_keyword =
-                matches!(keyword.as_str(), "title" | "gates" | "unattended" | "allow");
+            let header_keyword = matches!(
+                keyword.as_str(),
+                "title" | "gates" | "mode" | "unattended" | "allow"
+            );
             if header_keyword && !stages.is_empty() {
                 self.errors.push(self.err(
                     "misplaced",
@@ -214,6 +217,19 @@ impl<'a> Parser<'a> {
                     };
                     cur.expect_end()?;
                     set_once(self.file, &mut gates, (mode, node.span()), node.span(), "gates")
+                }),
+                "mode" => self.no_children(node).and_then(|()| {
+                    cur.expect_keyword("mode")?;
+                    let value = match cur.expect_ident("`stepwise` or `guide`")? {
+                        Spanned { value, .. } if value == "stepwise" => Mode::Stepwise,
+                        Spanned { value, .. } if value == "guide" => Mode::Guide,
+                        other => {
+                            return Err(self
+                                .err("syntax", other.span, "expected `stepwise` or `guide`"));
+                        }
+                    };
+                    cur.expect_end()?;
+                    set_once(self.file, &mut mode, (value, node.span()), node.span(), "mode")
                 }),
                 "unattended" => self.no_children(node).and_then(|()| {
                     cur.expect_keyword("unattended")?;
@@ -280,11 +296,20 @@ impl<'a> Parser<'a> {
                 .push(self.err("header", first.span(), "the wizard has no stages"));
             return None;
         }
+        if let (Some((Mode::Guide, mode_span)), Some((_, gates_span))) = (mode, gates) {
+            self.errors.push(
+                self.err("guide", gates_span, "a guide wizard has no gates")
+                    .related(mode_span, "guide mode declared here")
+                    .help("remove the `gates` line; a guide pauses before each stage instead"),
+            );
+        }
         Some(Wizard {
             header: Header {
                 version,
                 title,
                 gates: gates.map(|(mode, _)| mode).unwrap_or_default(),
+                mode: mode.map(|(mode, _)| mode).unwrap_or_default(),
+                mode_span: mode.map(|(_, span)| span),
                 unattended,
                 allow: allow.map(|(names, _)| names),
             },

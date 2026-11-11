@@ -289,6 +289,18 @@ impl Theme {
         out
     }
 
+    /// A guide's pause: `↵ continue · f full`, waiting for a key.
+    pub fn pause(self, action: &str, hint: &str) -> String {
+        let mut out = String::from("  ");
+        self.paint(Role::Prompt, "↵", &mut out);
+        out.push(' ');
+        self.paint(Role::Title, action, &mut out);
+        self.paint(Role::Frame, " · ", &mut out);
+        self.paint(Role::Dim, hint, &mut out);
+        out.push(' ');
+        out
+    }
+
     /// A prompt that asks for a value, such as an `ask` answer or a param.
     pub fn ask(self, label: &str) -> String {
         let mut out = String::from("  ");
@@ -635,7 +647,7 @@ fn patterns() -> &'static Patterns {
             // The rule that starts a stage: `━━ Stage 1/2 · Title ━━━━`.
             stage: re(r"^(\s*)━━ (Stage \d+/\d+) · (.*?) (━+)$"),
             // The plan's tags under a stage rule: `  read-only, gate; valid --from start`.
-            tags: re(r"^(\s+)((?:read-only|mutating), (?:gate|no gate); .*)$"),
+            tags: re(r"^(\s+)((?:read-only|mutating), (?:gate|no gate|pause); .*)$"),
             // The stage-end line: `  ✓ stage 2 done · 4 commands`.
             stage_end: re(r"^(\s*)✓ (stage \d+ done(?: · .*)?)$"),
             // A command as it runs: `  2.1 ❯ echo hi`.

@@ -85,8 +85,20 @@ pub struct Header {
     pub version: Spanned<u32>,
     pub title: Spanned<String>,
     pub gates: GateMode,
+    pub mode: Mode,
+    /// The `mode` line, if the wizard has one.
+    pub mode_span: Option<Span>,
     pub unattended: Option<Span>,
     pub allow: Option<Vec<Spanned<String>>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Mode {
+    /// Each stage is previewed and, by `gates`, approved before it runs.
+    #[default]
+    Stepwise,
+    /// A read-only walkthrough: no previews and no gates, and a pause before each stage.
+    Guide,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

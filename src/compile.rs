@@ -431,6 +431,9 @@ impl Compiler {
             }
             ctx.stage = index + 1;
             let steps = self.steps(&mut ctx, &stage.steps, &(index + 1).to_string());
+            if wizard.header.mode == ast::Mode::Guide {
+                self.check_guide(&steps, None, wizard.header.mode_span);
+            }
             stages.push(ir::Stage {
                 number: index + 1,
                 title: stage.title.value.clone(),
@@ -444,6 +447,7 @@ impl Compiler {
             file: Arc::clone(file),
             title: wizard.header.title.value.clone(),
             gates: wizard.header.gates,
+            mode: wizard.header.mode,
             unattended: wizard.header.unattended.is_some(),
             params,
             stages,
@@ -818,6 +822,63 @@ impl Compiler {
                     )
                     .help("move the step before or after the poll"),
                 );
+            }
+        }
+    }
+
+    /// A guide wizard only reads, so the checker rejects every step that changes state, at
+    /// any depth. A step inside a template is reported at the call in the wizard, which is
+    /// where the author can act; `call` is that call's step, once the walk is inside one.
+    fn check_guide(&mut self, steps: &[ir::Step], call: Option<&ir::Step>, mode: Option<Span>) {
+        for step in steps {
+            match &step.kind {
+                ir::StepKind::Command(c)
+                    if matches!(c.kind, CommandKind::Mutate | CommandKind::ScriptMutate) =>
+                {
+                    let keyword = c.kind.keyword();
+                    let mut diag = match call {
+                        Some(call) => {
+                            let label = match &call.kind {
+                                ir::StepKind::Call { label, .. } => label.as_str(),
+                                _ => "the template",
+                            };
+                            let (line, _) = step.loc.file.line_col(step.loc.span.start);
+                            Diag::error(
+                                &call.loc.file,
+                                "guide",
+                                call.loc.span,
+                                format!("`{label}` runs `{keyword}`, and a guide only reads"),
+                            )
+                            .label("this template call")
+                            .help(format!(
+                                "step {} at {}:{line} is `{keyword}`; call a template that only \
+                                 reads, or remove `mode guide`",
+                                step.id, step.loc.file.name
+                            ))
+                        }
+                        None => Diag::error(
+                            &step.loc.file,
+                            "guide",
+                            step.loc.span,
+                            format!("a guide only reads, so it cannot contain `{keyword}`"),
+                        )
+                        .help("use `read` or `script read`, or remove `mode guide` to gate each stage"),
+                    };
+                    let in_wizard = Arc::ptr_eq(&diag_file(call, step), &self.wizard_file);
+                    if let Some(mode) = mode
+                        && in_wizard
+                    {
+                        diag = diag.related(mode, "guide mode declared here");
+                    }
+                    self.push(diag);
+                }
+                ir::StepKind::Call { body, .. } => {
+                    self.check_guide(body, call.or(Some(step)), mode);
+                }
+                ir::StepKind::When { body, .. }
+                | ir::StepKind::Each { body, .. }
+                | ir::StepKind::Poll { body, .. } => self.check_guide(body, call, mode),
+                _ => {}
             }
         }
     }
@@ -1574,6 +1635,11 @@ fn expr_syms(expr: &ir::Expr) -> Vec<Sym> {
         ir::Expr::Not(e) | ir::Expr::Regex(e, _) => expr_syms(e),
         ir::Expr::Num(_) => Vec::new(),
     }
+}
+
+/// The file a guide diagnostic points into: the call's, else the step's.
+fn diag_file(call: Option<&ir::Step>, step: &ir::Step) -> Arc<SourceFile> {
+    Arc::clone(&call.map_or(&step.loc, |c| &c.loc).file)
 }
 
 /// Whether any step in `steps`, at any depth, makes a stage mutating.

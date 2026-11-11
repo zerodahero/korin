@@ -1371,3 +1371,25 @@ fn a_run_without_a_terminal_shows_the_full_view() {
         out.text
     );
 }
+
+#[test]
+fn an_unattended_guide_passes_its_pauses_with_yes() {
+    let env = Env::new();
+    env.wizard("mode guide\nstage \"a\"\n  read echo ran-a\nstage \"b\"\n  read echo ran-b\n");
+    let out = env.run_yes(&[]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    assert!(
+        out.text.contains("ran-a") && out.text.contains("ran-b"),
+        "{}",
+        out.text
+    );
+    assert_eq!(env.events_of("pause").len(), 2);
+    assert!(env.events_of("gate_auto").is_empty());
+    let plan = env.run(&["plan", "w.korin"]);
+    assert!(plan.text.contains("mode: guide"), "{}", plan.text);
+    assert!(
+        plan.text.contains("read-only, pause; valid --from start"),
+        "{}",
+        plan.text
+    );
+}

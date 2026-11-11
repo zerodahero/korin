@@ -62,6 +62,7 @@ module.exports = grammar({
       $.version,
       $.title,
       $.gates,
+      $.mode,
       $.unattended,
       $.allow,
       $.use,
@@ -77,6 +78,8 @@ module.exports = grammar({
     title: $ => seq('title', field('text', $.string), $._newline),
 
     gates: $ => seq('gates', field('mode', choice('all', 'mutating')), $._newline),
+
+    mode: $ => seq('mode', field('mode', choice('stepwise', 'guide')), $._newline),
 
     unattended: $ => seq('unattended', 'allowed', $._newline),
 

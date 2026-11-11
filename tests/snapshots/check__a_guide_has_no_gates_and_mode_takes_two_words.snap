@@ -1,0 +1,5 @@
+---
+source: tests/check.rs
+expression: "wizard(concat!(\"mode guide\\n\", \"gates mutating\\n\", \"stage \\\"a\\\"\\n\",\n\"  read git status\\n\",))"
+---
+error main.korin:4:1: guide: a guide wizard has no gates

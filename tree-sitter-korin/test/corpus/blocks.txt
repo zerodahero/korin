@@ -5,6 +5,7 @@ nested blocks, blank lines and comments
 korin 1
 title "t"
 gates mutating
+mode stepwise
 unattended allowed
 
 param a required
@@ -37,6 +38,7 @@ stage "two"
   (title
     (string))
   (gates)
+  (mode)
   (unattended)
   (param
     (identifier))

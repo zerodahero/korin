@@ -27,6 +27,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "mode"
+        },
+        {
+          "type": "SYMBOL",
           "name": "unattended"
         },
         {
@@ -113,6 +117,36 @@
               {
                 "type": "STRING",
                 "value": "mutating"
+              }
+            ]
+          }
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_newline"
+        }
+      ]
+    },
+    "mode": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "mode"
+        },
+        {
+          "type": "FIELD",
+          "name": "mode",
+          "content": {
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "STRING",
+                "value": "stepwise"
+              },
+              {
+                "type": "STRING",
+                "value": "guide"
               }
             ]
           }

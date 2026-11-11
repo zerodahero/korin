@@ -7,6 +7,8 @@ Wizard {
         version: 1 @ 6..7,
         title: "RDS snapshot and restore rehearsal" @ 14..50,
         gates: Mutating,
+        mode: Stepwise,
+        mode_span: None,
         unattended: None,
         allow: Some(
             [
