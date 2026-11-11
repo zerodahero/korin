@@ -469,7 +469,7 @@ fn nested_confirm_shows_the_rest_of_the_stage() {
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.answer("y");
-    s.wait_for("Continue? [y/N]");
+    s.wait_for("Continue? [y/N · f full]");
     let text = s.text();
     let next = &text[text.rfind("next:").expect("confirm lists what comes next")..];
     assert!(next.contains("after-the-block"), "{next}");
@@ -496,7 +496,7 @@ fn deeply_nested_confirm_shows_every_remaining_step() {
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.answer("y");
-    s.wait_for("Continue? [y/N]");
+    s.wait_for("Continue? [y/N · f full]");
     let text = s.text();
     let next = &text[text.rfind("next:").expect("confirm lists what comes next")..];
     for expected in ["inner-rest", "middle-rest", "outer-rest"] {
@@ -619,7 +619,11 @@ fn one_key_answers_a_gate_and_keys_while_arming_are_ignored() {
     s.send("y");
     assert_eq!(s.wait(), 0, "{}", s.text());
     assert!(marker(dir.path(), "touched").exists());
-    assert!(s.text().contains("Run stage 1? [y/N] y"), "{}", s.text());
+    assert!(
+        s.text().contains("Run stage 1? [y/N · f full] y"),
+        "{}",
+        s.text()
+    );
 }
 
 #[test]
@@ -638,7 +642,11 @@ fn enter_alone_declines_and_the_terminal_modes_come_back() {
     std::thread::sleep(Duration::from_millis(400));
     s.send("\r");
     assert_eq!(s.wait(), 1, "{}", s.text());
-    assert!(s.text().contains("Run stage 2? [y/N] n"), "{}", s.text());
+    assert!(
+        s.text().contains("Run stage 2? [y/N · f full] n"),
+        "{}",
+        s.text()
+    );
     assert_ne!(
         s.modes(),
         waiting,
@@ -689,4 +697,157 @@ fn require_enter_needs_a_whole_line() {
     s.send("\r");
     assert_eq!(s.wait(), 0, "{}", s.text());
     assert!(marker(dir.path(), "touched").exists());
+}
+
+// ---- the compact view ----
+
+fn run_dir(dir: &Path) -> PathBuf {
+    std::fs::read_dir(dir.join(".korin/runs"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path()
+}
+
+/// A wizard that lists a file under a directory param, and the directory: deep enough to
+/// become `<target>`. The path is canonical, as the cwd korin sees is.
+fn target_setup(body: &str) -> (tempfile::TempDir, String) {
+    let dir = setup(
+        &format!("param target required\nstage \"a\"\n{body}"),
+        &[("lister", "echo \"listed $1\"")],
+    );
+    let target = dir.path().canonicalize().unwrap().join("data/deep");
+    (dir, target.display().to_string())
+}
+
+#[test]
+fn f_at_a_gate_redraws_the_preview_in_full() {
+    let (dir, target) = target_setup("  read lister {target}/a.txt\n");
+    let param = format!("target={target}");
+    let mut s = start(dir.path(), &["run", "w.korin", "--param", &param]);
+    s.wait_for("[y/N · f full]");
+    assert!(s.text().contains("lister <target>/a.txt"), "{}", s.text());
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("f");
+    s.wait_for("[y/N · f compact]");
+    let after = s.text();
+    let toggled = after.find("f compact]").unwrap();
+    let full = format!("lister {target}/a.txt");
+    assert!(after.find(&full).is_some_and(|i| i < toggled), "{after}");
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    // The rest of the run stays in the full view.
+    assert!(
+        s.text().contains(&format!("listed {target}/a.txt")),
+        "{}",
+        s.text()
+    );
+    let events = std::fs::read_to_string(run_dir(dir.path()).join("events.jsonl")).unwrap();
+    assert!(events.contains(&format!("{target}/a.txt")), "{events}");
+    assert!(!events.contains("<target>"), "{events}");
+}
+
+#[test]
+fn f_and_enter_toggles_with_require_enter() {
+    let (dir, target) = target_setup("  read lister {target}/a.txt\n");
+    let param = format!("target={target}");
+    let mut s = start(
+        dir.path(),
+        &["run", "w.korin", "--require-enter", "--param", &param],
+    );
+    s.wait_for("[y/N · f full]");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("f\r");
+    s.wait_for("[y/N · f compact]");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("y\r");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(
+        s.text().contains(&format!("listed {target}/a.txt")),
+        "{}",
+        s.text()
+    );
+}
+
+#[test]
+fn the_terminal_shortens_and_the_journal_keeps_full_text() {
+    let (dir, target) = target_setup(concat!(
+        "  read lister {target}/a.txt\n",
+        "  record \"wrote {target}/a.txt\"\n",
+    ));
+    let param = format!("target={target}");
+    let mut s = start(dir.path(), &["run", "w.korin", "--param", &param]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let text = s.text();
+    assert!(text.contains("1.1 ❯ lister <target>/a.txt"), "{text}");
+    assert!(text.contains("listed <target>/a.txt"), "{text}");
+    assert!(text.contains("✓ wrote <target>/a.txt"), "{text}");
+    assert!(text.contains("journal: ./.korin/runs/"), "{text}");
+    let run = run_dir(dir.path());
+    let report = std::fs::read_to_string(run.join("report.md")).unwrap();
+    assert!(
+        report.contains(&format!("- wrote {target}/a.txt")),
+        "{report}"
+    );
+    let events = std::fs::read_to_string(run.join("events.jsonl")).unwrap();
+    assert!(
+        !events.contains("<target>") && !events.contains("<pwd>"),
+        "{events}"
+    );
+}
+
+#[test]
+fn a_huge_value_is_cut_at_a_gate_and_a_confirm() {
+    let dir = setup(
+        "param big required\nstage \"a\"\n  confirm \"go on?\"\n  read echo {big}\n",
+        &[],
+    );
+    let big = "x".repeat(400);
+    let param = format!("big={big}");
+    let mut s = start(dir.path(), &["run", "w.korin", "--param", &param]);
+    s.wait_for("Run stage 1?");
+    // The intro echoes the command line; the preview starts at the stage rule.
+    let text = s.text();
+    let preview = &text[text.find("Stage 1/1").unwrap()..];
+    assert!(preview.contains("read ❯ echo"), "{preview}");
+    assert!(preview.contains("…(+"), "{preview}");
+    assert!(!preview.contains(&big), "the gate showed the whole value");
+    s.answer("y");
+    s.wait_for("go on? [y/N");
+    let at_confirm = s.text();
+    let after_gate = at_confirm.find("Run stage 1?").unwrap();
+    assert!(at_confirm[after_gate..].contains("…(+"), "{at_confirm}");
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let events = std::fs::read_to_string(run_dir(dir.path()).join("events.jsonl")).unwrap();
+    assert!(events.contains(&big), "the journal lost the full value");
+}
+
+#[test]
+fn a_prefix_follows_the_current_value_of_its_name() {
+    let dir = setup(
+        concat!(
+            "stage \"a\"\n",
+            "  each d in [\"/a/b/c\", \"/x/y/z\"]\n",
+            "    read pick {d} /a/b/c/q\n",
+            "      capture p = text\n",
+            "    read echo /a/b/c/old {p}/new\n",
+        ),
+        &[("pick", "echo \"$1\"")],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let text = s.text();
+    // While p is /a/b/c, both paths shorten.
+    assert!(text.contains("│ <p>/old <p>/new"), "{text}");
+    // The next command clears p before it shows, so the old prefix is gone.
+    assert!(text.contains("❯ pick /x/y/z /a/b/c/q"), "{text}");
+    assert!(!text.contains("<p>/q"), "{text}");
+    // Once p is /x/y/z, only the new path shortens.
+    assert!(text.contains("│ /a/b/c/old <p>/new"), "{text}");
 }

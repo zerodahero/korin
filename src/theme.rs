@@ -15,6 +15,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 
 use crate::render::{PREFIX_CLOSE, PREFIX_OPEN, VALUE_CLOSE, VALUE_OPEN, strip_marks};
+use crate::view::{Quote, quote_scan, quote_step};
 
 /// A 24-bit color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -228,6 +229,28 @@ impl Theme {
         out
     }
 
+    /// Command output, already redacted and indented: shortened path prefixes take their
+    /// color, and other marks are removed.
+    pub fn output(self, text: &str) -> String {
+        if !self.enabled() || !text.contains(PREFIX_OPEN) {
+            return strip_marks(text);
+        }
+        let mut out = String::with_capacity(text.len() + 32);
+        let mut rest = text;
+        while let Some(start) = rest.find(PREFIX_OPEN) {
+            out.push_str(&strip_marks(&rest[..start]));
+            let after = &rest[start + PREFIX_OPEN.len_utf8()..];
+            let Some(end) = after.find(PREFIX_CLOSE) else {
+                rest = after;
+                continue;
+            };
+            self.paint(Role::Prefix, &after[..end], &mut out);
+            rest = &after[end + PREFIX_CLOSE.len_utf8()..];
+        }
+        out.push_str(&strip_marks(rest));
+        out
+    }
+
     /// A step still to run, dimmed as one piece. The line must already be redacted.
     pub fn ghost(self, line: &str) -> String {
         let mut out = String::new();
@@ -254,14 +277,14 @@ impl Theme {
         out
     }
 
-    /// A yes/no question, as at a stage gate or a `confirm`.
-    pub fn question(self, question: &str) -> String {
+    /// A question with its keys, as at a stage gate (`[y/N · f full]`) or a guide pause.
+    pub fn question(self, question: &str, hint: &str) -> String {
         let mut out = String::from("  ");
         self.paint(Role::Warn, "?", &mut out);
         out.push(' ');
         self.paint(Role::Title, question, &mut out);
         out.push(' ');
-        self.paint(Role::Dim, "[y/N]", &mut out);
+        self.paint(Role::Dim, &format!("[{hint}]"), &mut out);
         out.push(' ');
         out
     }
@@ -514,6 +537,8 @@ impl Theme {
                 .and_then(|t| t.strip_suffix(PREFIX_CLOSE))
             {
                 self.paint(Role::Prefix, prefix, out);
+            } else if token.starts_with('…') {
+                self.paint(Role::Dim, token, out);
             } else if token.starts_with('«') {
                 self.paint(Role::Secret, token, out);
             } else if token.starts_with('<') {
@@ -588,44 +613,6 @@ impl Theme {
     }
 }
 
-/// Where a scan of shell-quoted text stands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Quote {
-    None,
-    /// Inside `'…'`.
-    Single,
-    /// Inside `$'…'`, where a backslash escapes the next character.
-    Dollar,
-}
-
-/// Reads one shell token from the start of `text` (which must not be empty): a character,
-/// an escape pair, or a `$'` opener. Returns the state after it and its length in bytes.
-fn quote_step(state: Quote, text: &str) -> (Quote, usize) {
-    let mut chars = text.chars();
-    let c = chars.next().expect("quote_step needs text");
-    let next = chars.next();
-    let pair = |n: Option<char>| c.len_utf8() + n.map_or(0, char::len_utf8);
-    match (state, c) {
-        (Quote::None, '\\') => (Quote::None, pair(next)),
-        (Quote::None, '$') if next == Some('\'') => (Quote::Dollar, 2),
-        (Quote::None, '\'') => (Quote::Single, 1),
-        (Quote::Single | Quote::Dollar, '\'') => (Quote::None, 1),
-        (Quote::Dollar, '\\') => (Quote::Dollar, pair(next)),
-        (state, c) => (state, c.len_utf8()),
-    }
-}
-
-/// Scans `text` from `state` and returns the state at its end.
-fn quote_scan(mut state: Quote, text: &str) -> Quote {
-    let mut at = 0;
-    while at < text.len() {
-        let (next, len) = quote_step(state, &text[at..]);
-        state = next;
-        at += len;
-    }
-    state
-}
-
 struct Patterns {
     stage: Regex,
     tags: Regex,
@@ -672,7 +659,7 @@ fn patterns() -> &'static Patterns {
                 r"^(\s+)(journal:|approved by --yes|… waiting|next:|output withheld:|used at|nothing ran)(.*)$",
             ),
             inline: re(&format!(
-                r#"{PREFIX_OPEN}[^{PREFIX_CLOSE}]*{PREFIX_CLOSE}|{VALUE_OPEN}[^{VALUE_CLOSE}]*{VALUE_CLOSE}|«[^»]*»|<[A-Za-z_][\w.]*(?: ← [0-9.]+)?>|"(?:[^"\\]|\\.)*""#
+                r#"{PREFIX_OPEN}[^{PREFIX_CLOSE}]*{PREFIX_CLOSE}|…\(\+[0-9.]+k?\)|{VALUE_OPEN}[^{VALUE_CLOSE}]*{VALUE_CLOSE}|«[^»]*»|<[A-Za-z_][\w.]*(?: ← [0-9.]+)?>|"(?:[^"\\]|\\.)*""#
             )),
         }
     })
@@ -796,7 +783,9 @@ mod tests {
         assert!(shown.contains(&format!("{exe}git\x1b[0m")), "{shown:?}");
         let shown = TRUE.lines("  2.1  read ❯ ./scripts/run.sh x");
         assert!(
-            shown.contains(&format!("\x1b[38;2;123;124;126m./scripts/\x1b[0m{exe}run.sh")),
+            shown.contains(&format!(
+                "\x1b[38;2;123;124;126m./scripts/\x1b[0m{exe}run.sh"
+            )),
             "{shown:?}"
         );
         let shown = TRUE.lines("  2.1 ❯ \u{e000}tool\u{e001} x");
@@ -815,7 +804,10 @@ mod tests {
             "{shown:?}"
         );
         let shown = TRUE.lines("  4.1 ❯ echo $'a\\'b'");
-        assert!(shown.contains(&format!("{green}$'a\\'b'\x1b[0m")), "{shown:?}");
+        assert!(
+            shown.contains(&format!("{green}$'a\\'b'\x1b[0m")),
+            "{shown:?}"
+        );
         // A value inside quotes keeps the value color; the quotes around it are green.
         let shown = TRUE.lines("  4.1 ❯ echo 'hi \u{e000}susan\u{e001}'");
         assert!(shown.contains(&format!("{green}'hi \x1b[0m")), "{shown:?}");

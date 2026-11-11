@@ -10,7 +10,7 @@ mod screen;
 
 use screen::Screen;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
 use std::os::fd::AsFd;
@@ -29,6 +29,7 @@ use crate::ir::{
 use crate::redact::{Redactor, StreamRedactor};
 use crate::render::{self, Values as _};
 use crate::theme::Theme;
+use crate::view::{Prefixes, View};
 use capture::{Data, Extract, Fingerprint, extract};
 use journal::Journal;
 use process::{Cancel, Signals, Spec, Status, Suspended};
@@ -168,6 +169,15 @@ impl Stop {
     }
 }
 
+/// An answer at a gate or a `confirm`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Answer {
+    Yes,
+    No,
+    /// Switch between the compact and the full view, then ask again.
+    Toggle,
+}
+
 #[derive(Debug, Clone)]
 struct Value {
     data: Data,
@@ -195,7 +205,7 @@ pub fn run(program: &Program, options: Options) -> Ending {
 }
 
 /// Prints how a run stopped. The message and details must already be redacted.
-fn print_stop(theme: Theme, stop: &Stop, journal: Option<&Path>) {
+fn print_stop(theme: Theme, stop: &Stop, journal: Option<&str>) {
     let mark = if stop.ending == Ending::Cancelled {
         "■"
     } else {
@@ -206,7 +216,7 @@ fn print_stop(theme: Theme, stop: &Stop, journal: Option<&Path>) {
         lines.push(format!("  {line}"));
     }
     if let Some(dir) = journal {
-        lines.push(format!("  journal: {}", dir.display()));
+        lines.push(format!("  journal: {dir}"));
     }
     println!("{}", theme.lines(&lines.join("\n")));
 }
@@ -249,6 +259,14 @@ struct Runner<'p> {
     screen: RefCell<Screen>,
     /// The footer's text while a stage runs: the stage, then the step running now.
     footer: Option<(String, String)>,
+    /// How much of each path and value the terminal shows. The toggle key switches it.
+    view: Cell<View>,
+    /// Values that name a directory, as path prefixes for the compact view: each name's
+    /// current value, already redacted, in the order the names were first set.
+    named: Vec<(Sym, String)>,
+    /// `$PWD`, when it names the cwd by another path, such as through a symlink. Paths the
+    /// operator types often start with it, so it shortens to `<pwd>` too.
+    pwd_alias: Option<String>,
 }
 
 impl<'p> Runner<'p> {
@@ -356,6 +374,7 @@ impl<'p> Runner<'p> {
         // lines are told apart from real output only by color, so it also needs color.
         let theme = opts.theme;
         let live = tty && theme.enabled() && terminal_size::terminal_size().is_some();
+        let cwd_for_alias = opts.cwd.clone();
         Ok(Self {
             p,
             opts,
@@ -372,6 +391,9 @@ impl<'p> Runner<'p> {
             rests: Vec::new(),
             screen: RefCell::new(Screen::new(live, theme)),
             footer: None,
+            view: Cell::new(if tty { View::Compact } else { View::Full }),
+            named: Vec::new(),
+            pwd_alias: pwd_alias(&cwd_for_alias),
         })
     }
 
@@ -405,7 +427,7 @@ impl<'p> Runner<'p> {
                     .event("run_end", json!({"ending": "completed"}));
                 self.journal.report("\n**Completed.**");
                 self.say(&format!("\n✓ {} completed", self.p.title));
-                self.say(&format!("  journal: {}", self.journal.dir().display()));
+                self.say(&format!("  journal: {}", self.journal_shown()));
                 Ending::Completed
             }
             Err(stop) => {
@@ -433,7 +455,7 @@ impl<'p> Runner<'p> {
                         .collect(),
                 };
                 self.screen.borrow_mut().clear_all();
-                print_stop(self.opts.theme, &redacted, Some(self.journal.dir()));
+                print_stop(self.opts.theme, &redacted, Some(&self.journal_shown()));
                 stop.ending
             }
         }
@@ -462,6 +484,11 @@ impl<'p> Runner<'p> {
             } else {
                 one
             };
+        // Cuts are lossy, so they come after the check above, on the form it chose.
+        let chosen = match self.view.get() {
+            View::Compact => crate::view::cut_lines(&chosen, self.width()),
+            View::Full => chosen,
+        };
         let shown = self.opts.theme.lines(&chosen);
         self.screen.borrow_mut().print(&format!("{shown}\n"));
     }
@@ -476,6 +503,89 @@ impl<'p> Runner<'p> {
         }
         if !one.is_empty() {
             self.say_block(&one.join("\n"), &broken.join("\n"));
+        }
+    }
+
+    /// Sets or removes a value, and keeps the compact view's named prefixes in step with it:
+    /// a name's prefix always follows its current value, and goes away with it.
+    fn set_value(&mut self, sym: Sym, value: Option<Value>) {
+        let prefix = value.as_ref().and_then(|v| self.named_prefix(sym, v));
+        match value {
+            Some(value) => {
+                self.values.insert(sym, value);
+            }
+            None => {
+                self.values.remove(&sym);
+            }
+        }
+        match (self.named.iter().position(|(s, _)| *s == sym), prefix) {
+            (Some(index), Some(path)) => self.named[index].1 = path,
+            (Some(index), None) => {
+                self.named.remove(index);
+            }
+            (None, Some(path)) => self.named.push((sym, path)),
+            (None, None) => {}
+        }
+    }
+
+    /// The redacted path a value gives as a named prefix, if it qualifies: a param, ask or
+    /// capture that is not secret or withheld, holding one absolute path of at least three
+    /// components.
+    fn named_prefix(&self, sym: Sym, value: &Value) -> Option<String> {
+        let info = self.p.sym(sym);
+        let kind_ok = matches!(info.kind, SymKind::Param | SymKind::Ask | SymKind::Capture);
+        if !kind_ok || info.secret || value.withheld.is_some() {
+            return None;
+        }
+        let Data::Str(text) = &value.data else {
+            return None;
+        };
+        let path = text.trim_end_matches('/');
+        let components = path.split('/').filter(|c| !c.is_empty()).count();
+        let qualifies = path.starts_with('/') && !path.contains('\n') && components >= 3;
+        qualifies.then(|| self.redactor.redact(path))
+    }
+
+    /// The prefixes the compact view shortens, or `None` in the full view.
+    fn prefixes(&self) -> Option<Prefixes> {
+        if self.view.get() == View::Full {
+            return None;
+        }
+        let mut prefixes = Prefixes::default();
+        for (sym, path) in &self.named {
+            prefixes.push(path, &format!("<{}>", self.p.sym(*sym).name), false);
+        }
+        prefixes.push(&self.opts.cwd.to_string_lossy(), "<pwd>", true);
+        if let Some(alias) = &self.pwd_alias {
+            prefixes.push(alias, "<pwd>", true);
+        }
+        let tmp = std::env::var("TMPDIR")
+            .ok()
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| "/tmp".into());
+        prefixes.push(&tmp, "<tmp>", true);
+        if let Some(home) = std::env::var_os("HOME") {
+            prefixes.push(&home.to_string_lossy(), "~", true);
+        }
+        Some(prefixes)
+    }
+
+    /// Text for the terminal, such as a message or a line of output: shortened in the
+    /// compact view. The text must already be redacted, and must not go to the journal.
+    fn shorten_text(&self, text: &str) -> String {
+        match self.prefixes() {
+            Some(prefixes) => prefixes.shorten_text(text),
+            None => text.to_string(),
+        }
+    }
+
+    /// The journal's directory as the terminal shows it: relative to the cwd in the compact
+    /// view.
+    fn journal_shown(&self) -> String {
+        let dir = self.journal.dir();
+        match (self.view.get(), dir.strip_prefix(&self.opts.cwd)) {
+            (View::Compact, Ok(rest)) => format!("./{}", rest.display()),
+            _ => dir.display().to_string(),
         }
     }
 
@@ -519,9 +629,18 @@ impl<'p> Runner<'p> {
         for step in self.remaining() {
             render::step_lines(self.p, step, 1, self, None, &mut lines);
         }
+        let compact = self.view.get() == View::Compact;
+        let width = self.width();
         let lines = lines
             .iter()
-            .map(|line| theme.ghost(&self.redact_marked(line)))
+            .map(|line| {
+                let line = self.redact_marked(line);
+                if compact {
+                    theme.ghost(&crate::view::cut_lines(&line, width))
+                } else {
+                    theme.ghost(&line)
+                }
+            })
             .collect();
         let footer = self.footer.as_ref().map(|(stage, step)| {
             theme.footer(&self.redactor.redact(stage), &self.redactor.redact(step))
@@ -565,12 +684,12 @@ impl<'p> Runner<'p> {
                     .add_value(&name, &value)
                     .map_err(Stop::failed)?;
             }
-            self.values.insert(
+            self.set_value(
                 param.sym,
-                Value {
+                Some(Value {
                     data: Data::Str(value),
                     withheld: None,
-                },
+                }),
             );
         }
         Ok(())
@@ -606,21 +725,56 @@ impl<'p> Runner<'p> {
         Ok(answer)
     }
 
-    /// Asks a yes/no question. In a terminal, one key answers it: `y` approves, and `n`,
-    /// Enter or Esc declines. With `--require-enter`, or without a terminal, it reads a line.
-    fn ask_yes(&self, question: &str) -> Result<bool, Stop> {
-        let prompt = self.opts.theme.question(question);
-        if self.opts.require_enter || !std::io::stdin().is_terminal() {
-            let answer = self.read_line(&prompt)?;
-            return Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "Yes"));
+    /// Asks a yes/no question that sits under a preview. In a terminal, one key answers it:
+    /// `y` approves, and `n`, Enter or Esc declines. `f` switches between the compact and
+    /// the full view: korin erases the preview, draws it again with `redraw`, and asks
+    /// again. With `--require-enter`, or without a terminal, it reads a line instead, and a
+    /// line of `f` switches the view.
+    ///
+    /// `question` builds the question for the current view, since it may hold a path.
+    fn ask_yes(
+        &self,
+        question: &dyn Fn(&Self) -> String,
+        redraw: &dyn Fn(&Self),
+    ) -> Result<bool, Stop> {
+        loop {
+            let hint = format!("y/N · f {}", self.view.get().other());
+            let prompt = self.opts.theme.question(&question(self), &hint);
+            let answer = if self.opts.require_enter || !std::io::stdin().is_terminal() {
+                let line = self.read_line(&prompt)?;
+                match line.trim() {
+                    "y" | "Y" | "yes" | "Yes" => Answer::Yes,
+                    "f" | "F" => Answer::Toggle,
+                    _ => Answer::No,
+                }
+            } else {
+                self.screen.borrow_mut().hide();
+                let (answer, echo) = read_key_interruptible(&self.signals, &prompt, |key| {
+                    match key {
+                        [b'y' | b'Y', ..] => Some((Answer::Yes, "y")),
+                        [b'f' | b'F', ..] => Some((Answer::Toggle, "f")),
+                        [b'n' | b'N' | b'\r' | b'\n', ..] | [0x1b] => Some((Answer::No, "n")),
+                        // Anything else, such as an arrow key's escape sequence, is ignored.
+                        _ => None,
+                    }
+                })?;
+                self.screen.borrow_mut().echoed(&format!("{prompt}{echo}"));
+                answer
+            };
+            match answer {
+                Answer::Yes => return Ok(true),
+                Answer::No => return Ok(false),
+                Answer::Toggle => {
+                    self.view.set(self.view.get().toggled());
+                    {
+                        let mut screen = self.screen.borrow_mut();
+                        screen.erase_to_mark();
+                        screen.mark();
+                    }
+                    redraw(self);
+                }
+            }
         }
-        self.screen.borrow_mut().hide();
-        let yes = read_key_interruptible(&self.signals, &prompt)?;
-        let answer = if yes { "y" } else { "n" };
-        self.screen
-            .borrow_mut()
-            .echoed(&format!("{prompt}{answer}"));
-        Ok(yes)
     }
 
     // ---- stages ----
@@ -651,7 +805,12 @@ impl<'p> Runner<'p> {
                 self.journal
                     .event("gate_auto", json!({"stage": stage.number}));
                 self.journal.report("- gate approved by `--yes`");
-            } else if self.ask_yes(&format!("Run stage {}?", stage.number))? {
+            } else if self.ask_yes(&|_| format!("Run stage {}?", stage.number), &|r| {
+                if !stage.steps.is_empty() {
+                    r.say("");
+                    r.say_steps(&stage.steps.iter().collect::<Vec<_>>());
+                }
+            })? {
                 self.journal
                     .event("gate", json!({"stage": stage.number, "approved": true}));
                 self.journal.report("- gate approved");
@@ -775,7 +934,13 @@ impl<'p> Runner<'p> {
                     self.say("  next:");
                     self.say_steps(&steps);
                 }
-                if self.ask_yes(&text)? {
+                let redraw = |r: &Self| {
+                    if !steps.is_empty() {
+                        r.say("  next:");
+                        r.say_steps(&steps);
+                    }
+                };
+                if self.ask_yes(&|r| r.shorten_text(&text), &redraw)? {
                     self.screen.borrow_mut().erase_to_mark();
                     self.update_ghost();
                     self.journal
@@ -799,7 +964,8 @@ impl<'p> Runner<'p> {
                 let value = if let Some(value) = self.provided.get(&name) {
                     value.clone()
                 } else {
-                    self.say(&format!("  {}", self.display_interpolated(prompt)));
+                    let prompt = self.display_interpolated(prompt);
+                    self.say(&format!("  {}", self.shorten_text(&prompt)));
                     self.prompt_value(&name, *secret)?
                 };
                 if *secret {
@@ -811,12 +977,12 @@ impl<'p> Runner<'p> {
                     "ask",
                     json!({"step": step.id, "name": name, "value": value}),
                 );
-                self.values.insert(
+                self.set_value(
                     *sym,
-                    Value {
+                    Some(Value {
                         data: Data::Str(value),
                         withheld: None,
-                    },
+                    }),
                 );
                 Ok(())
             }
@@ -841,12 +1007,12 @@ impl<'p> Runner<'p> {
             StepKind::Each { var, list, body } => {
                 let (items, withheld) = self.eval_list(list)?;
                 for (index, item) in items.into_iter().enumerate() {
-                    self.values.insert(
+                    self.set_value(
                         *var,
-                        Value {
+                        Some(Value {
                             data: Data::Str(item),
                             withheld: withheld.clone(),
-                        },
+                        }),
                     );
                     self.steps(body, &format!("{path}[{index}]"), suffix, deadline)?;
                 }
@@ -869,12 +1035,14 @@ impl<'p> Runner<'p> {
                 deadline,
             ),
             StepKind::Say { kind, text } => {
+                // One full, redacted text: the journal keeps it, the terminal shows its view.
                 let text = self.display_interpolated(text);
+                let viewed = self.shorten_text(&text);
                 match kind {
-                    SayKind::Note => self.say(&format!("\n  {text}")),
-                    SayKind::Warn => self.say(&format!("\n  ⚠ {text}")),
+                    SayKind::Note => self.say(&format!("\n  {viewed}")),
+                    SayKind::Warn => self.say(&format!("\n  ⚠ {viewed}")),
                     SayKind::Record => {
-                        self.say(&format!("\n  ✓ {text}"));
+                        self.say(&format!("\n  ✓ {viewed}"));
                         self.journal.report(&format!("- {text}"));
                     }
                 }
@@ -994,10 +1162,10 @@ impl<'p> Runner<'p> {
             return Err(Stop::poll_deadline());
         }
         for expect in &command.expects {
-            self.values.remove(&expect.sym);
+            self.set_value(expect.sym, None);
         }
         for capture in &command.captures {
-            self.values.remove(&capture.sym);
+            self.set_value(capture.sym, None);
         }
         self.seq += 1;
         let invocation = format!("{:04}-{path}{suffix}", self.seq);
@@ -1035,15 +1203,16 @@ impl<'p> Runner<'p> {
                     command.exe.display()
                 ))
             })?;
-        let shown = render::argv(self.p, &command.argv, self);
+        let viewed = render::argv(self.p, &command.argv, self);
         let prefix = format!("  {} ❯ ", step.id);
         let broken =
             render::command_lines(self.p, &command.argv, self, prefix.width(), self.width());
         self.say_block(
-            &format!("\n{prefix}{shown}"),
+            &format!("\n{prefix}{viewed}"),
             &format!("\n{prefix}{}", broken.join("\n")),
         );
-        let shown = render::strip_marks(&shown);
+        // The journal, the suspend prompt and any failure detail show the full command.
+        let shown = render::strip_marks(&render::argv(self.p, &command.argv, &Full(self)));
         self.journal.event(
             "command_start",
             json!({"invocation_id": invocation, "step": step.id, "command_kind": command.kind.keyword(), "argv": shown, "exe": exe.display().to_string()}),
@@ -1143,6 +1312,13 @@ impl<'p> Runner<'p> {
             let gutter = self.opts.theme.gutter();
             let screen = &self.screen;
             let live = screen.borrow().live();
+            let prefixes = self.prefixes();
+            let theme = self.opts.theme;
+            // Shortens whole lines only, for the terminal; the journal gets the raw bytes.
+            let view_lines = |text: &str| match &prefixes {
+                Some(prefixes) => theme.output(&prefixes.shorten_text(text)),
+                None => text.to_string(),
+            };
             // A live view writes whole lines only, so it can count the rows it must erase.
             let mut partial = String::new();
             let mut on_output = |is_err: bool, chunk: &[u8]| {
@@ -1152,11 +1328,19 @@ impl<'p> Runner<'p> {
                         partial.push_str(&text);
                         if let Some(end) = partial.rfind('\n') {
                             let whole: String = partial.drain(..=end).collect();
-                            screen.borrow_mut().print(&indent(&whole, &gutter));
+                            screen
+                                .borrow_mut()
+                                .print(&indent(&view_lines(&whole), &gutter));
                         }
                     } else {
+                        // A chunk may end mid-line, so only lines it holds whole are shortened.
+                        let shown = if line_start && text.ends_with('\n') {
+                            view_lines(&text)
+                        } else {
+                            text
+                        };
                         screen.borrow_mut().print_raw(&indent_from(
-                            &text,
+                            &shown,
                             &gutter,
                             &mut line_start,
                         ));
@@ -1171,7 +1355,8 @@ impl<'p> Runner<'p> {
                         partial.push_str(&buffer.finish(&redactor));
                     }
                     if !partial.is_empty() {
-                        self.screen.borrow_mut().print(&indent(&partial, &gutter));
+                        let shown = view_lines(&partial);
+                        self.screen.borrow_mut().print(&indent(&shown, &gutter));
                     }
                 } else {
                     let mut screen = self.screen.borrow_mut();
@@ -1239,12 +1424,12 @@ impl<'p> Runner<'p> {
         let stderr_text = Zeroizing::new(String::from_utf8_lossy(&stderr).into_owned());
         let mut matched: Option<Sym> = None;
         for expect in &command.expects {
-            self.values.insert(
+            self.set_value(
                 expect.sym,
-                Value {
+                Some(Value {
                     data: Data::Bool(false),
                     withheld: None,
-                },
+                }),
             );
         }
         for expect in &command.expects {
@@ -1278,12 +1463,12 @@ impl<'p> Runner<'p> {
             }
         }
         if let Some(sym) = matched {
-            self.values.insert(
+            self.set_value(
                 sym,
-                Value {
+                Some(Value {
                     data: Data::Bool(true),
                     withheld: None,
-                },
+                }),
             );
         }
         let succeeded = matched.is_some() || status == Status::Exited(0);
@@ -1416,9 +1601,12 @@ impl<'p> Runner<'p> {
         }
         if command.secret_producing && published {
             let gutter = self.opts.theme.gutter();
+            let theme = self.opts.theme;
+            let out = theme.output(&self.shorten_text(&self.redactor.redact_bytes(&stdout)));
+            let err = theme.output(&self.shorten_text(&self.redactor.redact_bytes(&stderr)));
             let mut screen = self.screen.borrow_mut();
-            screen.print(&indent(&self.redactor.redact_bytes(&stdout), &gutter));
-            screen.print(&indent(&self.redactor.redact_bytes(&stderr), &gutter));
+            screen.print(&indent(&out, &gutter));
+            screen.print(&indent(&err, &gutter));
         } else if !published {
             self.say(&format!(
                 "  output withheld: {}",
@@ -1456,16 +1644,16 @@ impl<'p> Runner<'p> {
                             json!({"invocation_id": invocation, "name": name, "withheld": true}),
                         );
                     }
-                    self.values.insert(
+                    self.set_value(
                         capture.sym,
-                        Value {
+                        Some(Value {
                             data: data.clone(),
                             withheld: if capture.secret {
                                 None
                             } else {
                                 withheld_reason.clone()
                             },
-                        },
+                        }),
                     );
                 }
                 Extract::Absent => {
@@ -1726,7 +1914,24 @@ impl<'p> Runner<'p> {
     }
 }
 
+/// The runner's values, always in the full view: for the journal, which never shortens.
+struct Full<'a, 'p>(&'a Runner<'p>);
+
+impl render::Values for Full<'_, '_> {
+    fn shown(&self, program: &Program, sym: Sym) -> Option<String> {
+        self.0.shown(program, sym)
+    }
+
+    fn shown_arg(&self, program: &Program, sym: Sym) -> Option<Vec<String>> {
+        self.0.shown_arg(program, sym)
+    }
+}
+
 impl render::Values for Runner<'_> {
+    fn prefixes(&self) -> Option<Prefixes> {
+        Runner::prefixes(self)
+    }
+
     fn shown_arg(&self, program: &Program, sym: Sym) -> Option<Vec<String>> {
         let info = program.sym(sym);
         if info.kind == SymKind::KorinOut {
@@ -2009,10 +2214,15 @@ impl Drop for RestoreModes {
     }
 }
 
-/// Reads one yes/no key from the terminal: `y` or `Y` is yes; `n`, `N`, Enter or a lone Esc
-/// is no; anything else is ignored. Keys typed before the prompt, or within [`ARMING`] after
-/// it, are discarded. Ctrl-C and `SIGTERM` still cancel the run: signals stay on.
-fn read_key_interruptible(signals: &Signals, prompt: &str) -> Result<bool, Stop> {
+/// Reads one key from the terminal that `answer` accepts, and echoes the text it gives.
+/// `answer` sees the bytes of one read, and returns `None` to ignore them. Keys typed before
+/// the prompt, or within [`ARMING`] after it, are discarded. Ctrl-C and `SIGTERM` still
+/// cancel the run: signals stay on.
+fn read_key_interruptible<T>(
+    signals: &Signals,
+    prompt: &str,
+    answer: impl Fn(&[u8]) -> Option<(T, &'static str)>,
+) -> Result<(T, &'static str), Stop> {
     use nix::sys::termios::{LocalFlags, SetArg, SpecialCharacterIndices, tcgetattr, tcsetattr};
     use std::io::Read as _;
 
@@ -2063,15 +2273,9 @@ fn read_key_interruptible(signals: &Signals, prompt: &str) -> Result<bool, Stop>
         if Instant::now() < armed {
             continue;
         }
-        let answer = match &buf[..read] {
-            [b'y' | b'Y', ..] => Some(true),
-            [b'n' | b'N' | b'\r' | b'\n', ..] | [0x1b] => Some(false),
-            // Anything else, including the escape sequence of an arrow key, is ignored.
-            _ => None,
-        };
-        if let Some(yes) = answer {
-            println!("{}", if yes { "y" } else { "n" });
-            return Ok(yes);
+        if let Some((value, echo)) = answer(&buf[..read]) {
+            println!("{echo}");
+            return Ok((value, echo));
         }
     }
 }
@@ -2101,6 +2305,14 @@ impl Drop for ScratchGuard {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+
+/// `$PWD`, if it is another path to `cwd`.
+fn pwd_alias(cwd: &Path) -> Option<String> {
+    let pwd = PathBuf::from(std::env::var_os("PWD")?);
+    let same =
+        pwd.is_absolute() && pwd != cwd && pwd.canonicalize().ok()? == cwd.canonicalize().ok()?;
+    same.then(|| pwd.to_string_lossy().into_owned())
 }
 
 /// A path with the home directory shown as `~`, as a shell prompt shows it.

@@ -6,6 +6,7 @@ use unicode_width::UnicodeWidthStr as _;
 
 use crate::ast::{CaptureMode, CmpOp, GateMode, SayKind};
 use crate::ir::{Expr, IPart, Interpolated, Program, Step, StepKind, Sym, SymKind};
+use crate::view::Prefixes;
 
 /// Opens a value korin put into a command, in a rendered line for the terminal. The theme turns
 /// each marked value into color, and every line loses its marks before it is shown.
@@ -35,7 +36,46 @@ pub fn quote(arg: &str) -> String {
 /// Quotes one argument built from pieces, marking the pieces that are values. The quoting
 /// depends on the whole argument, so the marks never change how it is quoted.
 fn quote_segments(segments: &[(&str, bool)]) -> String {
-    let whole: String = segments.iter().map(|(text, _)| *text).collect();
+    let pieces: Vec<Piece<'_>> = segments
+        .iter()
+        .map(|(text, marked)| {
+            if *marked {
+                Piece::Value(text)
+            } else {
+                Piece::Lit(text)
+            }
+        })
+        .collect();
+    quote_pieces(&pieces)
+}
+
+/// A piece of one shown argument.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Piece<'a> {
+    Lit(&'a str),
+    /// A value korin put into the command: marked, so the theme can color it.
+    Value(&'a str),
+    /// A shortened path prefix: `label` is shown instead of `path`.
+    Prefix {
+        label: &'a str,
+        path: &'a str,
+    },
+}
+
+impl Piece<'_> {
+    /// The text the command really receives.
+    fn real(&self) -> &str {
+        match self {
+            Piece::Lit(text) | Piece::Value(text) => text,
+            Piece::Prefix { path, .. } => path,
+        }
+    }
+}
+
+/// Quotes one argument built from pieces. Quoting is decided by the real argument, so a
+/// shortened prefix never changes how the argument is quoted; its label is shown as is.
+fn quote_pieces(pieces: &[Piece<'_>]) -> String {
+    let whole: String = pieces.iter().map(Piece::real).collect();
     let plain = !whole.is_empty()
         && whole
             .chars()
@@ -47,8 +87,18 @@ fn quote_segments(segments: &[(&str, bool)]) -> String {
     } else if !plain {
         out.push('\'');
     }
-    for (text, marked) in segments {
-        let marked = *marked && !text.is_empty();
+    for piece in pieces {
+        let (text, marked) = match piece {
+            Piece::Prefix { label, .. } => {
+                out.push(PREFIX_OPEN);
+                out.push_str(&escape_controls(label));
+                out.push(PREFIX_CLOSE);
+                continue;
+            }
+            Piece::Lit(text) => (*text, false),
+            Piece::Value(text) => (*text, true),
+        };
+        let marked = marked && !text.is_empty();
         if marked {
             out.push(VALUE_OPEN);
         }
@@ -81,6 +131,72 @@ fn quote_segments(segments: &[(&str, bool)]) -> String {
     out
 }
 
+/// Shortens the path that starts an argument, or that follows the `=` of `--flag=`. A named
+/// prefix applies only when a `/` follows it; the pieces are split where the prefix ends.
+fn shorten_pieces<'a>(
+    prefixes: &'a Prefixes,
+    segments: &[(&'a str, bool)],
+    whole: &'a str,
+) -> Vec<Piece<'a>> {
+    let as_pieces = || {
+        segments
+            .iter()
+            .map(|(t, m)| if *m { Piece::Value(t) } else { Piece::Lit(t) })
+            .collect::<Vec<_>>()
+    };
+    debug_assert_eq!(
+        whole,
+        segments.iter().map(|(t, _)| *t).collect::<String>(),
+        "whole is the segments joined"
+    );
+    let start = if whole.starts_with('-') {
+        whole.find('=').map_or(0, |i| i + 1)
+    } else {
+        0
+    };
+    let Some((label, len)) = prefixes.at(&whole[start..], str::is_empty) else {
+        return as_pieces();
+    };
+    let (from, to) = (start, start + len);
+    let path = &whole[from..to];
+    let mut out = Vec::new();
+    let mut offset = 0;
+    let mut placed = false;
+    for (text, marked) in segments {
+        let (s, e) = (offset, offset + text.len());
+        offset = e;
+        let piece = |t: &'a str| {
+            if *marked {
+                Piece::Value(t)
+            } else {
+                Piece::Lit(t)
+            }
+        };
+        if e <= from || s >= to {
+            if s >= to && !placed {
+                out.push(Piece::Prefix { label, path });
+                placed = true;
+            }
+            out.push(piece(text));
+            continue;
+        }
+        if s < from {
+            out.push(piece(&text[..from - s]));
+        }
+        if !placed {
+            out.push(Piece::Prefix { label, path });
+            placed = true;
+        }
+        if e > to {
+            out.push(piece(&text[to - s..]));
+        }
+    }
+    if !placed {
+        out.push(Piece::Prefix { label, path });
+    }
+    out
+}
+
 /// Escapes control characters in text shown inside a message, so a value cannot add lines or
 /// move the cursor.
 pub fn escape_controls(text: &str) -> String {
@@ -108,6 +224,30 @@ pub trait Values {
     /// secrets and withheld values already masked, or `None` to show a placeholder.
     fn shown_arg(&self, _program: &Program, _sym: Sym) -> Option<Vec<String>> {
         None
+    }
+
+    /// The path prefixes to shorten, in the compact view; `None` shows every path in full.
+    fn prefixes(&self) -> Option<Prefixes> {
+        None
+    }
+}
+
+/// One shown argument: shortened when there are prefixes, then quoted.
+fn shown_word(prefixes: Option<&Prefixes>, segments: &[(&str, bool)]) -> String {
+    match prefixes {
+        Some(prefixes) => {
+            let whole: String = segments.iter().map(|(t, _)| *t).collect();
+            quote_pieces(&shorten_pieces(prefixes, segments, &whole))
+        }
+        None => quote_segments(segments),
+    }
+}
+
+/// Text inside a message, shortened when there are prefixes.
+fn shown_text(values: &dyn Values, text: String) -> String {
+    match values.prefixes() {
+        Some(prefixes) => prefixes.shorten_text(&text),
+        None => text,
     }
 }
 
@@ -286,6 +426,8 @@ fn layout(words: &[String], indent: usize, width: usize) -> Vec<String> {
 
 /// The shown words of a command, one per argument (a known list gives one per item).
 fn words(program: &Program, argv: &[Interpolated], values: &dyn Values) -> Vec<String> {
+    let prefixes = values.prefixes();
+    let prefixes = prefixes.as_ref();
     let mut out = Vec::new();
     for t in argv {
         if let [
@@ -295,15 +437,20 @@ fn words(program: &Program, argv: &[Interpolated], values: &dyn Values) -> Vec<S
         ] = t.parts.as_slice()
             && let Some(items) = values.shown_arg(program, *sym)
         {
-            out.extend(items.iter().map(|i| quote_segments(&[(i, true)])));
+            out.extend(items.iter().map(|i| shown_word(prefixes, &[(i, true)])));
             continue;
         }
-        out.push(argument(program, t, values));
+        out.push(argument(program, t, values, prefixes));
     }
     out
 }
 
-fn argument(program: &Program, t: &Interpolated, values: &dyn Values) -> String {
+fn argument(
+    program: &Program,
+    t: &Interpolated,
+    values: &dyn Values,
+    prefixes: Option<&Prefixes>,
+) -> String {
     let mut segments: Vec<(String, bool)> = Vec::new();
     for part in &t.parts {
         match part {
@@ -316,7 +463,7 @@ fn argument(program: &Program, t: &Interpolated, values: &dyn Values) -> String 
         }
     }
     let borrowed: Vec<(&str, bool)> = segments.iter().map(|(t, m)| (t.as_str(), *m)).collect();
-    quote_segments(&borrowed)
+    shown_word(prefixes, &borrowed)
 }
 
 /// How tightly an expression binds: `or` 1, `and` 2, `not` 3, everything else 4.
@@ -414,7 +561,7 @@ pub fn step_lines(
             for (name, value) in &c.env {
                 out.push(format!(
                     "{pad}      env {name}={}",
-                    interpolated(program, value, values, false)
+                    shown_text(values, interpolated(program, value, values, false))
                 ));
             }
             for expect in &c.expects {
@@ -448,7 +595,7 @@ pub fn step_lines(
         StepKind::Confirm(text) => {
             out.push(format!(
                 "{pad}{id}  confirm \"{}\"",
-                interpolated(program, text, values, false)
+                shown_text(values, interpolated(program, text, values, false))
             ));
         }
         StepKind::Ask {
@@ -459,7 +606,7 @@ pub fn step_lines(
             "{pad}{id}  ask{} {} \"{}\"",
             if *secret { " secret" } else { "" },
             program.sym(*sym).name,
-            interpolated(program, prompt, values, false)
+            shown_text(values, interpolated(program, prompt, values, false))
         )),
         StepKind::Assert { cond, message } => out.push(format!(
             "{pad}{id}  assert {} else \"{}\"",
@@ -506,7 +653,7 @@ pub fn step_lines(
             };
             out.push(format!(
                 "{pad}{id}  {keyword} \"{}\"",
-                interpolated(program, text, values, false)
+                shown_text(values, interpolated(program, text, values, false))
             ));
         }
         StepKind::Call { label, body, .. } => {
@@ -736,6 +883,79 @@ mod tests {
                 "  --y 'a b' \\".to_string(),
                 "  --z".to_string(),
             ]
+        );
+    }
+
+    fn prefixes() -> Prefixes {
+        let mut p = Prefixes::default();
+        p.push("/home/ada/shop", "<pwd>", true);
+        p.push("/opt/ci/build/", "<build_dir>", false);
+        p
+    }
+
+    fn shown(segments: &[(&str, bool)]) -> String {
+        shown_word(Some(&prefixes()), segments)
+    }
+
+    const P: (char, char) = (PREFIX_OPEN, PREFIX_CLOSE);
+
+    #[test]
+    fn a_path_argument_is_shortened_before_it_is_quoted() {
+        let (o, c) = P;
+        // Quoting follows the real argument: a space quotes it, once, around the label.
+        assert_eq!(
+            shown(&[("/home/ada/shop/my file.txt", false)]),
+            format!("'{o}<pwd>{c}/my file.txt'")
+        );
+        assert_eq!(
+            shown(&[("/home/ada/shop/a.txt", false)]),
+            format!("{o}<pwd>{c}/a.txt")
+        );
+        assert_eq!(
+            shown(&[("--out=/home/ada/shop/x", false)]),
+            format!("--out={o}<pwd>{c}/x")
+        );
+        // Only where an argument starts.
+        assert_eq!(shown(&[("x/home/ada/shop/a", false)]), "x/home/ada/shop/a");
+    }
+
+    #[test]
+    fn a_value_that_holds_the_prefix_is_split_where_it_ends() {
+        let (o, c) = P;
+        assert_eq!(
+            shown(&[("/opt/ci/build", true), ("/app.tar", false)]),
+            format!("{o}<build_dir>{c}/app.tar")
+        );
+        assert_eq!(
+            shown(&[("/opt/ci/build/app", true), (".tar", false)]),
+            format!("{o}<build_dir>{c}{VALUE_OPEN}/app{VALUE_CLOSE}.tar")
+        );
+        // A named prefix never replaces the whole word: the value is the point.
+        assert_eq!(
+            shown(&[("/opt/ci/build", true)]),
+            format!("{VALUE_OPEN}/opt/ci/build{VALUE_CLOSE}")
+        );
+        assert_eq!(shown(&[("/home/ada/shop", true)]), format!("{o}<pwd>{c}"));
+    }
+
+    #[test]
+    fn shortening_can_put_a_broken_command_on_one_line() {
+        let long = |name: &str| format!("/home/ada/shop/{name}");
+        let full: Vec<String> = ["cp".to_string(), long("source.tar"), long("target.tar")]
+            .into_iter()
+            .map(|w| quote(&w))
+            .collect();
+        assert!(layout(&full, 8, 50).len() > 1);
+        let compact: Vec<String> = ["cp".to_string(), long("source.tar"), long("target.tar")]
+            .iter()
+            .map(|w| shown(&[(w, false)]))
+            .collect();
+        let lines = layout(&compact, 8, 50);
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        // Each prefix is replaced once.
+        assert_eq!(
+            strip_marks(&lines[0]),
+            "cp <pwd>/source.tar <pwd>/target.tar"
         );
     }
 

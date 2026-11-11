@@ -13,3 +13,4 @@ pub mod run;
 pub mod signals;
 pub mod stdlib;
 pub mod theme;
+pub mod view;

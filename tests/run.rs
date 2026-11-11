@@ -1350,3 +1350,24 @@ fn command_start_events_keep_their_kind() {
     assert_eq!(starts.len(), 1, "{:?}", env.events());
     assert_eq!(starts[0]["command_kind"], "read");
 }
+
+#[test]
+fn a_run_without_a_terminal_shows_the_full_view() {
+    let env = Env::new();
+    env.script("bin/where", "#!/bin/sh\npwd\n");
+    env.wizard("stage \"a\"\n  read where\n");
+    let out = env.run_yes(&[]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    let cwd = env.dir.path().canonicalize().unwrap();
+    assert!(
+        out.text.contains(&cwd.display().to_string()),
+        "{}",
+        out.text
+    );
+    assert!(out.text.contains("journal: /"), "{}", out.text);
+    assert!(
+        !out.text.contains("<pwd>") && !out.text.contains("[y/N"),
+        "{}",
+        out.text
+    );
+}
