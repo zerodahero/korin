@@ -77,7 +77,7 @@ fn declined_gate_runs_nothing() {
     );
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
-    s.send("n\r");
+    s.answer("n");
     assert_eq!(s.wait(), 1, "{}", s.text());
     assert!(!marker(dir.path(), "touched").exists());
     assert!(s.text().contains("was not approved"), "{}", s.text());
@@ -91,7 +91,7 @@ fn approved_gate_runs_and_yes_is_rejected_with_a_terminal() {
     );
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
-    s.send("y\r");
+    s.answer("y");
     assert_eq!(s.wait(), 0, "{}", s.text());
     assert!(marker(dir.path(), "touched").exists());
 
@@ -117,7 +117,7 @@ fn interactive_handoff_with_file_capture() {
     );
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
-    s.send("y\r");
+    s.answer("y");
     assert_eq!(s.wait(), 0, "{}", s.text());
     assert!(s.text().contains("notes: looks good"), "{}", s.text());
     let events = events(dir.path());
@@ -148,7 +148,7 @@ fn ctrl_z_then_resume_continues() {
     let dir = suspendable();
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
-    s.send("y\r");
+    s.answer("y");
     s.wait_for("ui-ready");
     s.send("\x1a");
     s.wait_for("is suspended");
@@ -163,7 +163,7 @@ fn ctrl_z_then_kill_cancels() {
     let dir = suspendable();
     let mut s = start(dir.path(), &["run", "w.korin", "--kill-grace", "1"]);
     s.wait_for("Run stage 1?");
-    s.send("y\r");
+    s.answer("y");
     s.wait_for("ui-ready");
     s.send("\x1a");
     s.wait_for("is suspended");
@@ -192,7 +192,7 @@ fn sigterm_during_handoff_restores_and_stops() {
         );
         let mut s = start(dir.path(), &["run", "w.korin", "--kill-grace", "1"]);
         s.wait_for("Run stage 1?");
-        s.send("y\r");
+        s.answer("y");
         s.wait_for("ui-ready");
         if stop_first {
             s.send("\x1a");
@@ -327,7 +327,7 @@ fn rds_rehearsal_example_end_to_end() {
     );
     for stage in [3, 4, 6] {
         s.wait_for(&format!("Run stage {stage}?"));
-        s.send("y\r");
+        s.answer("y");
     }
     assert_eq!(s.wait(), 0, "{}", s.text());
     let calls = std::fs::read_to_string(root.join("aws/calls.log")).unwrap();
@@ -357,14 +357,26 @@ fn rds_rehearsal_example_end_to_end() {
 // ---- review fixes ----
 
 impl Session {
+    /// Answers a prompt as a human would: after the prompt's arming delay, a key and Enter.
+    /// A single-key prompt takes the key and ignores the Enter; a line prompt takes both.
+    fn answer(&mut self, key: &str) {
+        std::thread::sleep(Duration::from_millis(400));
+        self.send(&format!("{key}\r"));
+    }
+
     /// The pty's foreground process group, as the terminal driver sees it.
     fn foreground(&self) -> Option<i32> {
         self.master.process_group_leader()
     }
 
-    /// The terminal's modes, compared by their debug form.
+    /// The terminal's modes, compared by their debug form. `PENDIN` is left out: the kernel
+    /// sets it on its own when line mode comes back with input still pending.
     fn modes(&self) -> String {
-        format!("{:?}", self.master.get_termios())
+        let modes = format!("{:?}", self.master.get_termios());
+        regex::Regex::new(r"c_lflag: \d+, | \| PENDIN")
+            .unwrap()
+            .replace_all(&modes, "")
+            .into_owned()
     }
 }
 
@@ -384,7 +396,7 @@ fn type_ahead_never_answers_a_gate() {
     );
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
-    s.send("y\r");
+    s.answer("y");
     // Typed while stage 1 runs, before stage 2 is shown.
     std::thread::sleep(Duration::from_millis(300));
     s.send("y\r");
@@ -394,7 +406,7 @@ fn type_ahead_never_answers_a_gate() {
         !marker(dir.path(), "touched").exists(),
         "type-ahead approved stage 2"
     );
-    s.send("n\r");
+    s.answer("n");
     assert_eq!(s.wait(), 1, "{}", s.text());
     assert!(!marker(dir.path(), "touched").exists());
 }
@@ -409,7 +421,7 @@ fn handoff_returns_the_terminal_and_its_modes() {
     s.wait_for("Run stage 1?");
     let before = s.modes();
     assert_eq!(s.foreground(), Some(s.pid()));
-    s.send("y\r");
+    s.answer("y");
     s.wait_for("Run stage 2?");
     // The program changed the modes; korin restored its own and took the terminal back.
     assert_eq!(
@@ -418,7 +430,7 @@ fn handoff_returns_the_terminal_and_its_modes() {
         "korin is not the foreground group"
     );
     assert_eq!(s.modes(), before, "terminal modes were not restored");
-    s.send("y\r");
+    s.answer("y");
     assert_eq!(s.wait(), 0, "{}", s.text());
 }
 
@@ -427,7 +439,7 @@ fn korin_is_not_stopped_while_the_program_is_suspended() {
     let dir = suspendable();
     let mut s = start(dir.path(), &["run", "w.korin", "--kill-grace", "1"]);
     s.wait_for("Run stage 1?");
-    s.send("y\r");
+    s.answer("y");
     s.wait_for("ui-ready");
     s.send("\x1a");
     s.wait_for("is suspended");
@@ -456,12 +468,12 @@ fn nested_confirm_shows_the_rest_of_the_stage() {
     );
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
-    s.send("y\r");
+    s.answer("y");
     s.wait_for("Continue? [y/N]");
     let text = s.text();
     let next = &text[text.rfind("next:").expect("confirm lists what comes next")..];
     assert!(next.contains("after-the-block"), "{next}");
-    s.send("n\r");
+    s.answer("n");
     assert_eq!(s.wait(), 1, "{}", s.text());
 }
 
@@ -483,14 +495,14 @@ fn deeply_nested_confirm_shows_every_remaining_step() {
     );
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
-    s.send("y\r");
+    s.answer("y");
     s.wait_for("Continue? [y/N]");
     let text = s.text();
     let next = &text[text.rfind("next:").expect("confirm lists what comes next")..];
     for expected in ["inner-rest", "middle-rest", "outer-rest"] {
         assert!(next.contains(expected), "{expected} missing from:\n{next}");
     }
-    s.send("n\r");
+    s.answer("n");
     assert_eq!(s.wait(), 1, "{}", s.text());
 }
 
@@ -515,7 +527,7 @@ fn a_terminal_gets_carbonfox_colors_unless_no_color_is_set() {
             s.raw()
         );
         assert_eq!(s.raw().contains('\x1b'), colored, "{:?}", s.raw());
-        s.send("y\r");
+        s.answer("y");
         assert_eq!(s.wait(), 0, "{}", s.text());
     }
 }
@@ -530,7 +542,7 @@ fn live_view_erases_the_preview_and_ghosts_the_steps_to_come() {
     let mut s = start_with_env(dir.path(), &["run", "w.korin"], &env);
     s.wait_for("Run stage 1?");
     let before = s.raw().len();
-    s.send("y\r");
+    s.answer("y");
     s.wait_for("started");
     let running = s.raw()[before..].to_string();
     // The preview (a blank line, two step lines and the prompt) is erased back to the stage
@@ -581,4 +593,100 @@ fn check_shows_graphical_diagnostics_in_a_terminal() {
     assert!(text.contains("unknown name `nope`"), "{text}");
     assert!(!text.contains("Diagnostic severity"), "{text}");
     assert!(text.contains("╭─["), "{text}");
+}
+
+#[test]
+fn one_key_answers_a_gate_and_keys_while_arming_are_ignored() {
+    let dir = setup(
+        "stage \"a\"\n  mutate touchit\n",
+        &[("touchit", "touch \"$PWD/touched\"")],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    // Pressed as the prompt appears: ignored.
+    s.send("y");
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(
+        !marker(dir.path(), "touched").exists(),
+        "an early key approved"
+    );
+    // Any key but y, n, Enter or Esc is ignored too, including an arrow key.
+    s.send("x");
+    s.send("\x1b[A");
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!marker(dir.path(), "touched").exists());
+    // One key, no Enter, approves.
+    s.send("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(marker(dir.path(), "touched").exists());
+    assert!(s.text().contains("Run stage 1? [y/N] y"), "{}", s.text());
+}
+
+#[test]
+fn enter_alone_declines_and_the_terminal_modes_come_back() {
+    let dir = setup(
+        "stage \"a\"\n  mutate touchit\nstage \"b\"\n  mutate touchit\n",
+        &[("touchit", "true")],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    std::thread::sleep(Duration::from_millis(400));
+    // While the prompt waits for a key, korin has turned off line mode and echo.
+    let waiting = s.modes();
+    s.send("y");
+    s.wait_for("Run stage 2?");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("\r");
+    assert_eq!(s.wait(), 1, "{}", s.text());
+    assert!(s.text().contains("Run stage 2? [y/N] n"), "{}", s.text());
+    assert_ne!(
+        s.modes(),
+        waiting,
+        "korin left the terminal in single-key mode"
+    );
+}
+
+#[test]
+fn ctrl_c_at_a_single_key_prompt_cancels_and_restores_the_terminal() {
+    let dir = setup(
+        "stage \"a\"\n  read slow\nstage \"b\"\n  mutate touchit\n",
+        &[("slow", "echo started; sleep 0.5"), ("touchit", "true")],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    // While stage 1 runs, the terminal is back in its usual line mode.
+    s.wait_for("started");
+    let line_mode = s.modes();
+    s.wait_for("Run stage 2?");
+    std::thread::sleep(Duration::from_millis(400));
+    assert_ne!(
+        s.modes(),
+        line_mode,
+        "the prompt did not switch to single keys"
+    );
+    s.send("\x03");
+    assert_eq!(s.wait(), 130, "{}", s.text());
+    assert_eq!(
+        s.modes(),
+        line_mode,
+        "the terminal's modes were not restored"
+    );
+}
+
+#[test]
+fn require_enter_needs_a_whole_line() {
+    let dir = setup(
+        "stage \"a\"\n  mutate touchit\n",
+        &[("touchit", "touch \"$PWD/touched\"")],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin", "--require-enter"]);
+    s.wait_for("Run stage 1?");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("y");
+    std::thread::sleep(Duration::from_millis(400));
+    assert!(!marker(dir.path(), "touched").exists(), "y alone approved");
+    s.send("\r");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(marker(dir.path(), "touched").exists());
 }

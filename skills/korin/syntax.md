@@ -32,7 +32,7 @@ A module file holds only `use` and `define`.
 | `mutate <program> <args>` | Changes something; makes the stage mutating. |
 | `script read\|mutate ./x.sh <args>` | Path relative to the `.korin` file. |
 | `interactive <program> <args>` | Hands over the terminal (editors, TUIs). No `timeout`. |
-| `confirm "<question>"` | Asks y/N mid-stage; anything but y stops. |
+| `confirm "<question>"` | Asks y/N mid-stage with one key; n, Enter or Esc stops. |
 | `ask [secret] <name> "<prompt>"` | Reads a value; `--param name=...` answers it ahead. |
 | `assert <expr> else "<message>"` | Stops the run when false. |
 | `when <expr>` | Body runs when true. No `else`: write the opposite `when`. |

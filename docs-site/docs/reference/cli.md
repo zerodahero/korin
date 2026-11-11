@@ -29,6 +29,8 @@ erased. The journal is always plain text.
   [Resume after a stop](../guides/resume.md).
 - `--kill-grace <seconds>` sets how long korin waits between `SIGTERM` and `SIGKILL` when it
   stops a command.
+- `--require-enter` makes gates and `confirm` take `y` or `n` followed by Enter, instead of a
+  single key. Setting `KORIN_REQUIRE_ENTER=1` does the same.
 
 | Exit code | Meaning |
 |---|---|

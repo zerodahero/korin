@@ -69,6 +69,10 @@ enum Cmd {
         /// Seconds between SIGTERM and SIGKILL when korin ends a command (at most 3600).
         #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(0..=3600))]
         kill_grace: u64,
+        /// Answer gates and `confirm` with y or n and then Enter, instead of a single key. Also
+        /// set by `KORIN_REQUIRE_ENTER=1`.
+        #[arg(long)]
+        require_enter: bool,
     },
     /// Format wizard and module files in place.
     Fmt {
@@ -112,7 +116,16 @@ fn main() -> ExitCode {
             yes,
             from,
             kill_grace,
-        } => run(&file, params, yes, from, kill_grace, Theme::stdout(choice)),
+            require_enter,
+        } => run(
+            &file,
+            params,
+            yes,
+            from,
+            kill_grace,
+            require_enter || env_flag("KORIN_REQUIRE_ENTER"),
+            Theme::stdout(choice),
+        ),
         Cmd::Fmt { files, check } => fmt(&files, check),
         Cmd::Modules => {
             print!("{}", korin::stdlib::listing());
@@ -191,12 +204,19 @@ fn parse_param(text: &str) -> Result<(String, String), String> {
         .ok_or_else(|| format!("expected NAME=VALUE, got `{text}`"))
 }
 
+/// Whether an environment variable is set to something other than empty or `0`.
+fn env_flag(name: &str) -> bool {
+    std::env::var_os(name).is_some_and(|v| !v.is_empty() && v != "0")
+}
+
+#[allow(clippy::too_many_arguments)]
 fn run(
     file: &std::path::Path,
     params: Vec<(String, String)>,
     yes: bool,
     from: Option<String>,
     kill_grace: u64,
+    require_enter: bool,
     theme: Theme,
 ) -> ExitCode {
     let program = match compile_path(file) {
@@ -215,6 +235,7 @@ fn run(
         yes,
         from,
         grace: std::time::Duration::from_secs(kill_grace),
+        require_enter,
         runs_dir: cwd.join(".korin").join("runs"),
         cwd,
         theme,

@@ -48,7 +48,7 @@ korin run ../release.korin
 ```
 
 korin shows the whole stage and asks `Run stage 1? [y/N]`. This is a **gate**: the moment
-to read what will run before anything does. Type `y` and press Enter.
+to read what will run before anything does. Press `y`.
 
 --8<-- "docs-site/docs/generated/transcripts/tutorial/release-1.html"
 

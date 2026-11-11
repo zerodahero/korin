@@ -27,6 +27,21 @@ The run, with stage 2 declined:
 - **Secrets** as `«secret:name»`.
 - **Steps inside `when`, `each` and `poll`**, and inside templates, even if they may not run.
 
+## Answering a gate
+
+One key answers a gate or a `confirm`; there is no need to press Enter.
+
+- `y` approves.
+- `n`, Enter or Esc declines. The default is no.
+- Any other key, such as an arrow key, is ignored.
+
+Keys typed before the question appears, or in the first quarter second after it, are
+ignored. A key meant for something else cannot answer a gate you have not read. Ctrl-C still
+cancels the run.
+
+To answer with `y` and then Enter instead, pass `--require-enter` or set
+`KORIN_REQUIRE_ENTER=1`.
+
 ## `gates all`
 
 The default. Every stage has a gate.

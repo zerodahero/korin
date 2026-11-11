@@ -40,7 +40,7 @@ From inside the repository:
 korin run ../tidy.korin
 ```
 
-korin shows stage 1 and asks `Run stage 1? [y/N]`. Type `y` and press Enter. It runs
+korin shows stage 1 and asks `Run stage 1? [y/N]`. Press `y`. It runs
 `git branch --merged`, and notes each merged branch. Then it shows stage 2, with what it
 will do:
 

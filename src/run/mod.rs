@@ -96,6 +96,8 @@ pub struct Options {
     pub yes: bool,
     pub from: Option<String>,
     pub grace: Duration,
+    /// Gates and `confirm` read a whole line, ending with Enter, instead of a single key.
+    pub require_enter: bool,
     /// Where run directories go, normally `.korin/runs`.
     pub runs_dir: PathBuf,
     /// The directory commands run in.
@@ -604,9 +606,21 @@ impl<'p> Runner<'p> {
         Ok(answer)
     }
 
+    /// Asks a yes/no question. In a terminal, one key answers it: `y` approves, and `n`,
+    /// Enter or Esc declines. With `--require-enter`, or without a terminal, it reads a line.
     fn ask_yes(&self, question: &str) -> Result<bool, Stop> {
-        let answer = self.read_line(&self.opts.theme.question(question))?;
-        Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "Yes"))
+        let prompt = self.opts.theme.question(question);
+        if self.opts.require_enter || !std::io::stdin().is_terminal() {
+            let answer = self.read_line(&prompt)?;
+            return Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "Yes"));
+        }
+        self.screen.borrow_mut().hide();
+        let yes = read_key_interruptible(&self.signals, &prompt)?;
+        let answer = if yes { "y" } else { "n" };
+        self.screen
+            .borrow_mut()
+            .echoed(&format!("{prompt}{answer}"));
+        Ok(yes)
     }
 
     // ---- stages ----
@@ -1974,6 +1988,90 @@ fn read_line_interruptible(signals: &Signals, prompt: &str) -> Result<String, St
                 Ok(_) => Ok(line.trim_end_matches(['\n', '\r']).to_string()),
                 Err(e) => Err(Stop::failed(format!("cannot read the terminal: {e}"))),
             };
+        }
+    }
+}
+
+/// How long a single-key prompt ignores keys after it appears, so a key pressed just as the
+/// prompt is drawn, meant for something else, never answers it.
+const ARMING: Duration = Duration::from_millis(250);
+
+/// Puts the terminal's modes back when dropped, on every way out of a prompt.
+struct RestoreModes(nix::sys::termios::Termios);
+
+impl Drop for RestoreModes {
+    fn drop(&mut self) {
+        let _ = nix::sys::termios::tcsetattr(
+            std::io::stdin(),
+            nix::sys::termios::SetArg::TCSANOW,
+            &self.0,
+        );
+    }
+}
+
+/// Reads one yes/no key from the terminal: `y` or `Y` is yes; `n`, `N`, Enter or a lone Esc
+/// is no; anything else is ignored. Keys typed before the prompt, or within [`ARMING`] after
+/// it, are discarded. Ctrl-C and `SIGTERM` still cancel the run: signals stay on.
+fn read_key_interruptible(signals: &Signals, prompt: &str) -> Result<bool, Stop> {
+    use nix::sys::termios::{LocalFlags, SetArg, SpecialCharacterIndices, tcgetattr, tcsetattr};
+    use std::io::Read as _;
+
+    let stdin = std::io::stdin();
+    let saved = tcgetattr(&stdin)
+        .map_err(|e| Stop::failed(format!("cannot read the terminal's modes: {e}")))?;
+    let mut keys = saved.clone();
+    keys.local_flags
+        .remove(LocalFlags::ICANON | LocalFlags::ECHO);
+    keys.control_chars[SpecialCharacterIndices::VMIN as usize] = 1;
+    keys.control_chars[SpecialCharacterIndices::VTIME as usize] = 0;
+    let _ = nix::sys::termios::tcflush(&stdin, nix::sys::termios::FlushArg::TCIFLUSH);
+    tcsetattr(&stdin, SetArg::TCSANOW, &keys)
+        .map_err(|e| Stop::failed(format!("cannot set the terminal's modes: {e}")))?;
+    let mut restore = saved;
+    // The kernel's own flag for "reprint pending input"; restoring it would echo stray keys.
+    restore.local_flags.remove(LocalFlags::PENDIN);
+    let _restore = RestoreModes(restore);
+    print!("{prompt}");
+    let _ = std::io::stdout().flush();
+    let armed = Instant::now() + ARMING;
+    loop {
+        let [sig_int, sig_term, _] = signals.fds();
+        let mut fds = [
+            PollFd::new(stdin.as_fd(), PollFlags::POLLIN),
+            PollFd::new(sig_int, PollFlags::POLLIN),
+            PollFd::new(sig_term, PollFlags::POLLIN),
+        ];
+        let _ = poll(&mut fds, PollTimeout::from(50u16));
+        let readable = fds[0].revents().is_some_and(|r| !r.is_empty());
+        if signals.take_interrupt() {
+            println!();
+            return Err(Stop::cancelled("interrupted with Ctrl-C"));
+        }
+        if signals.take_terminate() {
+            println!();
+            return Err(Stop::cancelled("korin received SIGTERM or SIGHUP"));
+        }
+        if !readable {
+            continue;
+        }
+        let mut buf = [0u8; 64];
+        let read = match stdin.lock().read(&mut buf) {
+            Ok(0) => return Err(Stop::cancelled("the terminal closed")),
+            Ok(n) => n,
+            Err(e) => return Err(Stop::failed(format!("cannot read the terminal: {e}"))),
+        };
+        if Instant::now() < armed {
+            continue;
+        }
+        let answer = match &buf[..read] {
+            [b'y' | b'Y', ..] => Some(true),
+            [b'n' | b'N' | b'\r' | b'\n', ..] | [0x1b] => Some(false),
+            // Anything else, including the escape sequence of an arrow key, is ignored.
+            _ => None,
+        };
+        if let Some(yes) = answer {
+            println!("{}", if yes { "y" } else { "n" });
+            return Ok(yes);
         }
     }
 }

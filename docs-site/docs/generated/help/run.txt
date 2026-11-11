@@ -11,4 +11,5 @@ Options:
       --yes                      Approve every gate. Allowed only without a terminal, for wizards that declare `unattended allowed`
       --from <FROM>              Start at this stage (title or number), skipping earlier ones
       --kill-grace <KILL_GRACE>  Seconds between SIGTERM and SIGKILL when korin ends a command (at most 3600) [default: 10]
+      --require-enter            Answer gates and `confirm` with y or n and then Enter, instead of a single key. Also set by `KORIN_REQUIRE_ENTER=1`
   -h, --help                     Print help
