@@ -239,7 +239,17 @@ fn layout(words: &[String], indent: usize, width: usize) -> Vec<String> {
         .skip(1)
         .take_while(|w| !is_flag(w) && strip_marks(w) != "--")
         .count();
-    let head = head.min(words.len());
+    let mut head = head.min(words.len());
+    // Leading words that are too wide for one line, such as long positional paths, each take
+    // a line of their own. If even the executable alone does not fit, breaking cannot help.
+    let full_head = head;
+    let head_width = |n: usize| indent + strip_marks(&words[..n].join(" ")).width();
+    while head > 1 && head_width(head) > width {
+        head -= 1;
+    }
+    if head_width(head) > width {
+        head = full_head;
+    }
     let mut groups: Vec<String> = Vec::new();
     let mut index = head;
     while index < words.len() {
@@ -657,6 +667,34 @@ mod tests {
                 "          --profile prod \\",
                 "          --file /a/very/long/path.json",
             ]
+        );
+    }
+
+    #[test]
+    fn long_positional_words_break_onto_their_own_lines() {
+        assert_eq!(
+            laid_out(
+                &[
+                    "aws",
+                    "s3",
+                    "cp",
+                    "s3://my-bucket/some/really/long/key/name.tar.gz",
+                    "./downloads/name.tar.gz"
+                ],
+                8,
+                40
+            ),
+            [
+                "aws s3 cp \\",
+                "          s3://my-bucket/some/really/long/key/name.tar.gz \\",
+                "          ./downloads/name.tar.gz",
+            ]
+        );
+        // One huge word after the executable still gets a line of its own.
+        let huge = "x".repeat(60);
+        assert_eq!(
+            laid_out(&["echo", &huge], 0, 40),
+            ["echo \\".to_string(), format!("  {huge}")]
         );
     }
 
