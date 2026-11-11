@@ -4,6 +4,18 @@ Notable changes to korin, by release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-11-11
+
+### Features
+
+- Break long positional arguments onto their own lines
+- Color the executable, quoted arguments and path prefixes
+- Show a compact view of paths and huge values in the terminal
+- Add mode guide, a read-only walkthrough with no gates
+
+### Documentation
+
+- Document mode guide and the compact view
 ## [0.1.1] - 2026-11-11
 
 ### Features

@@ -51,7 +51,7 @@ vim.api.nvim_create_autocmd('User', {
         url = 'https://github.com/zerodahero/tree-sitter-korin',
         -- Optional. A tag such as 'v0.1.0', or a full 40-character commit SHA. A short
         -- SHA fails: GitHub names the archive directory with the full SHA.
-        revision = 'v0.1.1',
+        revision = 'v0.1.2',
         queries = 'queries',
       },
     }
