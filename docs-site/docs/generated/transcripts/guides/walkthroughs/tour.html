@@ -1,0 +1,30 @@
+<pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Tour the shop repository</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">2 stages</span>
+<span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run tour.korin
+
+<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Where things live</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+
+  The shop is a small Python service: code in src, settings in config.
+
+  <span class="k-fg-dim">1.2</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">ls</span> src config
+      <span class="k-border">│</span> config:
+      <span class="k-border">│</span> app.toml
+      <span class="k-border">│</span>
+      <span class="k-border">│</span> src:
+      <span class="k-border">│</span> app.py
+      <span class="k-border">│</span> cart.py
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command</span>
+
+<span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">How it is configured</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+
+  <span class="k-fg-dim">2.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">pwd</span>
+      <span class="k-border">│</span> <span class="k-teal">&lt;pwd&gt;</span>
+
+  <span class="k-fg-dim">2.2</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">cat</span> <span class="k-teal">&lt;repo&gt;</span><span class="k-fg-dim">/config/</span>app.toml
+      <span class="k-border">│</span> port = 8080
+      <span class="k-border">│</span> database = "postgres://localhost/shop"
+
+  The service reads its port and its database from <span class="k-teal">&lt;repo&gt;</span>/config/app.toml.
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 2 commands</span>
+
+<span class="k-green k-bold">✓</span> <span class="k-bold">Tour the shop repository completed</span>
+  <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-tour-the-shop-repository</span></code></pre>

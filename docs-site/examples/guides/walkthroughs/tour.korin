@@ -1,0 +1,13 @@
+korin 1
+title "Tour the shop repository"
+mode guide
+
+stage "Where things live"
+  note "The shop is a small Python service: code in src, settings in config."
+  read ls src config
+
+stage "How it is configured"
+  read pwd
+    capture repo = text
+  read cat {repo}/config/app.toml
+  note "The service reads its port and its database from {repo}/config/app.toml."

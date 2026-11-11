@@ -1,0 +1,4 @@
+setup = "mkdir -p build/out && touch build/out/app.js build/out/app.css"
+answers = ["y"]
+snapshots = [1]
+journal = true

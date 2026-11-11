@@ -31,6 +31,7 @@ nav = [
     "guides/ci.md",
     "guides/resume.md",
     "guides/handoff.md",
+    "guides/walkthroughs.md",
     "guides/agents.md",
     "guides/editors.md",
   ] },

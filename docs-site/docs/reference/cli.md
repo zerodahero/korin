@@ -15,6 +15,40 @@ run stay dimmed below the output of the one running now. With `--color never` or
 or when output is not a terminal, korin prints every line in order instead, and nothing is
 erased. The journal is always plain text.
 
+### Compact view
+
+In a terminal, korin shows paths and long values in a compact view, so the commands are easy
+to read:
+
+- **Paths shorten to a prefix.** The directory korin runs in shows as `<pwd>`, `$TMPDIR` as
+  `<tmp>`, and your home directory as `~`. A param, `ask` or capture whose value is an
+  absolute path with at least three parts, such as `/opt/ci/build`, shows as its name:
+  `<build>/app.tar.gz`. The longest prefix wins.
+- **A named prefix only starts a longer path.** When the value is the whole argument, as in
+  `-C {build}`, it shows in full: there, the value is the point.
+- **An argument too wide for its line is cut.** The view shows its start, then how many
+  characters it hides: `…(+1.2k)`.
+
+Press `f` at a gate, a `confirm` or a guide's pause to switch to the full view, which shows
+every path and value as it runs. Press `f` again to switch back. The choice holds for the
+rest of the run.
+
+```korin title="compact.korin"
+--8<-- "docs-site/examples/reference/cli/compact.korin"
+```
+
+At the gate of stage 2:
+
+--8<-- "docs-site/docs/generated/transcripts/reference/cli/compact.prompt-1.html"
+
+The view changes only what the terminal shows. The journal always holds the full command:
+
+```json
+--8<-- "docs-site/docs/generated/transcripts/reference/cli/compact.events.jsonl:10:10"
+```
+
+A run without a terminal, such as in CI, always shows the full view.
+
 ## `korin run`
 
 ```text
@@ -30,7 +64,8 @@ erased. The journal is always plain text.
 - `--kill-grace <seconds>` sets how long korin waits between `SIGTERM` and `SIGKILL` when it
   stops a command.
 - `--require-enter` makes gates and `confirm` take `y` or `n` followed by Enter, instead of a
-  single key. Setting `KORIN_REQUIRE_ENTER=1` does the same.
+  single key, and `f` followed by Enter switches the view. A guide's pause then continues on
+  an empty line. Setting `KORIN_REQUIRE_ENTER=1` does the same.
 
 | Exit code | Meaning |
 |---|---|
@@ -71,8 +106,8 @@ agents:
 ```
 
 `korin plan` prints every stage and step, with placeholders for values not known until the
-run. It marks each stage as mutating or read-only, with a gate or without, and whether a run
-can start there with `--from`. See [Gates](gates.md#korin-plan) for an example.
+run. It marks each stage as mutating or read-only, with a gate, without one, or with a
+guide's pause, and whether a run can start there with `--from`. See [Gates](gates.md#korin-plan) for an example.
 
 ## `korin fmt`
 

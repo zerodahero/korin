@@ -8,6 +8,7 @@ Indentation marks blocks; indent with spaces. `#` after a space starts a comment
 korin 1                        # first line
 title "<text>"
 gates all | mutating           # optional; default all
+mode stepwise | guide          # optional; guide: read-only, no gates, a pause per stage
 unattended allowed             # optional; no confirm or interactive allowed then
 allow <program>, ...           # optional; the only programs that may run
 

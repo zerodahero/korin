@@ -33,6 +33,8 @@ One key answers a gate or a `confirm`; there is no need to press Enter.
 
 - `y` approves.
 - `n`, Enter or Esc declines. The default is no.
+- `f` switches between the compact and the full view, draws the preview again, and asks
+  again. See [Compact view](cli.md#compact-view).
 - Any other key, such as an arrow key, is ignored.
 
 Keys typed before the question appears, or in the first quarter second after it, are
@@ -61,6 +63,13 @@ inside `when`, `each`, `poll` and templates count, whether or not they will run.
 
 Stage 1 only reads, so it ran without asking. Stage 2 changes the deployment, so it asked
 first; the transcript shows the run after `y`.
+
+## `mode guide`: no gates at all
+
+A wizard with `mode guide` has no gates and shows no preview. It pauses before each stage,
+and the stage runs when you press Enter or Space. A guide may only read: `korin check`
+rejects `mutate` and `script mutate`, even inside a template. A `gates` line next to
+`mode guide` is an error. See [Write a guide](../guides/walkthroughs.md).
 
 ## `korin plan`
 

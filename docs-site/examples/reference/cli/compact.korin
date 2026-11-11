@@ -1,0 +1,11 @@
+korin 1
+title "Archive the build"
+gates mutating
+
+stage "Find the build"
+  read realpath build
+    capture build = text
+  read ls {build}/out
+
+stage "Archive"
+  mutate tar -czf {build}/app.tar.gz -C {build} out

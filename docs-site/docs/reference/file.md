@@ -23,6 +23,7 @@ are marked by indentation.
 | `korin 1` | Yes, first line | The language version. |
 | `title "<text>"` | Yes | Shown at the start of the run, and used to name the run's [journal](journal.md) directory. |
 | `gates all\|mutating` | No, default `all` | Which stages ask for approval. See [Gates](gates.md). |
+| `mode stepwise\|guide` | No, default `stepwise` | `guide` makes a read-only walkthrough with no gates. See [Write a guide](../guides/walkthroughs.md). |
 | `unattended allowed` | No | Lets the wizard run without a terminal. See [Run in CI](../guides/ci.md). |
 | `allow <name-or-path>, ...` | No | The only executables the wizard may run. |
 

@@ -226,3 +226,54 @@ The live line under the ghost that names the current stage and the step running 
 drawn only in a live terminal view and erased when the stage ends. Code: `Screen::set_footer`.
 
 - Avoid: status bar, status line
+
+### Mode
+
+The `mode` header line: `stepwise` or `guide`. Code: `Mode`.
+
+- UI label: mode
+
+### Stepwise mode
+
+The default mode: each stage is previewed and, as `gates` says, approved before it runs.
+
+- UI label: stepwise
+
+### Guide mode
+
+A read-only wizard: no previews and no gates, and a pause before each stage. `korin check`
+rejects `mutate` and `script mutate` in it, even inside templates.
+
+- UI label: guide
+- Avoid: tour, walkthrough (as code names; fine in prose)
+
+### Pause
+
+The prompt a guide shows before each stage, and before an `interactive` step. Enter or Space
+continues. Events: `pause`.
+
+- UI label: pause
+- Avoid: Gate (a gate asks y/N; a pause only waits)
+
+### Compact view
+
+How the terminal shows a run by default: paths shortened to a path prefix, and arguments
+too wide for their line cut with `…(+N)`. The journal never uses it. Code: `View::Compact`.
+
+- UI label: compact
+- Avoid: short view, abbreviated
+
+### Full view
+
+The terminal shows every path and value as it runs. `f` at a gate, a `confirm` or a pause
+switches between the views. Runs without a terminal use it. Code: `View::Full`.
+
+- UI label: full
+
+### Path prefix
+
+A directory the compact view shows by name: `<pwd>`, `<tmp>`, `~`, or `<name>` for a param,
+ask or capture holding an absolute path with at least three components. Code: `Prefixes`.
+
+- UI label: `<name>/`
+- Avoid: alias (that word names a template call's `as`)

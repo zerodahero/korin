@@ -47,6 +47,9 @@ safe to approve and safe to run again:
   `capture secret`, then `env NAME={name}` on the step that needs them.
 - **List every program in `allow`.** Use `gates mutating` when the read-only stages are safe
   to run unasked.
+- **Use `mode guide` for a tour that changes nothing**, such as onboarding or a status
+  check. A guide has no gates and pauses before each stage; `korin check` rejects any
+  `mutate` in it, and any `gates` line.
 - **`confirm` right before the irreversible step**, quoting the values the person should
   check.
 - **`record` each change**, with its values, so the run's report says what changed.

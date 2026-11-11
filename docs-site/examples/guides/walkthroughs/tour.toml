@@ -1,0 +1,2 @@
+setup = "mkdir -p src config && touch src/app.py src/cart.py && printf 'port = 8080\\ndatabase = \"postgres://localhost/shop\"\\n' > config/app.toml"
+answers = ["", ""]

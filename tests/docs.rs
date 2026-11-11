@@ -461,7 +461,8 @@ fn headless(
     })
 }
 
-/// Whether the cursor sits on a korin prompt (`  ? …`), waiting for an answer.
+/// Whether the cursor sits on a korin prompt (`  ? …`, or a guide's `  ↵ …` pause), waiting
+/// for an answer.
 fn at_prompt(bytes: &[u8]) -> bool {
     let mut parser = vt100::Parser::new(
         std::num::NonZero::new(ROWS).unwrap(),
@@ -481,7 +482,8 @@ fn at_prompt(bytes: &[u8]) -> bool {
             }
         })
         .collect();
-    line.trim_start().starts_with("? ")
+    let line = line.trim_start();
+    line.starts_with("? ") || line.starts_with("↵ ")
 }
 
 /// The environment every example runs in: nothing from the developer's shell, so transcripts

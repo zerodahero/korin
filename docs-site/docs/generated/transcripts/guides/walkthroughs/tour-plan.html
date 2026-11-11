@@ -1,0 +1,14 @@
+<pre class="k-term"><code>Tour the shop repository
+mode: guide
+
+<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Where things live</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+  <span class="k-fg-dim">read-only, pause; valid --from start</span>
+  <span class="k-fg-dim">1.1</span>  <span class="k-blue">note</span> <span class="k-green">"The shop is a small Python service: code in src, settings in config."</span>
+  <span class="k-fg-dim">1.2</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">ls</span> src config
+
+<span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">How it is configured</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+  <span class="k-fg-dim">read-only, pause; valid --from start</span>
+  <span class="k-fg-dim">2.1</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">pwd</span>
+        <span class="k-border">→</span> <span class="k-teal">repo</span>
+  <span class="k-fg-dim">2.2</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">cat</span> <span class="k-cyan">&lt;repo ← 2.1&gt;</span><span class="k-fg-dim">/config/</span>app.toml
+  <span class="k-fg-dim">2.3</span>  <span class="k-blue">note</span> <span class="k-green">"The service reads its port and its database from &lt;repo ← 2.1&gt;/config/app.toml."</span></code></pre>
