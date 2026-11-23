@@ -53,7 +53,7 @@ Every event has `kind` and `ts`. The kinds:
 | `gate`, `gate_auto`, `confirm` | A gate or `confirm` is answered. `gate_auto` is an approval by `--yes`. |
 | `pause` | A pause is answered. `auto` is a pause continued by `--yes`. |
 | `value_set` | A value was set or cleared by hand, in the [values view](gates.md#the-values-view). `by` says who: `operator`, `--set`, `--param` or `env`. |
-| `command_start`, `command_end` | A command starts, and ends with its exit code or signal. |
+| `command_start`, `command_end` | A command starts, and ends with its exit code or signal. A `script` step's `command_start` has `script_sha256`, the hash of the script that ran. |
 | `expect` | An expect matched. |
 | `capture` | A capture got a value. |
 | `assert` | An `assert` was checked. |

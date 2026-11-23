@@ -230,6 +230,12 @@ pub trait Values {
     fn prefixes(&self) -> Option<Prefixes> {
         None
     }
+
+    /// Lines to show under a `script` step, such as the script itself, each starting with
+    /// `pad`. Only a run's previews show any.
+    fn script_lines(&self, _command: &crate::ir::Command, _pad: &str) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// One shown argument: shortened when there are prefixes, then quoted.
@@ -598,6 +604,7 @@ pub fn step_lines(
             if !captures.is_empty() {
                 out.push(format!("{pad}      → {}", captures.join(", ")));
             }
+            out.extend(values.script_lines(c, &pad));
         }
         StepKind::Confirm(text) => {
             out.push(format!(

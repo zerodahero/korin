@@ -53,6 +53,14 @@ fn a_missing_file_gives_the_defaults() {
     assert_eq!(line(&text, "view"), ["view", "compact", "default"]);
     assert_eq!(line(&text, "legend"), ["legend", "#true", "default"]);
     assert_eq!(
+        line(&text, "script-lines"),
+        ["script-lines", "20", "default"]
+    );
+    assert_eq!(
+        line(&text, "pager"),
+        ["pager", "$PAGER,", "else", "less", "default"]
+    );
+    assert_eq!(
         line(&text, "require-enter"),
         ["require-enter", "#false", "default"]
     );
@@ -62,7 +70,7 @@ fn a_missing_file_gives_the_defaults() {
 #[test]
 fn the_file_sets_each_key() {
     let (_dir, path) = with_config(
-        "// my preferences\nview full\nlegend #false\nrequire-enter #true\ncolor never\n",
+        "// my preferences\nview full\nlegend #false\nscript-lines 5\npager \"less -R\"\nrequire-enter #true\ncolor never\n",
     );
     let out = korin(&path, &["config"], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
@@ -70,6 +78,8 @@ fn the_file_sets_each_key() {
     assert!(!text.contains("not found"), "{text}");
     assert_eq!(line(&text, "view"), ["view", "full", "file"]);
     assert_eq!(line(&text, "legend"), ["legend", "#false", "file"]);
+    assert_eq!(line(&text, "script-lines"), ["script-lines", "5", "file"]);
+    assert_eq!(line(&text, "pager"), ["pager", "\"less", "-R\"", "file"]);
     assert_eq!(
         line(&text, "require-enter"),
         ["require-enter", "#true", "file"]
@@ -87,6 +97,11 @@ fn a_flag_wins_over_the_env_and_the_env_over_the_file() {
     );
     let out = korin(&path, &["--color", "always", "config"], &[]);
     assert_eq!(line(&stdout(&out), "color"), ["color", "always", "flag"]);
+    let out = korin(&path, &["config"], &[("KORIN_SCRIPT_LINES", "7")]);
+    assert_eq!(
+        line(&stdout(&out), "script-lines"),
+        ["script-lines", "7", "env"]
+    );
     // `0` in the environment turns the key off, even when the file turns it on.
     let (_dir, path) = with_config("require-enter #true\n");
     let out = korin(&path, &["config"], &[("KORIN_REQUIRE_ENTER", "0")]);
@@ -104,6 +119,8 @@ fn errors_name_the_key_and_stop_before_anything_runs() {
         ("require-enter yes\n", "`require-enter` cannot be"),
         ("view wide\n", "`view` cannot be"),
         ("color\n", "`color` takes exactly one value"),
+        ("script-lines -1\n", "`script-lines` cannot be"),
+        ("pager 5\n", "`pager` cannot be"),
         ("view {\n  full\n}\n", "`view` takes no children"),
         ("view \"unclosed\n", "config"),
     ];

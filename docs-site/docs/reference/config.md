@@ -28,6 +28,8 @@ The file is [KDL](https://kdl.dev) version 2. Each key is one line: the key, the
 |---|---|---|---|
 | `view` | `compact`, `full` | `compact` | – |
 | `legend` | `#true`, `#false` | `#true` | – |
+| `script-lines` | a whole number, 0 or more | `20` | `--script-lines`, `KORIN_SCRIPT_LINES` |
+| `pager` | a command in quotes, such as `"less -R"` | `$PAGER`, else `less` | – |
 | `require-enter` | `#true`, `#false` | `#false` | `--require-enter`, `KORIN_REQUIRE_ENTER` |
 | `color` | `auto`, `always`, `never` | `auto` | `--color` |
 
@@ -36,6 +38,10 @@ The file is [KDL](https://kdl.dev) version 2. Each key is one line: the key, the
   terminal always shows the full view.
 - **`legend`** shows the compact view's legend of path prefixes. See
   [The legend](cli.md#the-legend). `l` still switches during a run.
+- **`script-lines`** shows a script in full at its gate when it has at most this many lines.
+  `0` never shows one. See [`script`](steps.md#what-the-gate-shows).
+- **`pager`** is the program `o` opens a script with. korin splits it into words, with no
+  shell.
 - **`require-enter`** makes gates and `confirm` read `y` and then Enter, instead of a
   single key.
 - **`color`** works like `--color`. With `auto`, `NO_COLOR` still turns color off.
@@ -61,6 +67,8 @@ comes from: `flag`, `env`, `file` or `default`.
 /home/ada/.config/korin/config.kdl
 view           full       file
 legend         #true      default
+script-lines   20         default
+pager          $PAGER, else less default
 require-enter  #true      file
 color          auto       default
 ```

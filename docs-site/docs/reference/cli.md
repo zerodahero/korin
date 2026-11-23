@@ -83,6 +83,8 @@ A run without a terminal, such as in CI, always shows the full view.
   read it can still run. A list is a JSON array of strings, JSON is JSON text, and an expect
   is `true` or `false`. A secret capture takes `KORIN_SECRET_<NAME>` instead.
 - `--skip-preflight` skips the [preflight](file.md#preflight).
+- `--script-lines <n>` shows a script in full at its gate when it has at most `n` lines. The
+  default is 20, and `0` never shows one. See [`script`](steps.md#what-the-gate-shows).
 - `--kill-grace <seconds>` sets how long korin waits between `SIGTERM` and `SIGKILL` when it
   stops a command.
 - `--require-enter` makes gates and `confirm` take `y` or `n` followed by Enter, instead of a

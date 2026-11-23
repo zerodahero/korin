@@ -1,0 +1,5 @@
+wizard = "script.korin"
+args = ["--script-lines", "3"]
+answers = ["n"]
+exit = 1
+snapshots = [1]

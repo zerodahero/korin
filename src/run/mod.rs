@@ -35,6 +35,7 @@ use crate::view::{Prefixes, View};
 use capture::{Data, Extract, Fingerprint, extract};
 use journal::Journal;
 use process::{Cancel, Signals, Spec, Status, Suspended};
+use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
 /// The default timeout for `read`, `mutate` and `script` steps.
@@ -137,6 +138,10 @@ pub struct Options {
     pub view: View,
     /// Whether the compact view starts with its legend of path prefixes shown.
     pub legend: bool,
+    /// A script with at most this many lines shows in full in a preview; 0 never shows it.
+    pub script_lines: usize,
+    /// The pager command for `o`, from the config file; else `$PAGER`, else `less`.
+    pub pager: Option<String>,
     /// Where run directories go, normally `.korin/runs`.
     pub runs_dir: PathBuf,
     /// The directory commands run in.
@@ -228,6 +233,12 @@ impl Stop {
     }
 }
 
+/// A script's bytes as read before its stage's first prompt, and their hash.
+struct Pin {
+    bytes: Vec<u8>,
+    hash: Vec<u8>,
+}
+
 /// A key that answers a prompt. See [`Runner::prompt`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Key {
@@ -242,6 +253,8 @@ enum Key {
     Values,
     /// Skip the stage, or the rest of it at a `confirm`.
     Skip,
+    /// Open a script in the pager, then ask again.
+    Open,
 }
 
 impl Key {
@@ -255,6 +268,7 @@ impl Key {
             Key::ToggleLegend => "l",
             Key::Values => "v",
             Key::Skip => "s",
+            Key::Open => "o",
         }
     }
 }
@@ -271,6 +285,9 @@ struct Keys {
     legend: bool,
     /// `v`: open the values view.
     values: bool,
+    /// `o`: open a script in the pager. Set by [`Runner::ask`] when the steps to come hold
+    /// a script.
+    open: bool,
 }
 
 impl Keys {
@@ -292,6 +309,9 @@ impl Keys {
         if self.legend {
             parts.push("l legend".to_string());
         }
+        if self.open {
+            parts.push("o open script".to_string());
+        }
         if parts.is_empty() {
             "Ctrl-C cancel".to_string()
         } else {
@@ -306,6 +326,7 @@ impl Keys {
             [b'l' | b'L', ..] if self.legend => Some(Key::ToggleLegend),
             [b'v' | b'V', ..] if self.values => Some(Key::Values),
             [b's' | b'S', ..] if self.skip => Some(Key::Skip),
+            [b'o' | b'O', ..] if self.open => Some(Key::Open),
             _ => None,
         }
     }
@@ -317,6 +338,7 @@ impl Keys {
             "l" | "L" if self.legend => Some(Key::ToggleLegend),
             "v" | "V" if self.values => Some(Key::Values),
             "s" | "S" if self.skip => Some(Key::Skip),
+            "o" | "O" if self.open => Some(Key::Open),
             _ => None,
         }
     }
@@ -433,6 +455,14 @@ struct Runner<'p> {
     /// Every stage that will not run, with why: from the command line, the operator, and
     /// their dependents.
     skipped: BTreeMap<usize, Why>,
+    /// Each script of the current stage, read once when the stage first shows a prompt: its
+    /// bytes and their hash. Previews show these bytes, and a script whose file no longer
+    /// matches its pin does not run.
+    pins: HashMap<PathBuf, Pin>,
+    /// Set while a preview draws, so only previews show scripts.
+    previewing: Cell<bool>,
+    /// The scripts `o` can open at the prompt showing now.
+    prompt_scripts: RefCell<Vec<PathBuf>>,
     /// Values given for skipped stages on the command line or in the environment, stored
     /// once the skips are settled, with who gave them.
     given: Vec<(Sym, Data, &'static str)>,
@@ -580,6 +610,9 @@ impl<'p> Runner<'p> {
             in_stage: false,
             hand_set: false,
             touched: std::collections::HashSet::new(),
+            pins: HashMap::new(),
+            previewing: Cell::new(false),
+            prompt_scripts: RefCell::new(Vec::new()),
             skipped: start.skipped,
             given: start.given,
             start_decided: start.decided,
@@ -729,7 +762,9 @@ impl<'p> Runner<'p> {
     /// Prints a preview's steps, then the legend for the prefixes they show.
     fn say_preview(&self, steps: &[&Step]) {
         *self.legend_used.borrow_mut() = Some(Vec::new());
+        self.previewing.set(true);
         self.say_steps(steps);
+        self.previewing.set(false);
         let used = self.legend_used.borrow_mut().take().unwrap_or_default();
         self.say_legend(&used);
     }
@@ -1055,6 +1090,7 @@ impl<'p> Runner<'p> {
             legend: toggle,
             values: toggle,
             skip: false,
+            open: false,
         };
         self.ask(&Style::Pause(action), keys, &|_| {})?;
         self.screen.borrow_mut().erase_to_mark();
@@ -1069,8 +1105,21 @@ impl<'p> Runner<'p> {
         keys: Keys,
         redraw: &dyn Fn(&Self),
     ) -> Result<Key, Stop> {
+        let keys = Keys {
+            open: !self.prompt_scripts.borrow().is_empty(),
+            ..keys
+        };
         loop {
             match self.prompt(style, keys, redraw)? {
+                Key::Open => {
+                    self.open_script()?;
+                    {
+                        let mut screen = self.screen.borrow_mut();
+                        screen.erase_to_mark();
+                        screen.mark();
+                    }
+                    redraw(self);
+                }
                 Key::Values => {
                     self.values_view()?;
                     {
@@ -1083,6 +1132,156 @@ impl<'p> Runner<'p> {
                 key => return Ok(key),
             }
         }
+    }
+
+    // ---- scripts ----
+
+    /// The file of a `script` command, as resolved before stage 1.
+    fn script_file(&self, command: &Command) -> Option<PathBuf> {
+        if !matches!(
+            command.kind,
+            CommandKind::ScriptRead | CommandKind::ScriptMutate
+        ) {
+            return None;
+        }
+        self.exes.get(&command.exe.display()).cloned()
+    }
+
+    /// The script files the steps run, inside blocks and templates too, each once.
+    fn scripts_in<'s>(&self, steps: impl IntoIterator<Item = &'s Step>) -> Vec<PathBuf> {
+        fn walk<'s>(
+            runner: &Runner<'_>,
+            steps: impl IntoIterator<Item = &'s Step>,
+            out: &mut Vec<PathBuf>,
+        ) {
+            for step in steps {
+                match &step.kind {
+                    StepKind::Command(c) => {
+                        if let Some(file) = runner.script_file(c)
+                            && !out.contains(&file)
+                        {
+                            out.push(file);
+                        }
+                    }
+                    StepKind::When { body, .. }
+                    | StepKind::Each { body, .. }
+                    | StepKind::Poll { body, .. }
+                    | StepKind::Call { body, .. } => walk(runner, body, out),
+                    _ => {}
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(self, steps, &mut out);
+        out
+    }
+
+    /// Reads each script of a stage once, before its first prompt. The preview and the
+    /// check before each run use these bytes, so a later change to the file cannot slip
+    /// past the gate.
+    fn pin_scripts(&mut self, stage: &ir::Stage) {
+        self.pins.clear();
+        for file in self.scripts_in(stage.steps.iter()) {
+            if let Ok(bytes) = std::fs::read(&file) {
+                let hash = Sha256::digest(&bytes).to_vec();
+                self.pins.insert(file, Pin { bytes, hash });
+            }
+        }
+    }
+
+    /// Whether a script's file still holds the bytes pinned for the stage.
+    fn pin_holds(&self, file: &Path) -> bool {
+        match (self.pins.get(file), std::fs::read(file)) {
+            (Some(pin), Ok(bytes)) => Sha256::digest(&bytes).to_vec() == pin.hash,
+            _ => false,
+        }
+    }
+
+    /// Opens one of the prompt's scripts in the pager: a redacted copy of its pinned bytes,
+    /// never the file itself. With no pager, prints it instead.
+    fn open_script(&mut self) -> Result<(), Stop> {
+        let scripts = self.prompt_scripts.borrow().clone();
+        let file = if scripts.len() == 1 {
+            scripts[0].clone()
+        } else {
+            self.say("");
+            for (index, file) in scripts.iter().enumerate() {
+                self.say(&format!(
+                    "  {:>4}  {}",
+                    index + 1,
+                    self.shorten_text(&render::escape_controls(&file.display().to_string()))
+                ));
+            }
+            let answer =
+                self.read_line(&self.opts.theme.ask("script to open, Enter to go back:"))?;
+            match answer
+                .trim()
+                .parse::<usize>()
+                .ok()
+                .and_then(|n| scripts.get(n.wrapping_sub(1)))
+            {
+                Some(file) => file.clone(),
+                None => return Ok(()),
+            }
+        };
+        let Some(pin) = self.pins.get(&file) else {
+            self.say("  the script could not be read");
+            return Ok(());
+        };
+        let Ok(text) = std::str::from_utf8(&pin.bytes) else {
+            self.say("  the script is not text, so it cannot be shown");
+            return Ok(());
+        };
+        let shown = self.redactor.redact(text);
+        let name = file
+            .file_name()
+            .map_or_else(|| "script".into(), |n| n.to_string_lossy().into_owned());
+        let copy = self.scratch_root.join(format!("view-{name}"));
+        let pager = self.pager_argv();
+        let opened = std::fs::write(&copy, shown.as_bytes()).is_ok()
+            && pager.as_ref().is_some_and(|(exe, argv)| {
+                let mut args: Vec<String> = argv[1..].to_vec();
+                args.push(copy.display().to_string());
+                self.screen.borrow_mut().hide();
+                let spec = Spec {
+                    exe,
+                    arg0: &argv[0],
+                    args: &args,
+                    env: &[],
+                    cwd: &self.opts.cwd,
+                    timeout: None,
+                    grace: self.opts.grace,
+                };
+                let mut resume = || Suspended::Resume;
+                process::handoff(&spec, &self.signals, &mut resume).is_ok()
+            });
+        let _ = std::fs::remove_file(&copy);
+        if !opened {
+            self.say("");
+            for line in shown.lines() {
+                self.say(&format!("  │ {}", render::escape_controls(line)));
+            }
+        }
+        Ok(())
+    }
+
+    /// The pager to run: the config key `pager`, else `$PAGER`, else `less`, split into
+    /// words with no shell, and resolved on `PATH`.
+    fn pager_argv(&self) -> Option<(PathBuf, Vec<String>)> {
+        let command = self
+            .opts
+            .pager
+            .clone()
+            .or_else(|| std::env::var("PAGER").ok().filter(|p| !p.trim().is_empty()))
+            .unwrap_or_else(|| "less".into());
+        let argv: Vec<String> = command.split_whitespace().map(String::from).collect();
+        let first = argv.first()?;
+        let exe = if first.contains('/') {
+            PathBuf::from(first)
+        } else {
+            find_on_path(first)?
+        };
+        Some((exe, argv))
     }
 
     // ---- skipping ----
@@ -1732,6 +1931,8 @@ impl<'p> Runner<'p> {
         self.stage_now = stage.number;
         self.in_stage = false;
         self.touched.clear();
+        self.pin_scripts(stage);
+        *self.prompt_scripts.borrow_mut() = self.scripts_in(stage.steps.iter());
         let rule = if stage.is_preflight() {
             render::preflight_rule(&stage.title, self.width())
         } else {
@@ -1781,6 +1982,7 @@ impl<'p> Runner<'p> {
                 legend: true,
                 values: true,
                 skip: stage.skip != SkipRule::Never,
+                open: false,
             };
             let question = |_: &Self| format!("Run {}?", stage.name());
             let style = if gated {
@@ -1824,6 +2026,7 @@ impl<'p> Runner<'p> {
             }
         }
         self.screen.borrow_mut().erase_to_mark();
+        self.prompt_scripts.borrow_mut().clear();
         self.in_stage = true;
         let prefix = if stage.is_preflight() {
             "p".to_string()
@@ -1940,6 +2143,8 @@ impl<'p> Runner<'p> {
         if let Some((_, current)) = &mut self.footer {
             current.clone_from(&step.id);
         }
+        // A `confirm` sets the scripts `o` can open; they belong to its prompt only.
+        self.prompt_scripts.borrow_mut().clear();
         self.update_ghost();
         match &step.kind {
             StepKind::Command(command) => self.command(command, step, path, suffix, deadline),
@@ -1966,8 +2171,10 @@ impl<'p> Runner<'p> {
                     legend: true,
                     values: true,
                     skip: self.p.stage(self.stage_now).skip != SkipRule::Never,
+                    open: false,
                 };
                 let question = |r: &Self| r.shorten_text(&text);
+                *self.prompt_scripts.borrow_mut() = self.scripts_in(steps.iter().copied());
                 loop {
                     match self.ask(&Style::Question(&question), keys, &redraw)? {
                         Key::Yes => {
@@ -2266,6 +2473,25 @@ impl<'p> Runner<'p> {
                     command.exe.display()
                 ))
             })?;
+        // A script runs only if its file still holds the bytes shown at the gate.
+        let mut script_sha256 = None;
+        if let Some(file) = self.script_file(command) {
+            if !self.pins.contains_key(&file)
+                && let Ok(bytes) = std::fs::read(&file)
+            {
+                let hash = Sha256::digest(&bytes).to_vec();
+                self.pins.insert(file.clone(), Pin { bytes, hash });
+            }
+            if !self.pin_holds(&file) {
+                return Err(Stop::failed(format!(
+                    "{} changed after the gate; nothing in step {} ran",
+                    home_relative(&file),
+                    step.id
+                ))
+                .detail("read the new version, and run the wizard again"));
+            }
+            script_sha256 = self.pins.get(&file).map(|pin| hex(&pin.hash));
+        }
         let viewed = render::argv(self.p, &command.argv, self);
         let prefix = format!("  {} ❯ ", step.id);
         let broken =
@@ -2276,10 +2502,11 @@ impl<'p> Runner<'p> {
         );
         // The journal, the suspend prompt and any failure detail show the full command.
         let shown = render::strip_marks(&render::argv(self.p, &command.argv, &Full(self)));
-        self.journal.event(
-            "command_start",
-            json!({"invocation_id": invocation, "step": step.id, "command_kind": command.kind.keyword(), "argv": shown, "exe": exe.display().to_string()}),
-        );
+        let mut start = json!({"invocation_id": invocation, "step": step.id, "command_kind": command.kind.keyword(), "argv": shown, "exe": exe.display().to_string()});
+        if let Some(hash) = script_sha256 {
+            start["script_sha256"] = json!(hash);
+        }
+        self.journal.event("command_start", start);
 
         // Fingerprints for file paths outside the scratch directory, so stale files never count.
         let mut fingerprints: HashMap<PathBuf, Fingerprint> = HashMap::new();
@@ -3004,6 +3231,43 @@ impl render::Values for Runner<'_> {
         Runner::prefixes(self)
     }
 
+    fn script_lines(&self, command: &Command, pad: &str) -> Vec<String> {
+        if !self.previewing.get() {
+            return Vec::new();
+        }
+        let Some(file) = self.script_file(command) else {
+            return Vec::new();
+        };
+        let gutter = format!("{pad}      │ ");
+        let Some(pin) = self.pins.get(&file) else {
+            return vec![format!("{gutter}cannot be read")];
+        };
+        let mut out = match std::str::from_utf8(&pin.bytes) {
+            Err(_) => vec![format!(
+                "{gutter}binary · {} KB",
+                pin.bytes.len().div_ceil(1024)
+            )],
+            Ok(text) => {
+                let lines: Vec<&str> = text.lines().collect();
+                let limit = self.opts.script_lines;
+                if limit == 0 || lines.len() > limit {
+                    vec![format!("{gutter}{} lines · o to open", lines.len())]
+                } else {
+                    lines
+                        .iter()
+                        .map(|line| format!("{gutter}{}", render::escape_controls(line)))
+                        .collect()
+                }
+            }
+        };
+        if !self.pin_holds(&file) {
+            out.push(format!(
+                "{gutter}changed on disk since the gate; it will not run"
+            ));
+        }
+        out
+    }
+
     fn shown_arg(&self, program: &Program, sym: Sym) -> Option<Vec<String>> {
         let info = program.sym(sym);
         if info.kind == SymKind::KorinOut {
@@ -3485,6 +3749,15 @@ fn stage_id(stage: &ir::Stage) -> serde_json::Value {
     } else {
         json!(stage.number)
     }
+}
+
+/// Bytes as lowercase hex, such as a hash for the journal.
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    bytes.iter().fold(String::new(), |mut out, b| {
+        let _ = write!(out, "{b:02x}");
+        out
+    })
 }
 
 /// What a choice prompt shows once a key answers it.

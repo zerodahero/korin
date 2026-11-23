@@ -1535,3 +1535,126 @@ fn from_in_a_terminal_asks_for_values_after_the_preflight() {
     assert_eq!(s.wait(), 0, "{}", s.text());
     assert!(s.text().contains("using old-3"), "{}", s.text());
 }
+
+// ---- scripts ----
+
+const TOKEN: &str = "tok-4815162342";
+
+/// A wizard with two scripts beside it, and a fake pager that copies what it is given.
+fn script_setup(body: &str) -> tempfile::TempDir {
+    let dir = setup(
+        &format!("param token secret\n{body}"),
+        &[(
+            "fake-pager",
+            "cat \"$1\" >> \"$(dirname \"$0\")/../paged.txt\"; echo --- >> \"$(dirname \"$0\")/../paged.txt\"",
+        )],
+    );
+    for (name, text) in [
+        (
+            "short.sh",
+            format!("#!/bin/sh\necho short\n# token {TOKEN}\n"),
+        ),
+        (
+            "long.sh",
+            "#!/bin/sh\necho 1\necho 2\necho 3\necho 4\n".to_string(),
+        ),
+    ] {
+        let path = dir.path().join(name);
+        std::fs::write(&path, text).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    dir
+}
+
+fn script_env(dir: &Path, pager: &str) -> Vec<(&'static str, PathBuf)> {
+    vec![
+        ("KORIN_SECRET_TOKEN", PathBuf::from(TOKEN)),
+        ("PAGER", dir.join("bin").join(pager)),
+    ]
+}
+
+#[test]
+fn a_short_script_shows_in_full_and_a_long_one_opens_in_the_pager() {
+    let dir = script_setup("stage \"a\"\n  script read ./short.sh\n  script read ./long.sh\n");
+    let mut s = start_with_env(
+        dir.path(),
+        &["run", "w.korin", "--script-lines", "3"],
+        &script_env(dir.path(), "fake-pager"),
+    );
+    s.wait_for("o open script]");
+    let text = s.text();
+    assert!(text.contains("│ echo short"), "{text}");
+    assert!(text.contains("│ # token «secret:token»"), "{text}");
+    assert!(text.contains("│ 5 lines · o to open"), "{text}");
+    assert!(!text.contains(TOKEN), "{text}");
+    // Two scripts: `o` lists them, and the pager gets a redacted copy of the one picked.
+    key(&mut s, "o");
+    s.wait_for("script to open");
+    s.send("1\r");
+    s.wait_for_nth("o open script]", 2);
+    key(&mut s, "y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let paged = std::fs::read_to_string(dir.path().join("paged.txt")).unwrap();
+    assert!(paged.contains("echo short"), "{paged}");
+    assert!(
+        paged.contains("«secret:token»") && !paged.contains(TOKEN),
+        "{paged}"
+    );
+    let events = events(dir.path());
+    assert!(events.contains("script_sha256"), "{events}");
+}
+
+#[test]
+fn without_a_pager_the_script_prints_redacted() {
+    let dir = script_setup("stage \"a\"\n  script read ./short.sh\n");
+    let mut s = start_with_env(
+        dir.path(),
+        &["run", "w.korin", "--script-lines", "0"],
+        &script_env(dir.path(), "no-such-pager"),
+    );
+    s.wait_for("o open script]");
+    assert!(s.text().contains("│ 3 lines · o to open"), "{}", s.text());
+    key(&mut s, "o");
+    s.wait_for_nth("o open script]", 2);
+    let text = s.text();
+    assert!(text.contains("│ # token «secret:token»"), "{text}");
+    assert!(!text.contains(TOKEN), "{text}");
+    key(&mut s, "y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+}
+
+#[test]
+fn a_script_changed_after_the_gate_does_not_run() {
+    let dir = script_setup(concat!(
+        "stage \"a\"\n",
+        "  mutate sh -c \"echo 'echo changed' >> short.sh\"\n",
+        "  confirm \"Go on?\"\n",
+        "  script read ./short.sh\n",
+    ));
+    let mut s = start_with_env(
+        dir.path(),
+        &["run", "w.korin"],
+        &script_env(dir.path(), "fake-pager"),
+    );
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("Go on? [y/N");
+    let text = s.text();
+    let confirm = &text[text.rfind("next:").unwrap()..];
+    // The confirm shows the pinned text, and says the file changed.
+    assert!(confirm.contains("│ echo short"), "{confirm}");
+    assert!(!confirm.contains("echo changed"), "{confirm}");
+    assert!(
+        confirm.contains("changed on disk since the gate"),
+        "{confirm}"
+    );
+    s.answer("y");
+    assert_eq!(s.wait(), 1, "{}", s.text());
+    assert!(
+        s.text()
+            .contains("changed after the gate; nothing in step 1.3 ran"),
+        "{}",
+        s.text()
+    );
+    assert!(!s.text().contains("\n      │ short"), "{}", s.text());
+}

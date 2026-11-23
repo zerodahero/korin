@@ -18,7 +18,14 @@ use crate::theme::Choice;
 use crate::view::View;
 
 /// The keys a config file may set, in the order `korin config` lists them.
-pub const KEYS: &[&str] = &["view", "legend", "require-enter", "color"];
+pub const KEYS: &[&str] = &[
+    "view",
+    "legend",
+    "script-lines",
+    "pager",
+    "require-enter",
+    "color",
+];
 
 /// A loaded config file. Each key the file sets keeps its value.
 #[derive(Debug, Default)]
@@ -29,6 +36,8 @@ pub struct Config {
     pub exists: bool,
     pub view: Option<View>,
     pub legend: Option<bool>,
+    pub script_lines: Option<usize>,
+    pub pager: Option<String>,
     pub require_enter: Option<bool>,
     pub color: Option<Choice>,
 }
@@ -57,14 +66,18 @@ impl fmt::Display for Source {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Flags {
     pub require_enter: bool,
+    pub script_lines: Option<usize>,
     pub color: Option<Choice>,
 }
 
 /// Every key's effective value, with where it came from.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Effective {
     pub view: (View, Source),
     pub legend: (bool, Source),
+    pub script_lines: (usize, Source),
+    /// The pager command, if the file sets one; otherwise `$PAGER`, else `less`.
+    pub pager: (Option<String>, Source),
     pub require_enter: (bool, Source),
     pub color: (Choice, Source),
 }
@@ -80,6 +93,19 @@ impl Effective {
                 self.legend.1,
             ),
             (
+                "script-lines",
+                self.script_lines.0.to_string(),
+                self.script_lines.1,
+            ),
+            (
+                "pager",
+                self.pager
+                    .0
+                    .as_ref()
+                    .map_or_else(|| "$PAGER, else less".to_string(), |p| format!("{p:?}")),
+                self.pager.1,
+            ),
+            (
                 "require-enter",
                 bool_name(self.require_enter.0).to_string(),
                 self.require_enter.1,
@@ -88,6 +114,9 @@ impl Effective {
         ]
     }
 }
+
+/// How many lines a script may have and still show in full at a gate.
+pub const DEFAULT_SCRIPT_LINES: usize = 20;
 
 /// The config file's path: `KORIN_CONFIG`, else under `XDG_CONFIG_HOME`, else under `~/.config`.
 pub fn path() -> PathBuf {
@@ -207,6 +236,8 @@ pub fn parse(path: &Path, text: &str) -> Result<Config, Vec<Diag>> {
                 });
             }),
             "legend" => boolean(node).map(|b| config.legend = Some(b)),
+            "script-lines" => count(node).map(|n| config.script_lines = Some(n)),
+            "pager" => command_text(node).map(|t| config.pager = Some(t)),
             "require-enter" => boolean(node).map(|b| config.require_enter = Some(b)),
             "color" => one_of(node, &["auto", "always", "never"]).map(|v| {
                 config.color = Some(match v.as_str() {
@@ -240,6 +271,24 @@ pub fn resolve(config: &Config, flags: Flags) -> Effective {
     let legend = config
         .legend
         .map_or((true, Source::Default), |v| (v, Source::File));
+    let script_lines = if let Some(n) = flags.script_lines {
+        (n, Source::Flag)
+    } else if let Some(n) = std::env::var("KORIN_SCRIPT_LINES")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+    {
+        (n, Source::Env)
+    } else {
+        config
+            .script_lines
+            .map_or((DEFAULT_SCRIPT_LINES, Source::Default), |n| {
+                (n, Source::File)
+            })
+    };
+    let pager = match &config.pager {
+        Some(p) => (Some(p.clone()), Source::File),
+        None => (None, Source::Default),
+    };
     let require_enter = if flags.require_enter {
         (true, Source::Flag)
     } else if let Some(v) = std::env::var_os("KORIN_REQUIRE_ENTER").filter(|v| !v.is_empty()) {
@@ -259,6 +308,8 @@ pub fn resolve(config: &Config, flags: Flags) -> Effective {
     Effective {
         view,
         legend,
+        script_lines,
+        pager,
         require_enter,
         color,
     }
@@ -285,6 +336,31 @@ fn one_of(node: &KdlNode, values: &[&str]) -> Result<String, (String, String)> {
         other => Err((
             format!("cannot be {other}"),
             format!("use one of {}", list(values)),
+        )),
+    }
+}
+
+fn count(node: &KdlNode) -> Result<usize, (String, String)> {
+    match argument(node)? {
+        KdlValue::Integer(n) if *n >= 0 => usize::try_from(*n).map_err(|_| {
+            (
+                "is too large".to_string(),
+                "use a smaller number".to_string(),
+            )
+        }),
+        other => Err((
+            format!("cannot be {other}"),
+            "use a whole number, 0 or more".into(),
+        )),
+    }
+}
+
+fn command_text(node: &KdlNode) -> Result<String, (String, String)> {
+    match argument(node)? {
+        KdlValue::String(s) if !s.trim().is_empty() => Ok(s.clone()),
+        other => Err((
+            format!("cannot be {other}"),
+            "use a command in quotes, such as \"less -R\"".into(),
         )),
     }
 }

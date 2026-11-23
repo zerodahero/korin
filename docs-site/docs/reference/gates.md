@@ -35,6 +35,7 @@ One key answers a gate or a `confirm`; there is no need to press Enter.
 - `n`, Enter or Esc declines. The default is no.
 - `s` skips the stage and goes on. See [Skipping a stage](#skipping-a-stage).
 - `v` opens the [values view](#the-values-view), where you can see and change values.
+- `o` opens a script of the stage in your pager. See [`script`](steps.md#what-the-gate-shows).
 - `l` hides or shows the legend of path prefixes, in the compact view. See
   [The legend](cli.md#the-legend).
 - `f` switches between the compact and the full view, draws the preview again, and asks

@@ -60,9 +60,32 @@ wizard.
 --8<-- "docs-site/examples/reference/steps/scripts/rotate-logs.sh"
 ```
 
-Use `script` for work that needs a shell: pipes, globs, redirects or loops. The gate shows
-the script's path and arguments, not its contents, so keep scripts short and next to the
-wizard where a reviewer can read them.
+Use `script` for work that needs a shell: pipes, globs, redirects or loops. Keep scripts short
+and next to the wizard, where a reviewer can read them.
+
+### What the gate shows
+
+A gate shows a script of up to 20 lines in full, under its step:
+
+--8<-- "docs-site/docs/generated/transcripts/reference/steps/script.prompt-1.html"
+
+A longer script shows its length. Press `o` at the prompt to read it in your pager. With more
+than one script, korin asks which. `--script-lines <n>`, `KORIN_SCRIPT_LINES` or the
+[config file](config.md) set the limit; `0` never shows a script in full. Here the limit is 3:
+
+--8<-- "docs-site/docs/generated/transcripts/reference/steps/script-long.prompt-1.html"
+
+The pager is the config key `pager`, else `$PAGER`, else `less`. It gets a copy of the
+script with every known secret replaced by `«secret:name»`, never the file itself. If no
+pager starts, korin prints the script instead.
+
+### The script that runs is the script you read
+
+korin reads each script once, when its stage first shows its gate or pause, and keeps a hash
+of it. Before each run of the script, korin checks the file again. If it changed, even
+because an earlier step wrote to it, the run stops before the script starts. A later
+`confirm` shows the text read at the gate, and says when the file has changed since. The
+journal records the hash as `script_sha256` on `command_start`.
 
 ## `interactive`
 

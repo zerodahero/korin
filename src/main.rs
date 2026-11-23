@@ -80,6 +80,10 @@ enum Cmd {
         /// Seconds between SIGTERM and SIGKILL when korin ends a command (at most 3600).
         #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(0..=3600))]
         kill_grace: u64,
+        /// Show a script in full at its gate when it has at most this many lines; 0 never shows
+        /// it. Also set by `KORIN_SCRIPT_LINES` or the config key `script-lines`; default 20.
+        #[arg(long, value_name = "N")]
+        script_lines: Option<usize>,
         /// Answer gates and `confirm` with y or n and then Enter, instead of a single key. Also
         /// set by `KORIN_REQUIRE_ENTER=1` or the config key `require-enter`.
         #[arg(long)]
@@ -115,6 +119,10 @@ fn main() -> ExitCode {
                 ..
             }
         ),
+        script_lines: match &cli.command {
+            Cmd::Run { script_lines, .. } => *script_lines,
+            _ => None,
+        },
         color: cli.color.map(Choice::from),
     };
     // The config can set the color, so its own errors use the flag's color, or none.
@@ -161,6 +169,7 @@ fn main() -> ExitCode {
             set,
             kill_grace,
             require_enter: _,
+            script_lines: _,
         } => run(
             &file,
             params,
@@ -168,7 +177,7 @@ fn main() -> ExitCode {
             from,
             (skip, skip_preflight, set),
             kill_grace,
-            effective,
+            &effective,
             Theme::stdout(choice),
         ),
         Cmd::Fmt { files, check } => fmt(&files, check),
@@ -265,7 +274,7 @@ fn run(
     from: Option<String>,
     (skip, skip_preflight, set): (Vec<String>, bool, Vec<(String, String)>),
     kill_grace: u64,
-    effective: korin::config::Effective,
+    effective: &korin::config::Effective,
     theme: Theme,
 ) -> ExitCode {
     let program = match compile_path(file) {
@@ -290,6 +299,8 @@ fn run(
         require_enter: effective.require_enter.0,
         view: effective.view.0,
         legend: effective.legend.0,
+        script_lines: effective.script_lines.0,
+        pager: effective.pager.0.clone(),
         runs_dir: cwd.join(".korin").join("runs"),
         cwd,
         theme,

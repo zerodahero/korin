@@ -338,3 +338,11 @@ stage names it in `skip also`. Code: `skip::Closure`.
 
 - UI label: dependent
 - Avoid: downstream
+
+### Pin
+
+A script's bytes and hash, read once when its stage first shows a prompt. Previews show the
+pinned bytes, and a script whose file no longer matches its pin does not run. Code: `Pin`.
+
+- UI label: none; the journal's `script_sha256`
+- Avoid: lock
