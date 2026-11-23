@@ -50,6 +50,8 @@ Every event has `kind` and `ts`. The kinds:
 | `run_start`, `run_end` | The run starts, and ends: `completed`, `failed` or `cancelled`. |
 | `stage_start` | A stage starts. `mutating` says whether it changes anything. |
 | `gate`, `gate_auto`, `confirm` | A gate or `confirm` is answered. `gate_auto` is an approval by `--yes`. |
+| `pause` | A pause is answered. `auto` is a pause continued by `--yes`. |
+| `value_set` | A value was set or cleared by hand, in the [values view](gates.md#the-values-view). `by` says who: `operator`. |
 | `command_start`, `command_end` | A command starts, and ends with its exit code or signal. |
 | `expect` | An expect matched. |
 | `capture` | A capture got a value. |

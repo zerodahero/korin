@@ -1,0 +1,8 @@
+korin 1
+title "Restart the API"
+
+stage "Restart"
+  read kubectl get deployment api -n shop -o json
+    capture image = jq .spec.template.spec.containers[0].image
+  confirm "Restart pods running {image}?"
+  mutate kubectl rollout restart deployment/api -n shop

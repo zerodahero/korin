@@ -1,0 +1,3 @@
+fakes = true
+answers = ["v", "1", "r", "production", "", "y"]
+snapshots = [2, 6]

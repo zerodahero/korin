@@ -24,7 +24,8 @@ use unicode_width::UnicodeWidthStr as _;
 use crate::ast::{CmpOp, CommandKind, GateMode, Mode, SayKind, Span};
 use crate::diag::Diag;
 use crate::ir::{
-    self, Command, Expr, IPart, Interpolated, Match, Program, Step, StepKind, Sym, SymKind,
+    self, Command, Expr, IPart, Interpolated, Match, Program, Step, StepKind, Sym, SymInfo,
+    SymKind, Ty,
 };
 use crate::redact::{Redactor, StreamRedactor};
 use crate::render::{self, Values as _};
@@ -183,6 +184,8 @@ enum Key {
     ToggleView,
     /// Show or hide the legend, then ask again.
     ToggleLegend,
+    /// Open the values view, then ask again.
+    Values,
 }
 
 impl Key {
@@ -194,6 +197,7 @@ impl Key {
             Key::Continue => "",
             Key::ToggleView => "f",
             Key::ToggleLegend => "l",
+            Key::Values => "v",
         }
     }
 }
@@ -205,6 +209,8 @@ struct Keys {
     view: bool,
     /// `l`: show or hide the legend. Offered only in the compact view, which has one.
     legend: bool,
+    /// `v`: open the values view.
+    values: bool,
 }
 
 impl Keys {
@@ -213,6 +219,9 @@ impl Keys {
         let mut parts = Vec::new();
         if matches!(style, Style::Question(_)) {
             parts.push("y/N".to_string());
+        }
+        if self.values {
+            parts.push("v values".to_string());
         }
         if self.view {
             parts.push(format!("f {}", view.other()));
@@ -232,6 +241,7 @@ impl Keys {
         match bytes {
             [b'f' | b'F', ..] if self.view => Some(Key::ToggleView),
             [b'l' | b'L', ..] if self.legend => Some(Key::ToggleLegend),
+            [b'v' | b'V', ..] if self.values => Some(Key::Values),
             _ => None,
         }
     }
@@ -241,6 +251,7 @@ impl Keys {
         match line {
             "f" | "F" if self.view => Some(Key::ToggleView),
             "l" | "L" if self.legend => Some(Key::ToggleLegend),
+            "v" | "V" if self.values => Some(Key::Values),
             _ => None,
         }
     }
@@ -346,6 +357,14 @@ struct Runner<'p> {
     legend_used: RefCell<Option<Vec<String>>>,
     /// Labels whose path was just set or changed, shown once after the step that set them.
     legend_pending: Vec<String>,
+    /// The stage running now, or about to run; 0 before stage 1.
+    stage_now: usize,
+    /// Whether the current stage's steps have started, past its gate or pause.
+    in_stage: bool,
+    /// Whether the operator has set or cleared any value by hand.
+    hand_set: bool,
+    /// The names the current stage has set or cleared so far, for the values view.
+    touched: std::collections::HashSet<Sym>,
     /// `$PWD`, when it names the cwd by another path, such as through a symlink. Paths the
     /// operator types often start with it, so it shortens to `<pwd>` too.
     pwd_alias: Option<String>,
@@ -480,6 +499,10 @@ impl<'p> Runner<'p> {
             legend: Cell::new(legend),
             legend_used: RefCell::new(None),
             legend_pending: Vec::new(),
+            stage_now: 0,
+            in_stage: false,
+            hand_set: false,
+            touched: std::collections::HashSet::new(),
             pwd_alias: pwd_alias(&cwd_for_alias),
         })
     }
@@ -677,6 +700,9 @@ impl<'p> Runner<'p> {
     /// Sets or removes a value, and keeps the compact view's named prefixes in step with it:
     /// a name's prefix always follows its current value, and goes away with it.
     fn set_value(&mut self, sym: Sym, value: Option<Value>) {
+        if self.in_stage {
+            self.touched.insert(sym);
+        }
         let prefix = value.as_ref().and_then(|v| self.named_prefix(sym, v));
         match value {
             Some(value) => {
@@ -921,34 +947,306 @@ impl<'p> Runner<'p> {
     }
 
     /// Asks a yes/no question that sits under a preview, such as a gate or a `confirm`. `y`
-    /// approves, and `n`, Enter or Esc declines. Returns `Yes` or `No`, or one of the other
-    /// keys `keys` allows; `f` and `l` are handled here. See [`Runner::prompt`].
+    /// approves, and `n`, Enter or Esc declines. `f`, `l` and `v` are handled here, and ask
+    /// again. See [`Runner::prompt`].
     ///
     /// `question` builds the question for the current view, since it may hold a path.
     fn ask_yes(
-        &self,
+        &mut self,
         question: &dyn Fn(&Self) -> String,
         redraw: &dyn Fn(&Self),
     ) -> Result<bool, Stop> {
         let keys = Keys {
             view: true,
             legend: true,
+            values: true,
         };
-        Ok(self.prompt(&Style::Question(question), keys, redraw)? == Key::Yes)
+        Ok(self.ask(&Style::Question(question), keys, redraw)? == Key::Yes)
     }
 
     /// Waits for the operator in a guide: Enter or Space continues, and Ctrl-C cancels. With
-    /// `toggle`, `f` switches between the compact and the full view and waits again. The
-    /// prompt is erased once answered, where the view allows.
-    fn pause(&self, action: &str, toggle: bool) -> Result<(), Stop> {
+    /// `toggle`, `f`, `l` and `v` work too, and wait again. The prompt is erased once
+    /// answered, where the view allows.
+    fn pause(&mut self, action: &str, toggle: bool) -> Result<(), Stop> {
         self.screen.borrow_mut().mark();
         let keys = Keys {
             view: toggle,
             legend: toggle,
+            values: toggle,
         };
-        self.prompt(&Style::Pause(action), keys, &|_| {})?;
+        self.ask(&Style::Pause(action), keys, &|_| {})?;
         self.screen.borrow_mut().erase_to_mark();
         Ok(())
+    }
+
+    /// [`Runner::prompt`], with the keys that need to change the run handled here: `v` opens
+    /// the values view, then the preview is drawn again and the prompt asks again.
+    fn ask(
+        &mut self,
+        style: &Style<'_, 'p>,
+        keys: Keys,
+        redraw: &dyn Fn(&Self),
+    ) -> Result<Key, Stop> {
+        loop {
+            match self.prompt(style, keys, redraw)? {
+                Key::Values => {
+                    self.values_view()?;
+                    {
+                        let mut screen = self.screen.borrow_mut();
+                        screen.erase_to_mark();
+                        screen.mark();
+                    }
+                    redraw(self);
+                }
+                key => return Ok(key),
+            }
+        }
+    }
+
+    // ---- the values view ----
+
+    /// The values the values view lists: params, asks, captures and expects from stages
+    /// before the current one, and, once the current stage runs, the ones it made so far.
+    fn value_rows(&self) -> Vec<Sym> {
+        (0..self.p.syms.len())
+            .filter(|&sym| {
+                let info = self.p.sym(sym);
+                let listed = matches!(
+                    info.kind,
+                    SymKind::Param | SymKind::Ask | SymKind::Capture | SymKind::Expect
+                );
+                let earlier = info.stage < self.stage_now;
+                let made_here =
+                    info.stage == self.stage_now && self.in_stage && self.touched.contains(&sym);
+                listed && (earlier || made_here)
+            })
+            .collect()
+    }
+
+    /// One value as the values view shows it. A secret or withheld value shows only its
+    /// placeholder: a withheld value may hold a secret the redactor does not know.
+    fn value_text(&self, sym: Sym) -> String {
+        let info = self.p.sym(sym);
+        let Some(value) = self.values.get(&sym) else {
+            return if info.optional { "absent" } else { "unset" }.to_string();
+        };
+        if info.secret {
+            return format!("«secret:{}»", info.name);
+        }
+        if value.withheld.is_some() {
+            return format!("«withheld:{}»", info.name);
+        }
+        let text = match &value.data {
+            Data::Str(s) => self.redactor.redact(s),
+            Data::List(items) => {
+                let items: Vec<String> = items.iter().map(|i| self.redactor.redact(i)).collect();
+                serde_json::to_string(&items).unwrap_or_default()
+            }
+            Data::Bool(b) => if *b { "yes" } else { "no" }.to_string(),
+        };
+        render::escape_controls(&text)
+    }
+
+    /// Where a value comes from, as the values view describes it.
+    fn value_origin(&self, sym: Sym) -> String {
+        let info = self.p.sym(sym);
+        let kind = match info.kind {
+            SymKind::Param => "param",
+            SymKind::Ask => "ask",
+            SymKind::Capture => "capture",
+            SymKind::Expect => "expect",
+            SymKind::EachVar | SymKind::KorinOut => "",
+        };
+        let mut parts = vec![match &info.producer {
+            Some(step) if info.kind != SymKind::Param => format!("{kind} {step}"),
+            _ => kind.to_string(),
+        }];
+        if info.secret {
+            parts.push("secret".into());
+        }
+        if info.optional {
+            parts.push("optional".into());
+        }
+        parts.join(", ")
+    }
+
+    /// Lists every value known so far, and lets the operator change one by its number.
+    fn values_view(&mut self) -> Result<(), Stop> {
+        loop {
+            let rows = self.value_rows();
+            self.say("");
+            if rows.is_empty() {
+                self.say("  values: none yet");
+                return Ok(());
+            }
+            self.say("  values");
+            let names: Vec<String> = rows.iter().map(|s| self.p.sym(*s).name.clone()).collect();
+            let width = names.iter().map(|n| n.chars().count()).max().unwrap_or(0);
+            let shown: Vec<String> = rows
+                .iter()
+                .map(|s| self.shorten_text(&self.value_text(*s)))
+                .collect();
+            let value_width = shown
+                .iter()
+                .map(|v| render::strip_marks(v).chars().count())
+                .max()
+                .unwrap_or(0)
+                .min(40);
+            for (index, sym) in rows.iter().enumerate() {
+                let pad =
+                    value_width.saturating_sub(render::strip_marks(&shown[index]).chars().count());
+                self.say(&format!(
+                    "  {:>4}  {:<width$}  {}{}  {}",
+                    index + 1,
+                    names[index],
+                    shown[index],
+                    " ".repeat(pad),
+                    self.value_origin(*sym),
+                ));
+            }
+            let answer =
+                self.read_line(&self.opts.theme.ask("number to change, Enter to go back:"))?;
+            let answer = answer.trim();
+            if answer.is_empty() {
+                return Ok(());
+            }
+            match answer
+                .parse::<usize>()
+                .ok()
+                .and_then(|n| rows.get(n.wrapping_sub(1)))
+            {
+                Some(&sym) => self.edit_value(sym)?,
+                None => self.say(&format!("  no value numbered {answer}")),
+            }
+        }
+    }
+
+    /// Reads one choice: a single key in a terminal, or a line otherwise. Enter and Esc give
+    /// `None`, as does any key not in `choices`.
+    fn read_choice(&self, prompt: &str, choices: &[char]) -> Result<Option<char>, Stop> {
+        if self.opts.require_enter || !std::io::stdin().is_terminal() {
+            let line = self.read_line(prompt)?;
+            let line = line.trim();
+            return Ok(choices
+                .iter()
+                .copied()
+                .find(|c| line.len() == 1 && line.starts_with(*c)));
+        }
+        self.screen.borrow_mut().hide();
+        let (choice, echo) = read_key_interruptible(&self.signals, prompt, |bytes| match bytes {
+            [b'\r' | b'\n', ..] | [0x1b] => Some((None, "")),
+            [b, ..] => choices
+                .iter()
+                .find(|c| u32::from(**c) == u32::from(*b))
+                .map(|c| (Some(*c), choice_echo(*c))),
+            [] => None,
+        })?;
+        self.screen.borrow_mut().echoed(&format!("{prompt}{echo}"));
+        Ok(choice)
+    }
+
+    /// Changes one value: replace it, clear an optional capture, or keep it.
+    fn edit_value(&mut self, sym: Sym) -> Result<(), Stop> {
+        let info = self.p.sym(sym).clone();
+        let choices: &[char] = if info.optional { &['r', 'c'] } else { &['r'] };
+        let hint = if info.optional {
+            "r replace · c clear · Enter keep:"
+        } else {
+            "r replace · Enter keep:"
+        };
+        let prompt = self.opts.theme.ask(&format!("{}: {hint}", info.name));
+        match self.read_choice(&prompt, choices)? {
+            Some('r') => {
+                let data = self.read_typed(&info)?;
+                if info.secret
+                    && let Data::Str(text) = &data
+                    && let Err(e) = self.redactor.add_value(&info.name, text)
+                {
+                    self.say(&format!("  not changed: {e}"));
+                    return Ok(());
+                }
+                self.journal.event(
+                    "value_set",
+                    json!({"name": info.name, "value": data.to_json(), "by": "operator"}),
+                );
+                self.journal
+                    .report(&format!("- `{}` set by hand", info.name));
+                self.set_value(
+                    sym,
+                    Some(Value {
+                        data,
+                        withheld: None,
+                    }),
+                );
+                self.hand_set = true;
+            }
+            Some('c') => {
+                self.journal.event(
+                    "value_set",
+                    json!({"name": info.name, "value": null, "by": "operator"}),
+                );
+                self.journal
+                    .report(&format!("- `{}` cleared by hand", info.name));
+                self.set_value(sym, None);
+                self.hand_set = true;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Reads a new value of a name's type, asking again until the input fits.
+    fn read_typed(&self, info: &SymInfo) -> Result<Data, Stop> {
+        let theme = self.opts.theme;
+        loop {
+            let result = if info.secret {
+                let prompt = theme.ask(&format!("{} (hidden):", info.name));
+                self.screen.borrow_mut().hide();
+                let text = read_hidden_interruptible(&self.signals, &prompt, theme)?;
+                self.screen.borrow_mut().echoed(&format!("{prompt}✓"));
+                Ok(Data::Str(text.to_string()))
+            } else {
+                match info.ty {
+                    Ty::Bool => {
+                        let prompt = theme.ask(&format!("{} [y/n]:", info.name));
+                        match self.read_choice(&prompt, &['y', 'n'])? {
+                            Some(c) => Ok(Data::Bool(c == 'y')),
+                            None => Err("answer y or n".to_string()),
+                        }
+                    }
+                    Ty::List => self.read_list(&info.name)?,
+                    Ty::Json => {
+                        let line = self.read_line(&theme.ask(&format!("{} (JSON):", info.name)))?;
+                        parse_json(&line).map(Data::Str)
+                    }
+                    Ty::Scalar => Ok(Data::Str(
+                        self.read_line(&theme.ask(&format!("{}:", info.name)))?,
+                    )),
+                }
+            };
+            match result {
+                Ok(data) => return Ok(data),
+                Err(reason) => self.say(&format!("  not a value for `{}`: {reason}", info.name)),
+            }
+        }
+    }
+
+    /// Reads a list: one item per line until an empty line, or one JSON array of strings.
+    fn read_list(&self, name: &str) -> Result<Result<Data, String>, Stop> {
+        let theme = self.opts.theme;
+        let first = self.read_line(&theme.ask(&format!(
+            "{name}: one item per line, then an empty line (or a JSON array):"
+        )))?;
+        if first.trim_start().starts_with('[') {
+            return Ok(parse_list(&first).map(Data::List));
+        }
+        let mut items = Vec::new();
+        let mut line = first;
+        while !line.is_empty() {
+            items.push(line);
+            line = self.read_line(&theme.ask("  …"))?;
+        }
+        Ok(Ok(Data::List(items)))
     }
 
     /// Shows a prompt and waits for one of the keys it allows. A question (a gate or a
@@ -1029,6 +1327,9 @@ impl<'p> Runner<'p> {
 
     fn stage(&mut self, stage: &'p ir::Stage) -> Result<(), Stop> {
         let total = self.p.stages.len();
+        self.stage_now = stage.number;
+        self.in_stage = false;
+        self.touched.clear();
         self.say(&format!(
             "\n{}",
             render::stage_rule(stage.number, total, &stage.title, self.width())
@@ -1070,8 +1371,9 @@ impl<'p> Runner<'p> {
                 let keys = Keys {
                     view: true,
                     legend: true,
+                    values: true,
                 };
-                self.prompt(&Style::Pause("continue"), keys, &|r| {
+                self.ask(&Style::Pause("continue"), keys, &|r| {
                     if !stage.steps.is_empty() {
                         r.say("");
                         r.say_preview(&stage.steps.iter().collect::<Vec<_>>());
@@ -1105,6 +1407,7 @@ impl<'p> Runner<'p> {
             }
         }
         self.screen.borrow_mut().erase_to_mark();
+        self.in_stage = true;
         let prefix = format!("s{}", stage.number);
         let before = self.seq;
         self.footer = Some((
@@ -2044,8 +2347,12 @@ impl<'p> Runner<'p> {
 
     fn value(&self, sym: Sym) -> Result<&Value, Stop> {
         self.values.get(&sym).ok_or_else(|| {
-            Stop::failed(format!("`{}` has no value here", self.p.sym(sym).name))
-                .detail("this is a korin bug if `korin check` passed; please report it")
+            let stop = Stop::failed(format!("`{}` has no value here", self.p.sym(sym).name));
+            if self.hand_set {
+                stop.detail("a value set or cleared by hand left it missing")
+            } else {
+                stop.detail("this is a korin bug if `korin check` passed; please report it")
+            }
         })
     }
 
@@ -2499,6 +2806,30 @@ impl Drop for RestoreModes {
             &self.0,
         );
     }
+}
+
+/// What a choice prompt shows once a key answers it.
+fn choice_echo(c: char) -> &'static str {
+    match c {
+        'r' => "r",
+        'c' => "c",
+        'y' => "y",
+        'n' => "n",
+        _ => "",
+    }
+}
+
+/// Checks a line of JSON, and gives it back in its compact form.
+fn parse_json(line: &str) -> Result<String, String> {
+    serde_json::from_str::<serde_json::Value>(line)
+        .map(|v| v.to_string())
+        .map_err(|e| format!("not JSON: {e}"))
+}
+
+/// Parses a JSON array of strings, as a list value.
+fn parse_list(text: &str) -> Result<Vec<String>, String> {
+    serde_json::from_str::<Vec<String>>(text)
+        .map_err(|e| format!("not a JSON array of strings: {e}"))
 }
 
 /// Reads a hidden value from the terminal. Nothing typed is echoed: the prompt shows only a

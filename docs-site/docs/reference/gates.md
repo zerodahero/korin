@@ -33,6 +33,7 @@ One key answers a gate or a `confirm`; there is no need to press Enter.
 
 - `y` approves.
 - `n`, Enter or Esc declines. The default is no.
+- `v` opens the [values view](#the-values-view), where you can see and change values.
 - `l` hides or shows the legend of path prefixes, in the compact view. See
   [The legend](cli.md#the-legend).
 - `f` switches between the compact and the full view, draws the preview again, and asks
@@ -45,6 +46,48 @@ cancels the run.
 
 To answer with `y` and then Enter instead, pass `--require-enter` or set
 `KORIN_REQUIRE_ENTER=1`.
+
+## The values view
+
+Press `v` at a gate, a `confirm` or a pause to list every value known so far: params, `ask`
+answers, captures and expects from earlier stages. At a `confirm`, values made earlier in
+the same stage are listed too. Values a later step will set are not listed, since that step
+would replace them.
+
+```korin title="values.korin"
+--8<-- "docs-site/examples/reference/gates/values.korin"
+```
+
+--8<-- "docs-site/docs/generated/transcripts/reference/gates/values.prompt-2.html"
+
+Type a value's number to change it, or press Enter to go back to the prompt. Then press `r`
+to replace the value, `c` to clear an optional capture, or Enter to keep it. korin draws the
+preview again with the new value:
+
+--8<-- "docs-site/docs/generated/transcripts/reference/gates/values.prompt-6.html"
+
+A new value must fit the value's kind:
+
+| Kind | What to type |
+|---|---|
+| A param, an `ask`, a text or regex capture | One line. An empty line is the empty string. |
+| A list (`lines`, `jq list`) | One item per line, then an empty line. Or one JSON array of strings, such as `["a", "b"]`; `[]` is the empty list. |
+| JSON (`jq json`) | One line of JSON. |
+| An expect | `y` or `n`. |
+| A secret | Hidden input, as when korin asks for a secret. |
+
+A secret or withheld value shows only as `«secret:name»` or `«withheld:name»`, never as its
+text. You can still replace it.
+
+At a `confirm`, the view also lists what the stage has found so far:
+
+```korin title="values-confirm.korin"
+--8<-- "docs-site/examples/reference/gates/values-confirm.korin"
+```
+
+--8<-- "docs-site/docs/generated/transcripts/reference/gates/values-confirm.prompt-3.html"
+
+Each change is a `value_set` event in the [journal](journal.md), and a line in the report.
 
 ## `gates all`
 

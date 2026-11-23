@@ -492,7 +492,7 @@ fn nested_confirm_shows_the_rest_of_the_stage() {
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.answer("y");
-    s.wait_for("Continue? [y/N · f full · l legend]");
+    s.wait_for("Continue? [y/N · v values · f full · l legend]");
     let text = s.text();
     let next = &text[text.rfind("next:").expect("confirm lists what comes next")..];
     assert!(next.contains("after-the-block"), "{next}");
@@ -519,7 +519,7 @@ fn deeply_nested_confirm_shows_every_remaining_step() {
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.answer("y");
-    s.wait_for("Continue? [y/N · f full · l legend]");
+    s.wait_for("Continue? [y/N · v values · f full · l legend]");
     let text = s.text();
     let next = &text[text.rfind("next:").expect("confirm lists what comes next")..];
     for expected in ["inner-rest", "middle-rest", "outer-rest"] {
@@ -644,7 +644,7 @@ fn one_key_answers_a_gate_and_keys_while_arming_are_ignored() {
     assert!(marker(dir.path(), "touched").exists());
     assert!(
         s.text()
-            .contains("Run stage 1? [y/N · f full · l legend] y"),
+            .contains("Run stage 1? [y/N · v values · f full · l legend] y"),
         "{}",
         s.text()
     );
@@ -668,7 +668,7 @@ fn enter_alone_declines_and_the_terminal_modes_come_back() {
     assert_eq!(s.wait(), 1, "{}", s.text());
     assert!(
         s.text()
-            .contains("Run stage 2? [y/N · f full · l legend] n"),
+            .contains("Run stage 2? [y/N · v values · f full · l legend] n"),
         "{}",
         s.text()
     );
@@ -751,13 +751,13 @@ fn f_at_a_gate_redraws_the_preview_in_full() {
     let (dir, target) = target_setup("  read lister {target}/a.txt\n");
     let param = format!("target={target}");
     let mut s = start(dir.path(), &["run", "w.korin", "--param", &param]);
-    s.wait_for("[y/N · f full · l legend]");
+    s.wait_for("[y/N · v values · f full · l legend]");
     assert!(s.text().contains("lister <target>/a.txt"), "{}", s.text());
     std::thread::sleep(Duration::from_millis(400));
     s.send("f");
-    s.wait_for("[y/N · f compact]");
+    s.wait_for("[y/N · v values · f compact]");
     let after = s.text();
-    let toggled = after.find("f compact]").unwrap();
+    let toggled = after.find("v values · f compact]").unwrap();
     let full = format!("lister {target}/a.txt");
     assert!(after.find(&full).is_some_and(|i| i < toggled), "{after}");
     s.answer("y");
@@ -781,10 +781,10 @@ fn f_and_enter_toggles_with_require_enter() {
         dir.path(),
         &["run", "w.korin", "--require-enter", "--param", &param],
     );
-    s.wait_for("[y/N · f full · l legend]");
+    s.wait_for("[y/N · v values · f full · l legend]");
     std::thread::sleep(Duration::from_millis(400));
     s.send("f\r");
-    s.wait_for("[y/N · f compact]");
+    s.wait_for("[y/N · v values · f compact]");
     std::thread::sleep(Duration::from_millis(400));
     s.send("y\r");
     assert_eq!(s.wait(), 0, "{}", s.text());
@@ -893,7 +893,7 @@ fn a_guide_pauses_before_each_stage_and_shows_no_preview() {
         &[],
     );
     let mut s = start(dir.path(), &["run", "w.korin"]);
-    s.wait_for("↵ continue · f full");
+    s.wait_for("↵ continue · v values · f full");
     // No preview: the step is not on screen before it runs.
     assert!(!s.text().contains("echo first-ran"), "{}", s.text());
     assert!(!s.text().contains("Run stage"), "{}", s.text());
@@ -918,10 +918,10 @@ fn a_guide_pauses_before_each_stage_and_shows_no_preview() {
 fn a_guide_pause_takes_a_line_with_require_enter() {
     let dir = guide_setup("stage \"one\"\n  read echo ran\n", &[]);
     let mut s = start(dir.path(), &["run", "w.korin", "--require-enter"]);
-    s.wait_for("↵ continue · f full");
+    s.wait_for("↵ continue · v values · f full");
     std::thread::sleep(Duration::from_millis(400));
     s.send("f\r");
-    s.wait_for("↵ continue · f compact");
+    s.wait_for("↵ continue · v values · f compact");
     std::thread::sleep(Duration::from_millis(400));
     s.send("\r");
     assert_eq!(s.wait(), 0, "{}", s.text());
@@ -1005,7 +1005,7 @@ fn the_config_file_sets_the_starting_view_and_require_enter() {
     let config = dir.path().join("config.kdl");
     std::fs::write(&config, "view full\nrequire-enter #true\n").unwrap();
     let mut s = start_with_env(dir.path(), &["run", "w.korin"], &[("KORIN_CONFIG", config)]);
-    s.wait_for("f compact]");
+    s.wait_for("v values · f compact]");
     std::thread::sleep(Duration::from_millis(400));
     // With require-enter, y alone does not answer the gate.
     s.send("y");
@@ -1022,7 +1022,7 @@ fn the_legend_explains_each_prefix_and_l_hides_it() {
     let (dir, target) = target_setup("  read lister {target}/a.txt\n");
     let param = format!("target={target}");
     let mut s = start(dir.path(), &["run", "w.korin", "--param", &param]);
-    s.wait_for("[y/N · f full · l legend]");
+    s.wait_for("[y/N · v values · f full · l legend]");
     let entry = format!("<target> = {target}");
     let before = s.text();
     // Once when the param is set, and once under the preview that shows it.
@@ -1030,7 +1030,7 @@ fn the_legend_explains_each_prefix_and_l_hides_it() {
     assert!(before.contains("<pwd> = "), "{before}");
     std::thread::sleep(Duration::from_millis(400));
     s.send("l");
-    s.wait_for_nth("[y/N · f full · l legend]", 2);
+    s.wait_for_nth("[y/N · v values · f full · l legend]", 2);
     let after = s.text();
     let redrawn = &after[after.find("legend] l").unwrap()..];
     assert!(redrawn.contains("lister <target>/a.txt"), "{redrawn}");
@@ -1055,7 +1055,7 @@ fn the_config_file_can_start_with_the_legend_hidden() {
         &["run", "w.korin", "--param", &param],
         &[("KORIN_CONFIG", config)],
     );
-    s.wait_for("[y/N · f full · l legend]");
+    s.wait_for("[y/N · v values · f full · l legend]");
     assert!(!s.text().contains(" = "), "{}", s.text());
     s.answer("y");
     assert_eq!(s.wait(), 0, "{}", s.text());
@@ -1066,7 +1066,7 @@ fn the_footer_lists_each_name_while_a_stage_runs() {
     let (dir, target) = target_setup("  read lister {target}/a.txt\n  read sleep 0.3\n");
     let param = format!("target={target}");
     let mut s = start(dir.path(), &["run", "w.korin", "--param", &param]);
-    s.wait_for("[y/N · f full · l legend]");
+    s.wait_for("[y/N · v values · f full · l legend]");
     s.answer("y");
     assert_eq!(s.wait(), 0, "{}", s.text());
     let text = s.text();
@@ -1076,4 +1076,193 @@ fn the_footer_lists_each_name_while_a_stage_runs() {
         running.contains(&format!("<target> = {target}")),
         "{running}"
     );
+}
+
+// ---- the values view ----
+
+#[test]
+fn v_at_a_gate_changes_a_value_and_redraws_the_preview() {
+    let dir = setup(
+        "param name = \"world\"\nstage \"a\"\n  read greet {name}\n",
+        &[("greet", "echo \"hello $1\"")],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("[y/N · v values · f full · l legend]");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("v");
+    s.wait_for("number to change");
+    assert!(s.text().contains("1  name  world  param"), "{}", s.text());
+    s.send("1\r");
+    s.wait_for("r replace · Enter keep");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("r");
+    s.wait_for_nth("? name:", 2);
+    s.send("mars\r");
+    s.wait_for_nth("number to change", 2);
+    s.send("\r");
+    s.wait_for_nth("[y/N · v values · f full · l legend]", 2);
+    let text = s.text();
+    let redrawn = &text[text.rfind("number to change").unwrap()..];
+    assert!(redrawn.contains("greet mars"), "{redrawn}");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(s.text().contains("hello mars"), "{}", s.text());
+    let events = events(dir.path());
+    assert!(
+        events.contains(r#""by":"operator","kind":"value_set","name":"name""#)
+            && events.contains(r#""value":"mars""#),
+        "{events}"
+    );
+}
+
+#[test]
+fn a_withheld_value_shows_only_its_placeholder_until_replaced() {
+    const SECRET: &str = "hunter2-very-secret";
+    let dir = setup(
+        concat!(
+            "stage \"a\"\n",
+            "  read issue\n",
+            "    expect o = exit 2\n",
+            "    capture secret tok = jq .token\n",
+            "    capture report = file {korin.out}/r.json jq json . on o\n",
+            "stage \"b\"\n",
+            "  note \"between\"\n",
+            "stage \"c\"\n",
+            "  when o\n",
+            "    read show {report}\n",
+        ),
+        &[
+            (
+                "issue",
+                &format!(
+                    "echo '{{\"token\":\"{SECRET}\"}}' > \"$KORIN_OUT/r.json\"; echo 'raw {SECRET}'; exit 2"
+                ),
+            ),
+            ("show", "echo \"got $1\""),
+        ],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("Run stage 2?");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("v");
+    s.wait_for("number to change");
+    let text = s.text();
+    let row = text
+        .lines()
+        .find(|l| {
+            let words: Vec<&str> = l.split_whitespace().collect();
+            words.len() > 1 && words[0].parse::<usize>().is_ok() && words[1] == "report"
+        })
+        .unwrap_or_else(|| panic!("no report row:\n{text}"));
+    assert!(row.contains("«withheld:report»"), "{row}");
+    let number = row.split_whitespace().next().unwrap().to_string();
+    s.send(&format!("{number}\r"));
+    s.wait_for("report: r replace");
+    // The edit prompt never offers the old value.
+    assert!(!s.text().contains(SECRET), "{}", s.text());
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("r");
+    s.wait_for("report (JSON):");
+    s.send("not json\r");
+    s.wait_for("not a value for `report`");
+    s.send("\"fixed\"\r");
+    s.wait_for_nth("number to change", 2);
+    s.send("\r");
+    s.wait_for_nth("Run stage 2?", 2);
+    s.answer("y");
+    s.wait_for("Run stage 3?");
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(s.text().contains("got \"fixed\""), "{}", s.text());
+    assert!(!s.text().contains(SECRET), "{}", s.text());
+}
+
+/// The number of a name's row in the values view, from the last listing shown.
+fn row_number(text: &str, name: &str) -> String {
+    let listing = &text[text.rfind("  values").unwrap()..];
+    listing
+        .lines()
+        .find_map(|l| {
+            let words: Vec<&str> = l.split_whitespace().collect();
+            (words.len() > 1 && words[0].parse::<usize>().is_ok() && words[1] == name)
+                .then(|| words[0].to_string())
+        })
+        .unwrap_or_else(|| panic!("no row for {name}:\n{listing}"))
+}
+
+#[test]
+fn values_made_in_the_stage_can_be_edited_by_type_at_a_confirm() {
+    let dir = setup(
+        concat!(
+            "stage \"a\"\n",
+            "  read printf \"one\\ntwo\\n\"\n",
+            "    capture items = lines\n",
+            "  read echo tag=x\n",
+            "    capture tag? = regex /tag=(\\w+)/\n",
+            "  read echo hi\n",
+            "    capture word = text\n",
+            "  confirm \"Continue?\"\n",
+            "  read showargs {items...}\n",
+            "  each it in items\n",
+            "    read showone {it}\n",
+            "  when exists tag\n",
+            "    note \"tag is {tag}\"\n",
+            "  read showargs \"[{word}]\"\n",
+        ),
+        &[
+            ("showargs", "echo \"$# args: $*\""),
+            ("showone", "echo \"one:$1\""),
+        ],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("Continue?");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("v");
+    s.wait_for("number to change");
+    let text = s.text();
+    assert!(text.contains(r#"["one","two"]"#), "{text}");
+    // A list: one item per line, then an empty line.
+    s.send(&format!("{}\r", row_number(&text, "items")));
+    s.wait_for("items: r replace");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("r");
+    s.wait_for("one item per line");
+    s.send("a b\r");
+    s.wait_for_nth("…", 1);
+    s.send("c\r");
+    s.wait_for_nth("…", 2);
+    s.send("\r");
+    // The empty string.
+    s.wait_for_nth("number to change", 2);
+    s.send(&format!("{}\r", row_number(&s.text(), "word")));
+    s.wait_for("word: r replace");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("r");
+    s.wait_for_nth("? word:", 2);
+    s.send("\r");
+    // Clearing an optional capture.
+    s.wait_for_nth("number to change", 3);
+    s.send(&format!("{}\r", row_number(&s.text(), "tag")));
+    s.wait_for("tag: r replace · c clear");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("c");
+    s.wait_for_nth("number to change", 4);
+    let text = s.text();
+    let listing = &text[text.rfind("  values").unwrap()..];
+    assert!(listing.contains(r#"["a b","c"]"#), "{listing}");
+    assert!(listing.contains("absent"), "{listing}");
+    s.send("\r");
+    s.wait_for_nth("Continue?", 2);
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let text = s.text();
+    assert!(text.contains("2 args: a b c"), "{text}");
+    assert!(text.contains("one:a b") && text.contains("one:c"), "{text}");
+    assert!(text.contains("1 args: []"), "{text}");
+    assert!(!events(dir.path()).contains("tag is x"), "{text}");
 }

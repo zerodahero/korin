@@ -473,7 +473,11 @@ fn at_prompt(bytes: &[u8]) -> bool {
     );
     parser.process(bytes);
     let screen = parser.screen();
-    let (row, _) = screen.cursor_position();
+    let (mut row, _) = screen.cursor_position();
+    // A long prompt wraps: its start is on the first row of the wrapped line.
+    while row > 0 && screen.row_wrapped(row - 1) {
+        row -= 1;
+    }
     let line: String = (0..COLS)
         .filter_map(|col| screen.cell(row, col))
         .map(|cell| {

@@ -1,0 +1,7 @@
+korin 1
+title "Restart a deployment"
+
+param namespace = "staging"
+
+stage "Restart"
+  mutate kubectl rollout restart deployment/api -n {namespace}

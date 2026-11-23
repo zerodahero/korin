@@ -293,3 +293,17 @@ file, and never anything that changes what a wizard does. Code: `Config`.
 
 - UI label: config file
 - Avoid: settings, preferences (as code names)
+
+### Values view
+
+The list `v` opens at a gate, a `confirm` or a pause: every value known so far, each of which
+the operator can change. Code: `Runner::values_view`.
+
+- UI label: values
+- Avoid: params view (it lists more than params)
+
+### Set by hand
+
+A value the operator gave in the values view. Event: `value_set`.
+
+- UI label: set by hand
