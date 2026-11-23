@@ -409,7 +409,8 @@ fn transcript(sidecar_path: &Path) -> Result<Transcript, String> {
                     format!(r#""exe":"/usr/bin/{}""#, &c[1])
                 }
             });
-            journal.push((ext, text.into_owned()));
+            let text = normalize_byte_counts(&text, &run.join("out"), &home);
+            journal.push((ext, text));
         }
     }
     Ok(Transcript {
@@ -542,6 +543,37 @@ fn normalize(bytes: &[u8], home: &Path) -> Vec<u8> {
         out = pattern.replace_all(&out, &b"/home/ada"[..]).into_owned();
     }
     out
+}
+
+/// Recounts `stdout_bytes` and `stderr_bytes` of each `command_end` from the normalized
+/// output files in the journal's `out/`. Output that holds the temporary home has a different
+/// length on each machine, so the raw counts would differ too. A step with no output file,
+/// such as a secret-producing one, keeps its count.
+fn normalize_byte_counts(text: &str, out: &Path, home: &Path) -> String {
+    let end = regex::Regex::new(r#"^\{"invocation_id":"([^"]+)","kind":"command_end""#).unwrap();
+    let mut lines = Vec::new();
+    for line in text.lines() {
+        let Some(id) = end.captures(line).map(|c| c[1].to_string()) else {
+            lines.push(line.to_string());
+            continue;
+        };
+        let mut line = line.to_string();
+        for stream in ["stdout", "stderr"] {
+            if let Ok(bytes) = std::fs::read(out.join(format!("{id}.{stream}"))) {
+                let count = normalize(&bytes, home).len();
+                let field = regex::Regex::new(&format!(r#""{stream}_bytes":\d+"#)).unwrap();
+                line = field
+                    .replace(&line, format!(r#""{stream}_bytes":{count}"#))
+                    .into_owned();
+            }
+        }
+        lines.push(line);
+    }
+    let mut joined = lines.join("\n");
+    if text.ends_with('\n') {
+        joined.push('\n');
+    }
+    joined
 }
 
 /// Feeds the bytes to a terminal emulator, and writes its screen as HTML.

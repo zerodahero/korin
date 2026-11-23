@@ -1,7 +1,7 @@
 {"from":1,"kind":"run_start","title":"Archive the build","ts":"2026-01-15T10:00:00.000000Z","wizard":"compact.korin"}
 {"kind":"stage_start","mutating":false,"stage":1,"title":"Find the build","ts":"2026-01-15T10:00:00.000000Z"}
 {"argv":"realpath build","command_kind":"read","exe":"/usr/bin/realpath","invocation_id":"0001-s1.1","kind":"command_start","step":"1.1","ts":"2026-01-15T10:00:00.000000Z"}
-{"invocation_id":"0001-s1.1","kind":"command_end","published":true,"status":{"exit":0},"stderr_bytes":0,"stdout_bytes":82,"ts":"2026-01-15T10:00:00.000000Z"}
+{"invocation_id":"0001-s1.1","kind":"command_end","published":true,"status":{"exit":0},"stderr_bytes":0,"stdout_bytes":24,"ts":"2026-01-15T10:00:00.000000Z"}
 {"invocation_id":"0001-s1.1","kind":"capture","name":"build","ts":"2026-01-15T10:00:00.000000Z","value":"/home/ada/project/build"}
 {"argv":"ls /home/ada/project/build/out","command_kind":"read","exe":"/usr/bin/ls","invocation_id":"0002-s1.2","kind":"command_start","step":"1.2","ts":"2026-01-15T10:00:00.000000Z"}
 {"invocation_id":"0002-s1.2","kind":"command_end","published":true,"status":{"exit":0},"stderr_bytes":0,"stdout_bytes":15,"ts":"2026-01-15T10:00:00.000000Z"}
