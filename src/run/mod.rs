@@ -5,7 +5,9 @@
 
 pub mod capture;
 pub mod journal;
+mod pane;
 pub mod process;
+pub use pane::Mark;
 mod screen;
 
 use screen::Screen;
@@ -169,6 +171,15 @@ impl Ending {
             Ending::Cancelled => 130,
         }
     }
+}
+
+/// Where a stage stands, as the plan pane shows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StageState {
+    Running(Instant),
+    Done(Duration),
+    Skipped,
+    Failed,
 }
 
 #[derive(Debug)]
@@ -428,10 +439,12 @@ struct Runner<'p> {
     /// For each enclosing block, innermost last: the steps after the one running now. A
     /// `confirm` shows all of them, so the human sees everything left in the stage.
     rests: Vec<&'p [Step]>,
-    /// The terminal view: with a live view, steps still to run stay below the output.
+    /// The terminal view: with a live view, the plan pane stays below the run log.
     screen: RefCell<Screen>,
-    /// The footer's text while a stage runs: the stage, then the step running now.
-    footer: Option<(String, String)>,
+    /// While a stage runs, the id of the step running now (empty before the first).
+    current_step: Option<String>,
+    /// How each stage that started or was skipped ended, by stage number, for the pane.
+    stage_states: HashMap<usize, StageState>,
     /// How much of each path and value the terminal shows. The toggle key switches it.
     view: Cell<View>,
     /// Values that name a directory, as path prefixes for the compact view: each name's
@@ -441,8 +454,6 @@ struct Runner<'p> {
     legend: Cell<bool>,
     /// While a preview draws, the prefix labels it shows, for the legend under it.
     legend_used: RefCell<Option<Vec<String>>>,
-    /// Labels whose path was just set or changed, shown once after the step that set them.
-    legend_pending: Vec<String>,
     /// The secret variables a `$` line has already explained, each named once per run.
     announced_vars: HashSet<String>,
     /// The stage running now, or about to run; 0 before stage 1.
@@ -600,13 +611,13 @@ impl<'p> Runner<'p> {
             scratch_root,
             from,
             rests: Vec::new(),
-            screen: RefCell::new(Screen::new(live, theme)),
-            footer: None,
+            screen: RefCell::new(Screen::new(live)),
+            current_step: None,
+            stage_states: HashMap::new(),
             view: Cell::new(if tty { view } else { View::Full }),
             named: Vec::new(),
             legend: Cell::new(legend),
             legend_used: RefCell::new(None),
-            legend_pending: Vec::new(),
             announced_vars: HashSet::new(),
             stage_now: 0,
             in_stage: false,
@@ -632,7 +643,6 @@ impl<'p> Runner<'p> {
         self.intro();
         let p = self.p;
         let result = self.params().and_then(|()| {
-            self.flush_legend();
             // The preflight runs first, even with `--from`.
             if let Some(preflight) = &p.preflight {
                 self.run_or_skip(preflight)?;
@@ -814,12 +824,6 @@ impl<'p> Runner<'p> {
         self.screen.borrow_mut().print(&format!("{line}\n"));
     }
 
-    /// Prints the legend for names whose path a step just set, once.
-    fn flush_legend(&mut self) {
-        let pending = std::mem::take(&mut self.legend_pending);
-        self.say_legend(&pending);
-    }
-
     /// Prints steps, with their commands laid out to read well.
     fn say_steps(&self, steps: &[&Step]) {
         let mut one = Vec::new();
@@ -848,21 +852,12 @@ impl<'p> Runner<'p> {
                 self.values.remove(&sym);
             }
         }
-        let label = format!("<{}>", self.p.sym(sym).name);
         match (self.named.iter().position(|(s, _)| *s == sym), prefix) {
-            (Some(index), Some(path)) => {
-                if self.named[index].1 != path {
-                    self.legend_pending.push(label);
-                }
-                self.named[index].1 = path;
-            }
+            (Some(index), Some(path)) => self.named[index].1 = path,
             (Some(index), None) => {
                 self.named.remove(index);
             }
-            (None, Some(path)) => {
-                self.legend_pending.push(label);
-                self.named.push((sym, path));
-            }
+            (None, Some(path)) => self.named.push((sym, path)),
             (None, None) => {}
         }
     }
@@ -958,55 +953,106 @@ impl<'p> Runner<'p> {
             .collect()
     }
 
-    /// With a live view, shows the steps still to run as ghost lines under the output.
-    fn update_ghost(&self) {
+    /// With a live view, draws the plan pane under the run log: the stages that ended, the
+    /// current stage with the step running now, and the stages to come.
+    fn update_pane(&self) {
         if !self.screen.borrow().live() {
             return;
         }
+        let plan = self.pane_plan();
         let theme = self.opts.theme;
-        let mut lines = Vec::new();
-        // A guide shows no preview, so it shows no steps to come either; the footer stays.
-        if self.p.mode != Mode::Guide {
-            for step in self.remaining() {
-                render::step_lines(self.p, step, 1, self, None, &mut lines);
+        let lines = pane::fit(&plan, screen::height(), &|text| theme.faint(text));
+        self.screen.borrow_mut().set_pane(lines);
+    }
+
+    /// The plan pane's content, themed, before it is fitted to the terminal.
+    fn pane_plan(&self) -> pane::Plan {
+        let theme = self.opts.theme;
+        let width = self.width().saturating_sub(1).max(20);
+        let total = self.p.stages.len();
+        let mut plan = pane::Plan::default();
+        let stages = self.p.preflight.iter().chain(self.p.stages.iter());
+        for stage in stages {
+            let label = if stage.is_preflight() {
+                format!("preflight · {}", render::escape_controls(&stage.title))
+            } else {
+                format!(
+                    "{}/{total} {}",
+                    stage.number,
+                    render::escape_controls(&stage.title)
+                )
+            };
+            let label = self.redactor.redact(&label);
+            match self.stage_states.get(&stage.number) {
+                Some(StageState::Running(_)) if stage.number == self.stage_now => {
+                    plan.current = Some(theme.pane_stage(pane::Mark::Current, &label, ""));
+                }
+                Some(StageState::Done(took)) => {
+                    plan.done
+                        .push(theme.pane_stage(pane::Mark::Done, &label, &elapsed(*took)));
+                }
+                Some(StageState::Skipped) => {
+                    plan.done
+                        .push(theme.pane_stage(pane::Mark::Skipped, &label, "skipped"));
+                }
+                Some(StageState::Failed | StageState::Running(_)) => {
+                    plan.done
+                        .push(theme.pane_stage(pane::Mark::Failed, &label, ""));
+                }
+                None => plan
+                    .later
+                    .push(theme.pane_stage(pane::Mark::Pending, &label, "")),
             }
         }
-        let compact = self.view.get() == View::Compact;
-        let width = self.width();
-        let lines = lines
-            .iter()
-            .map(|line| {
-                let line = self.redact_marked(line);
-                if compact {
-                    theme.ghost(&crate::view::cut_lines(&line, width))
-                } else {
-                    theme.ghost(&line)
+        if plan.current.is_some() {
+            let stage = self.p.stage(self.stage_now);
+            let current = self.current_step.as_deref().unwrap_or_default();
+            let mut lines = Vec::new();
+            // A guide shows no preview, so its pane shows no steps to come either.
+            if self.p.mode == Mode::Guide {
+                if let Some(step) = find_step(&stage.steps, current) {
+                    render::step_lines(self.p, step, 2, self, None, &mut lines);
+                    lines.truncate(1);
                 }
-            })
-            .collect();
-        let footer = self.footer.as_ref().map(|(stage, step)| {
-            let mut footer =
-                theme.footer(&self.redactor.redact(stage), &self.redactor.redact(step));
-            // Under the footer, every name known so far and the path it stands for.
-            if self.legend_on() {
-                let entries: Vec<(String, String)> = self
-                    .named
-                    .iter()
-                    .filter_map(|(sym, _)| {
-                        let label = format!("<{}>", self.p.sym(*sym).name);
-                        Some((label.clone(), self.legend_path(&label)?))
-                    })
-                    .collect();
-                if !entries.is_empty() {
-                    footer.push('\n');
-                    footer.push_str(&theme.legend(&entries, Some(width)));
+            } else {
+                for step in &stage.steps {
+                    render::step_lines(self.p, step, 2, self, None, &mut lines);
                 }
             }
-            footer
-        });
-        let mut screen = self.screen.borrow_mut();
-        screen.set_ghost(lines);
-        screen.set_footer(footer);
+            let at = lines.iter().position(|l| line_id(l) == Some(current));
+            let compact = self.view.get() == View::Compact;
+            for (index, line) in lines.iter().enumerate() {
+                let line = self.redact_marked(line);
+                let line = if compact {
+                    crate::view::cut_lines(&line, width)
+                } else {
+                    line
+                };
+                let line = pane::clip(&line, width);
+                let mark = match at {
+                    Some(at) if index == at => pane::Mark::Current,
+                    Some(at) if index < at && line_id(&line).is_some() => pane::Mark::Done,
+                    _ if line_id(&line).is_some() => pane::Mark::Pending,
+                    _ => pane::Mark::None,
+                };
+                plan.steps.push(theme.pane_step(mark, &line));
+            }
+            plan.at = at;
+        }
+        if self.legend_on() {
+            let entries: Vec<(String, String)> = self
+                .named
+                .iter()
+                .filter_map(|(sym, _)| {
+                    let label = format!("<{}>", self.p.sym(*sym).name);
+                    Some((label.clone(), self.legend_path(&label)?))
+                })
+                .collect();
+            if !entries.is_empty() {
+                plan.legend = Some(theme.legend(&entries, Some(width)));
+            }
+        }
+        plan
     }
 
     /// The intro, shaped like a shell prompt: the wizard, where it runs, then the command.
@@ -1291,8 +1337,19 @@ impl<'p> Runner<'p> {
     /// Runs a stage, or, if it is skipped, says so. A skipped `skip ends` stage ends the run.
     fn run_or_skip(&mut self, stage: &'p ir::Stage) -> Result<(), Stop> {
         let Some(why) = self.skipped.get(&stage.number).cloned() else {
-            return self.stage(stage);
+            let result = self.stage(stage);
+            // A stage still running here ended early: it failed, or the operator skipped it.
+            if let Some(StageState::Running(_)) = self.stage_states.get(&stage.number) {
+                let state = if result.is_err() {
+                    StageState::Failed
+                } else {
+                    StageState::Skipped
+                };
+                self.stage_states.insert(stage.number, state);
+            }
+            return result;
         };
+        self.stage_states.insert(stage.number, StageState::Skipped);
         let id = stage_id(stage);
         let needs: Vec<String> = match &why {
             Why::Reads(syms) => syms.iter().map(|s| self.p.sym(*s).name.clone()).collect(),
@@ -2036,21 +2093,22 @@ impl<'p> Runner<'p> {
             format!("s{}", stage.number)
         };
         let before = self.seq;
-        self.footer = Some((
-            if stage.is_preflight() {
-                format!("Preflight · {}", render::escape_controls(&stage.title))
-            } else {
-                format!(
-                    "Stage {}/{total} · {}",
-                    stage.number,
-                    render::escape_controls(&stage.title)
-                )
-            },
-            String::new(),
-        ));
+        let started = Instant::now();
+        self.stage_states
+            .insert(stage.number, StageState::Running(started));
+        self.current_step = Some(String::new());
         let result = self.steps(&stage.steps, &prefix, "", None);
-        self.footer = None;
+        self.current_step = None;
         self.screen.borrow_mut().clear_all();
+        // A stage whose rest was skipped still ended well.
+        let ended_well = match &result {
+            Ok(()) => true,
+            Err(stop) => stop.skip_rest,
+        };
+        if ended_well {
+            self.stage_states
+                .insert(stage.number, StageState::Done(started.elapsed()));
+        }
         if let Err(stop) = &result
             && stop.skip_rest
         {
@@ -2121,7 +2179,6 @@ impl<'p> Runner<'p> {
             self.rests.push(rest);
             let result = self.step(step, rest, &path, suffix, deadline);
             self.rests.pop();
-            self.flush_legend();
             result?;
         }
         Ok(())
@@ -2142,12 +2199,12 @@ impl<'p> Runner<'p> {
         if self.signals.take_terminate() {
             return Err(Stop::cancelled("korin received SIGTERM or SIGHUP"));
         }
-        if let Some((_, current)) = &mut self.footer {
+        if let Some(current) = &mut self.current_step {
             current.clone_from(&step.id);
         }
         // A `confirm` sets the scripts `o` can open; they belong to its prompt only.
         self.prompt_scripts.borrow_mut().clear();
-        self.update_ghost();
+        self.update_pane();
         match &step.kind {
             StepKind::Command(command) => self.command(command, step, path, suffix, deadline),
             StepKind::Confirm(text) => {
@@ -2156,7 +2213,7 @@ impl<'p> Runner<'p> {
                 // erases the list once confirmed, and the ghost takes over again.
                 let _ = rest;
                 let steps = self.remaining();
-                self.screen.borrow_mut().clear();
+                self.screen.borrow_mut().clear_all();
                 self.screen.borrow_mut().mark();
                 if !steps.is_empty() {
                     self.say("  next:");
@@ -2181,7 +2238,7 @@ impl<'p> Runner<'p> {
                     match self.ask(&Style::Question(&question), keys, &redraw)? {
                         Key::Yes => {
                             self.screen.borrow_mut().erase_to_mark();
-                            self.update_ghost();
+                            self.update_pane();
                             self.journal
                                 .event("confirm", json!({"step": step.id, "approved": true}));
                             return Ok(());
@@ -3423,6 +3480,46 @@ impl render::Values for Runner<'_> {
                 Data::Bool(b) => b.to_string(),
             }),
         ))
+    }
+}
+
+/// The step id a rendered step line starts with, such as `2.1` in `    2.1  read ❯ ls`.
+fn line_id(line: &str) -> Option<&str> {
+    let body = line.trim_start_matches(' ');
+    let id = body.split(' ').next()?;
+    let is_id = !id.is_empty()
+        && id.chars().all(|c| c.is_ascii_digit() || c == '.')
+        && body[id.len()..].starts_with("  ");
+    is_id.then_some(id)
+}
+
+/// The step with this id, inside blocks and templates too.
+fn find_step<'s>(steps: &'s [Step], id: &str) -> Option<&'s Step> {
+    for step in steps {
+        if step.id == id {
+            return Some(step);
+        }
+        let inner = match &step.kind {
+            StepKind::When { body, .. }
+            | StepKind::Each { body, .. }
+            | StepKind::Poll { body, .. }
+            | StepKind::Call { body, .. } => find_step(body, id),
+            _ => None,
+        };
+        if inner.is_some() {
+            return inner;
+        }
+    }
+    None
+}
+
+/// A duration as the pane shows it: `3s`, `3m40s`, `1h02m`.
+fn elapsed(took: Duration) -> String {
+    let secs = took.as_secs();
+    match secs {
+        0..60 => format!("{secs}s"),
+        60..3600 => format!("{}m{:02}s", secs / 60, secs % 60),
+        _ => format!("{}h{:02}m", secs / 3600, secs % 3600 / 60),
     }
 }
 

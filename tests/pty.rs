@@ -56,6 +56,13 @@ fn setup(wizard: &str, scripts: &[(&str, &str)]) -> tempfile::TempDir {
     dir
 }
 
+fn strip_ansi(text: &str) -> String {
+    regex::Regex::new("\x1b\\[[0-9;?]*[A-Za-z]")
+        .unwrap()
+        .replace_all(text, "")
+        .into_owned()
+}
+
 fn marker(dir: &Path, name: &str) -> PathBuf {
     dir.join(name)
 }
@@ -556,7 +563,7 @@ fn a_terminal_gets_carbonfox_colors_unless_no_color_is_set() {
 }
 
 #[test]
-fn live_view_erases_the_preview_and_ghosts_the_steps_to_come() {
+fn live_view_erases_the_preview_and_draws_the_plan_pane() {
     let dir = setup(
         "stage \"a\"\n  read slow\n  note \"still-to-come\"\n",
         &[("slow", "echo started; sleep 1; echo finished")],
@@ -571,34 +578,24 @@ fn live_view_erases_the_preview_and_ghosts_the_steps_to_come() {
     // The preview (a blank line, two step lines and the prompt) is erased back to the stage
     // header.
     assert!(running.contains("\x1b[4A\x1b[J"), "{running:?}");
-    // The footer under the ghost names the stage and the step running now.
-    let dim = "\x1b[38;2;123;124;126m";
-    assert!(
-        running.contains(&format!("{dim}Stage 1/1 · a\x1b[0m")),
-        "{running:?}"
-    );
-    assert!(
-        running.contains(&format!("{dim}step 1.1\x1b[0m")),
-        "{running:?}"
-    );
+    // The pane names the stage running now and marks the step running now.
+    let prompt = "\x1b[1;38;2;120;169;255m▶\x1b[0m";
+    assert!(running.contains(&format!(" {prompt} ")), "{running:?}");
+    let text = strip_ansi(&running);
+    assert!(text.contains(" ▶ 1/1 a"), "{text:?}");
+    assert!(text.contains("  ▶ 1.1  read ❯ slow"), "{text:?}");
     // The note still to come is drawn in carbonfox's comment color under the output.
-    let ghost = "\x1b[38;2;110;111;112m  1.2  note \"still-to-come\"\x1b[0m";
-    assert!(running.contains(ghost), "{running:?}");
+    let faint = "\x1b[38;2;110;111;112m1.2  note \"still-to-come\"\x1b[0m";
+    assert!(running.contains(faint), "{running:?}");
     assert_eq!(s.wait(), 0, "{}", s.text());
-    // By the end the note has run for real, and the ghost is gone.
+    // By the end the note has run for real, and the pane is gone.
     let raw = s.raw();
-    let last_ghost = raw.rfind(ghost).unwrap();
+    let last_pane = raw.rfind("1/1 a").unwrap();
     assert!(
-        raw[last_ghost..].contains("\x1b[J"),
-        "the ghost was never erased"
+        raw[last_pane..].contains("\x1b[J"),
+        "the pane was never erased"
     );
-    assert!(s.text().contains("still-to-come"));
-    // The footer is erased once the stage ends, and the stage-end line closes the stage.
-    let last_footer = raw.rfind(&format!("{dim}step 1.2\x1b[0m")).unwrap();
-    assert!(
-        raw[last_footer..].contains("\x1b[J"),
-        "the footer was never erased"
-    );
+    assert!(s.text().contains("# note: still-to-come"), "{}", s.text());
     assert!(
         s.text().contains("✓ stage 1 done · 1 command"),
         "{}",
@@ -1033,8 +1030,8 @@ fn the_legend_explains_each_prefix_and_l_hides_it() {
     s.wait_for("[y/N · s skip · v values · f full · l legend]");
     let entry = format!("<target> = {target}");
     let before = s.text();
-    // Once when the param is set, and once under the preview that shows it.
-    assert_eq!(before.matches(&entry).count(), 2, "{before}");
+    // Under the preview that shows it. The run log shows full paths, so it needs none.
+    assert_eq!(before.matches(&entry).count(), 1, "{before}");
     assert!(before.contains("<pwd> = "), "{before}");
     std::thread::sleep(Duration::from_millis(400));
     s.send("l");
@@ -1070,7 +1067,7 @@ fn the_config_file_can_start_with_the_legend_hidden() {
 }
 
 #[test]
-fn the_footer_lists_each_name_while_a_stage_runs() {
+fn the_pane_lists_each_name_while_a_stage_runs() {
     let (dir, target) = target_setup("  read lister {target}/a.txt\n  read sleep 0.3\n");
     let param = format!("target={target}");
     let mut s = start(dir.path(), &["run", "w.korin", "--param", &param]);
@@ -1079,7 +1076,11 @@ fn the_footer_lists_each_name_while_a_stage_runs() {
     assert_eq!(s.wait(), 0, "{}", s.text());
     let text = s.text();
     let running = &text[text.find("legend] y").unwrap()..];
-    assert!(running.contains("Stage 1/1"), "{running}");
+    assert!(running.contains("▶ 1/1 a"), "{running}");
+    assert!(
+        running.contains("✓ 1.1  read ❯ lister <target>/a.txt"),
+        "{running}"
+    );
     assert!(
         running.contains(&format!("<target> = {target}")),
         "{running}"

@@ -220,12 +220,23 @@ the report. Code: `Say`.
 
 - Avoid: Message
 
-### Footer
+### Plan pane
 
-The live line under the ghost that names the current stage and the step running now. It is
-drawn only in a live terminal view and erased when the stage ends. Code: `Screen::set_footer`.
+The lines under the run log while a stage runs: the stages that ended, the current stage with
+the step running now marked `▶`, and the stages to come. It takes about a third of the
+terminal, is drawn only in a live terminal view, and is erased when the stage ends. Code:
+`Screen::set_pane`, `pane::Plan`.
 
-- Avoid: status bar, status line
+- UI label: plan
+- Avoid: ghost, footer, status bar
+
+### Run log
+
+What a run leaves in the terminal's scrollback, written like a shell session: a `$` line for
+each command, its output, `↳` notes under it, and `#` lines for korin's own events.
+
+- UI label: run log
+- Avoid: transcript (the docs site's saved runs), output (a command's own stdout and stderr)
 
 ### Mode
 

@@ -1,18 +1,13 @@
 //! The live view of a run in a terminal.
 //!
-//! When the view is live, the steps still to run stay on screen as dim "ghost" lines below
-//! the output. Each print erases the ghost, writes its lines, and draws the ghost again, so
-//! the ghost always sits under the newest output. A gate's preview is erased once it is
-//! approved, so the stage reads as a header followed by what actually ran.
+//! The run log scrolls into the terminal's own scrollback, like a shell session. Under it
+//! sits the plan pane: the current stage with the step running now, which korin erases and
+//! draws again around every print, so it always sits under the newest output.
 //!
 //! Erasing moves the cursor up by a count of terminal rows, so every count must be exact.
 //! The view therefore writes whole lines only, and works out how many rows each line wraps
 //! onto. It never erases more rows than the terminal shows: rows that scrolled off the top
 //! cannot be reached, and moving up past them would overwrite other lines.
-//!
-//! Under the ghost sits the footer: one line naming the current stage and step, so the
-//! operator always knows where the run is, however fast the output scrolls. It is drawn and
-//! erased with the ghost.
 //!
 //! When the view is not live (no terminal, or no color), every print goes straight to stdout.
 
@@ -22,33 +17,23 @@ use std::sync::OnceLock;
 use regex::Regex;
 use unicode_width::UnicodeWidthStr as _;
 
-use crate::theme::Theme;
-
-/// The share of the terminal's height the ghost may take; the rest is for output.
-const GHOST_SHARE: usize = 2;
-
 pub struct Screen {
     live: bool,
-    /// Ghost lines, already themed, without trailing newlines.
-    ghost: Vec<String>,
-    /// The footer line, already themed, without a trailing newline.
-    footer: Option<String>,
-    /// How many rows the ghost and the footer take on screen, or `None` while not drawn.
-    ghost_rows: Option<usize>,
+    /// The plan pane's lines, already themed and fitted, without trailing newlines.
+    pane: Vec<String>,
+    /// How many rows the pane takes on screen, or `None` while it is not drawn.
+    pane_rows: Option<usize>,
     /// Rows written since [`Screen::mark`], for erasing a gate's preview.
     since_mark: Option<usize>,
-    theme: Theme,
 }
 
 impl Screen {
-    pub fn new(live: bool, theme: Theme) -> Self {
+    pub fn new(live: bool) -> Self {
         Self {
             live,
-            ghost: Vec::new(),
-            footer: None,
-            ghost_rows: None,
+            pane: Vec::new(),
+            pane_rows: None,
             since_mark: None,
-            theme,
         }
     }
 
@@ -56,7 +41,7 @@ impl Screen {
         self.live
     }
 
-    /// Writes whole lines (each ending in a newline) above the ghost.
+    /// Writes whole lines (each ending in a newline) above the pane.
     pub fn print(&mut self, text: &str) {
         if text.is_empty() {
             return;
@@ -82,29 +67,19 @@ impl Screen {
         flush();
     }
 
-    /// Replaces the ghost lines.
-    pub fn set_ghost(&mut self, lines: Vec<String>) {
-        if !self.live || lines == self.ghost {
+    /// Replaces the plan pane's lines.
+    pub fn set_pane(&mut self, lines: Vec<String>) {
+        if !self.live || lines == self.pane {
             return;
         }
         self.hide();
-        self.ghost = lines;
+        self.pane = lines;
         self.show();
     }
 
-    /// Replaces the footer line.
-    pub fn set_footer(&mut self, footer: Option<String>) {
-        if !self.live || footer == self.footer {
-            return;
-        }
-        self.hide();
-        self.footer = footer;
-        self.show();
-    }
-
-    /// Erases the ghost and the footer from the screen. The next print draws them again.
+    /// Erases the pane from the screen. The next print draws it again.
     pub fn hide(&mut self) {
-        if let Some(rows) = self.ghost_rows.take()
+        if let Some(rows) = self.pane_rows.take()
             && rows > 0
         {
             print!("\x1b[{rows}A\x1b[J");
@@ -112,16 +87,10 @@ impl Screen {
         }
     }
 
-    /// Erases the ghost and forgets it, as before a `confirm` lists the steps left.
-    pub fn clear(&mut self) {
-        self.hide();
-        self.ghost.clear();
-    }
-
-    /// Erases the ghost and the footer and forgets both, as at the end of a stage or a run.
+    /// Erases the pane and forgets it, as at the end of a stage or a run.
     pub fn clear_all(&mut self) {
-        self.clear();
-        self.footer = None;
+        self.hide();
+        self.pane.clear();
     }
 
     /// Starts counting rows, so [`Screen::erase_to_mark`] can remove them later.
@@ -150,43 +119,27 @@ impl Screen {
     }
 
     fn show(&mut self) {
-        if self.ghost_rows.is_some() || (self.ghost.is_empty() && self.footer.is_none()) {
+        if self.pane_rows.is_some() || self.pane.is_empty() {
             return;
         }
         let cols = width();
-        let footer_rows = self
-            .footer
-            .as_ref()
-            .map_or(0, |footer| rows(&format!("{footer}\n"), cols));
-        let budget = (height() / GHOST_SHARE).max(3).saturating_sub(footer_rows);
+        // The runner fits the pane to a third of the terminal; this only guards the rule
+        // that the pane is never taller than the screen.
+        let budget = height().saturating_sub(2);
         let mut text = String::new();
         let mut used = 0;
-        for (index, line) in self.ghost.iter().enumerate() {
+        for line in &self.pane {
             let line_rows = rows(&format!("{line}\n"), cols);
-            // Keep a row for the `… N more` line when anything is left out.
-            let left = self.ghost.len() - index - 1;
-            let reserve = usize::from(left > 0);
-            if used + line_rows + reserve > budget {
-                let more = self
-                    .theme
-                    .ghost(&format!("  … {} more", self.ghost.len() - index));
-                used += rows(&format!("{more}\n"), cols);
-                text.push_str(&more);
-                text.push('\n');
+            if used + line_rows > budget {
                 break;
             }
             used += line_rows;
             text.push_str(line);
             text.push('\n');
         }
-        if let Some(footer) = &self.footer {
-            used += footer_rows;
-            text.push_str(footer);
-            text.push('\n');
-        }
         print!("{text}");
         flush();
-        self.ghost_rows = Some(used);
+        self.pane_rows = Some(used);
     }
 }
 
@@ -205,7 +158,8 @@ pub fn width() -> usize {
     terminal_size::terminal_size().map_or(80, |(w, _)| usize::from(w.0).max(1))
 }
 
-fn height() -> usize {
+/// The terminal's height in rows, or 24 when it cannot be measured.
+pub fn height() -> usize {
     terminal_size::terminal_size().map_or(24, |(_, h)| usize::from(h.0).max(1))
 }
 

@@ -15,6 +15,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 
 use crate::render::{PREFIX_CLOSE, PREFIX_OPEN, VALUE_CLOSE, VALUE_OPEN, strip_marks};
+use crate::run::Mark;
 use crate::view::{Quote, quote_scan, quote_step};
 
 /// A 24-bit color.
@@ -82,7 +83,8 @@ enum Role {
     Warn,
     Error,
     Label,
-    Ghost,
+    /// Text that should not draw the eye: korin's `#` lines and the plan pane's other steps.
+    Faint,
     /// The program a command runs.
     Exe,
     /// A shortened path prefix, such as `<pwd>`.
@@ -105,7 +107,7 @@ impl Role {
             Role::Warn => (MAGENTA, false),
             Role::Error => (RED, true),
             Role::Label | Role::Prefix => (TEAL, false),
-            Role::Ghost => (COMMENT, false),
+            Role::Faint => (COMMENT, false),
         }
     }
 }
@@ -251,21 +253,67 @@ impl Theme {
         out
     }
 
-    /// A step still to run, dimmed as one piece. The line must already be redacted.
-    pub fn ghost(self, line: &str) -> String {
+    /// A line that should not draw the eye, dimmed as one piece, such as a `… 3 more` line
+    /// in the plan pane. The line must already be redacted.
+    pub fn faint(self, line: &str) -> String {
         let mut out = String::new();
-        self.paint(Role::Ghost, &strip_marks(line), &mut out);
+        self.paint(Role::Faint, &strip_marks(line), &mut out);
         out
     }
 
-    /// The footer under the ghost: `─ Stage 3/4 · Title ─ step 3.2`, dim. The text must
-    /// already be redacted.
-    pub fn footer(self, stage: &str, step: &str) -> String {
-        let mut out = String::from("  ");
-        self.paint(Role::Frame, "─ ", &mut out);
-        self.paint(Role::Dim, &strip_marks(stage), &mut out);
-        self.paint(Role::Frame, " ─ ", &mut out);
-        self.paint(Role::Dim, &format!("step {}", strip_marks(step)), &mut out);
+    /// A stage's line in the plan pane: its mark, `2/4 Title`, then a dim tail such as the
+    /// time it took. The text must already be redacted.
+    pub fn pane_stage(self, mark: Mark, label: &str, tail: &str) -> String {
+        let mut out = String::from(" ");
+        let (sign, sign_role, text_role) = match mark {
+            Mark::Current => ("▶", Role::Prompt, Role::Title),
+            Mark::Done => ("✓", Role::Ok, Role::Dim),
+            Mark::Skipped => ("↷", Role::Warn, Role::Dim),
+            Mark::Failed => ("✗", Role::Error, Role::Dim),
+            Mark::Pending | Mark::None => (" ", Role::Faint, Role::Faint),
+        };
+        self.paint(sign_role, sign, &mut out);
+        out.push(' ');
+        self.paint(text_role, &strip_marks(label), &mut out);
+        if !tail.is_empty() {
+            out.push_str("  ");
+            self.paint(Role::Faint, tail, &mut out);
+        }
+        out
+    }
+
+    /// A step's line in the plan pane, from [`crate::render::step_lines`]. The step running
+    /// now keeps its full colors; the rest are dim. The mark takes the two columns before
+    /// the step id. The line must already be redacted.
+    pub fn pane_step(self, mark: Mark, line: &str) -> String {
+        let pad = line.len() - line.trim_start_matches(' ').len();
+        let (sign, role) = match mark {
+            Mark::Current => ("▶", Role::Prompt),
+            Mark::Done => ("✓", Role::Ok),
+            Mark::Skipped => ("↷", Role::Warn),
+            Mark::Failed => ("✗", Role::Error),
+            Mark::Pending | Mark::None => (" ", Role::Faint),
+        };
+        if pad < 2 {
+            return if mark == Mark::Current {
+                self.lines(line)
+            } else {
+                self.faint(line)
+            };
+        }
+        let rest = if mark == Mark::Current {
+            // The highlighter needs the indent to know the line; it writes it back as is.
+            let colored = self.lines(line);
+            colored
+                .strip_prefix(&line[..pad])
+                .map_or(colored.clone(), str::to_string)
+        } else {
+            self.faint(&line[pad..])
+        };
+        let mut out = " ".repeat(pad - 2);
+        self.paint(role, sign, &mut out);
+        out.push(' ');
+        out.push_str(&rest);
         out
     }
 
@@ -413,7 +461,7 @@ impl Theme {
             let role = if c[2].starts_with("warn:") {
                 Role::Warn
             } else {
-                Role::Ghost
+                Role::Faint
             };
             self.paint(role, &format!("# {}", strip_marks(&c[2])), out);
         } else if let Some(c) = p.stage.captures(line) {
@@ -922,15 +970,24 @@ mod tests {
     }
 
     #[test]
-    fn the_footer_reads_as_one_dim_line() {
-        let footer = TRUE.footer("Stage 3/4 · Is it released?", "3.2");
+    fn pane_lines_put_the_mark_before_the_id() {
+        let line = "    2.1  read ❯ echo hi";
         assert_eq!(
-            strip_ansi(&footer),
-            "  ─ Stage 3/4 · Is it released? ─ step 3.2"
+            strip_ansi(&TRUE.pane_step(Mark::Current, line)),
+            "  ▶ 2.1  read ❯ echo hi"
         );
         assert_eq!(
-            Theme::PLAIN.footer("Stage 1/1 · x", "1.1"),
-            "  ─ Stage 1/1 · x ─ step 1.1"
+            Theme::PLAIN.pane_step(Mark::Done, line),
+            "  ✓ 2.1  read ❯ echo hi"
+        );
+        assert_eq!(Theme::PLAIN.pane_step(Mark::Pending, line), line);
+        assert_eq!(
+            Theme::PLAIN.pane_stage(Mark::Done, "1/4 Check", "3s"),
+            " ✓ 1/4 Check  3s"
+        );
+        assert_eq!(
+            Theme::PLAIN.pane_stage(Mark::Current, "2/4 Snapshot", ""),
+            " ▶ 2/4 Snapshot"
         );
     }
 

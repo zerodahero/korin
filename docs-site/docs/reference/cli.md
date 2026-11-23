@@ -41,9 +41,8 @@ rest of the run.
 A legend says what each prefix stands for, as `<build> = ~/project/build`. It shows:
 
 - under the intro, for `<pwd>` and `<tmp>`;
-- after the step that sets a `<name>`, or changes its path;
 - under each preview, for every prefix the preview uses;
-- under the footer while a stage runs, for every `<name>` known so far.
+- in the plan pane while a stage runs, for every `<name>` known so far.
 
 `~` never gets a legend line. Press `l` at a gate, a `confirm` or a pause to hide the legend,
 and again to show it. The choice holds for the rest of the run. Set `legend #false` in your
