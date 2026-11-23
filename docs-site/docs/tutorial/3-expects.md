@@ -35,7 +35,8 @@ Approve each stage, and answer `v0.2.0`.
 
 --8<-- "docs-site/docs/generated/transcripts/tutorial/release-3.html"
 
-Each command that matched shows `expect:` and the name.
+Each command whose expect matched shows a note under it, such as
+`↳ exit 1 · expect untagged · continuing`.
 
 ## Captures and expects together
 

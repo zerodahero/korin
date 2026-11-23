@@ -55,6 +55,8 @@ Every event has `kind` and `ts`. The kinds:
 | `value_set` | A value was set or cleared by hand, in the [values view](gates.md#the-values-view). `by` says who: `operator`, `--set`, `--param` or `env`. |
 | `command_start`, `command_end` | A command starts, and ends with its exit code or signal. A `script` step's `command_start` has `script_sha256`, the hash of the script that ran. |
 | `expect` | An expect matched. |
+| `secret_var` | A `$` line named a secret value as a shell variable for the first time. It has the secret's `name`, the `var`, and which `value` it holds; never the value itself. |
+| `poll_try` | A `poll` try ended. `result` is `matched`, `waiting` or `stopped`; `invocations` lists its commands. |
 | `capture` | A capture got a value. |
 | `assert` | An `assert` was checked. |
 | `say` | A `note`, `warn` or `record` was shown. |

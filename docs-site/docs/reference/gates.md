@@ -35,11 +35,15 @@ One key answers a gate or a `confirm`; there is no need to press Enter.
 - `n`, Enter or Esc declines. The default is no.
 - `s` skips the stage and goes on. See [Skipping a stage](#skipping-a-stage).
 - `v` opens the [values view](#the-values-view), where you can see and change values.
-- `o` opens a script of the stage in your pager. See [`script`](steps.md#what-the-gate-shows).
+- `o` opens a script of the stage, or an output folded earlier in the run, in your pager.
+  With more than one, korin lists them: the scripts first, then the outputs, newest first.
+  See [`script`](steps.md#what-the-gate-shows).
 - `l` hides or shows the legend of path prefixes, in the compact view. See
   [The legend](cli.md#the-legend).
 - `f` switches between the compact and the full view, draws the preview again, and asks
   again. See [Compact view](cli.md#compact-view).
+- `↑` and `↓`, or `k` and `j`, scroll a preview taller than the terminal, half a page at a
+  time.
 - Any other key, such as an arrow key, is ignored.
 
 Keys typed before the question appears, or in the first quarter second after it, are

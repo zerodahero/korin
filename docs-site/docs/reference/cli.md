@@ -12,16 +12,40 @@ every run.
 
 ## Output
 
-In a terminal with color, `korin run` keeps the view tidy. Once you approve a stage, its
-preview folds away, and each command appears with its output under it. The steps still to
-run stay dimmed below the output of the one running now. With `--color never` or `NO_COLOR`,
-or when output is not a terminal, korin prints every line in order instead, and nothing is
-erased. The journal is always plain text.
+`korin run` writes a run log that reads like a shell session, in your terminal's own
+scrollback:
+
+- **Each command is a `$` line** that you can paste into a shell, with its output under it.
+  A secret shows as a shell variable, such as `"${TOKEN}"`; see
+  [Secrets in the run log](secrets.md#secrets-in-the-run-log). The step's scratch directory
+  shows as `${KORIN_OUT}`.
+- **`↳` notes** under a command give its exit status when it is not 0, the expect that
+  matched, and each capture, as `name = value`.
+- **korin's own lines start with `#`**: how each stage began (`# ── stage 2/4: Snapshot ──
+  approved`), each `note`, `warn` and `record`, values you gave (`# region = us-east-1
+  (asked)`), and how each stage ended.
+- **A long output folds.** A successful command with more than 12 lines shows its first 4,
+  then `↳ ok · +N lines · <journal file>`. A failed command shows every line. Press `o` at
+  any prompt to open a folded output in full.
+- **A poll leaves one line per try**, such as `↻ try 2 · 1s  ready = 2`, then the try that
+  matched in full. See [`poll`](steps.md#poll).
+- **The run ends with a summary**: each stage, how it ended and how long it took.
+
+In a terminal with color, the plan pane sits under the run log while a stage runs. It shows
+the stages that ended, the current stage with the step running now marked `▶`, and the
+stages to come. A running command shows its newest lines in a live window above the pane.
+Gates, `confirm`, pauses and dialogs show in the pane too, and are erased once you answer,
+so the run log keeps one line for each.
+
+With `--color never` or `NO_COLOR`, or when output is not a terminal, there is no pane and
+nothing is erased: korin prints every line in order, prints what a prompt asks about before
+it asks, and folds nothing. The journal is always plain text.
 
 ### Compact view
 
-In a terminal, korin shows paths and long values in a compact view, so the commands are easy
-to read:
+In a terminal, the plan pane and the gates show paths and long values in a compact view, so
+the commands are easy to read. The run log always shows them in full, so its `$` lines can be
+pasted.
 
 - **Paths shorten to a prefix.** The directory korin runs in shows as `<pwd>`, `$TMPDIR` as
   `<tmp>`, and your home directory as `~`. A param, `ask` or capture whose value is an
@@ -40,8 +64,7 @@ rest of the run.
 
 A legend says what each prefix stands for, as `<build> = ~/project/build`. It shows:
 
-- under the intro, for `<pwd>` and `<tmp>`;
-- under each preview, for every prefix the preview uses;
+- under each gate's preview, for every prefix the preview uses;
 - in the plan pane while a stage runs, for every `<name>` known so far.
 
 `~` never gets a legend line. Press `l` at a gate, a `confirm` or a pause to hide the legend,
@@ -56,7 +79,8 @@ At the gate of stage 2:
 
 --8<-- "docs-site/docs/generated/transcripts/reference/cli/compact.prompt-2.html"
 
-The view changes only what the terminal shows. The journal always holds the full command:
+The view changes only what the plan pane and the gates show. The run log and the journal
+always hold the full command:
 
 ```json
 --8<-- "docs-site/docs/generated/transcripts/reference/cli/compact.events.jsonl:11:11"

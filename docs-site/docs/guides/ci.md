@@ -22,8 +22,8 @@ korin run nightly.korin --yes
 
 --8<-- "docs-site/docs/generated/transcripts/guides/ci/nightly.html"
 
-Without a terminal there is no live view: each stage's preview stays in the log above its
-output, and the gate line shows `approved by --yes`.
+Without a terminal there is no live view: every line prints in order, nothing folds, and each
+stage starts with a line such as `# ── stage 1/2: Build ── approved by --yes`.
 
 ## What korin refuses
 

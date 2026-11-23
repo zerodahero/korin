@@ -33,14 +33,15 @@ The file is [KDL](https://kdl.dev) version 2. Each key is one line: the key, the
 | `require-enter` | `#true`, `#false` | `#false` | `--require-enter`, `KORIN_REQUIRE_ENTER` |
 | `color` | `auto`, `always`, `never` | `auto` | `--color` |
 
-- **`view`** is the view a run in a terminal starts in. See
-  [Compact view](cli.md#compact-view). `f` still switches during a run. A run without a
-  terminal always shows the full view.
-- **`legend`** shows the compact view's legend of path prefixes. See
+- **`view`** is the view the plan pane and the gates start in. See
+  [Compact view](cli.md#compact-view). `f` still switches during a run. The run log, and a
+  run without a terminal, always show the full view.
+- **`legend`** shows the compact view's legend of path prefixes, at gates and in the plan
+  pane. See
   [The legend](cli.md#the-legend). `l` still switches during a run.
 - **`script-lines`** shows a script in full at its gate when it has at most this many lines.
   `0` never shows one. See [`script`](steps.md#what-the-gate-shows).
-- **`pager`** is the program `o` opens a script with. korin splits it into words, with no
+- **`pager`** is the program `o` opens a script or a folded output with. korin splits it into words, with no
   shell.
 - **`require-enter`** makes gates and `confirm` read `y` and then Enter, instead of a
   single key.

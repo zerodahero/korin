@@ -3,6 +3,25 @@
 A secret is a value korin never shows or writes down. In its place, the terminal, the
 journal and the report show `«secret:name»`.
 
+## Secrets in the run log
+
+A command's `$` line names an exact secret value as a braced shell variable, so you can paste
+the line into a shell:
+
+```text
+$ GH_TOKEN="${TOKEN}" gh workflow run deploy.yml --ref main
+  ↳ uses ${TOKEN} (secret token)
+```
+
+The variable is the secret's name in capitals, with every other character as `_`. Each value
+gets its own variable: the items of a secret list are `TOKENS_1`, `TOKENS_2`, and a secret
+captured again with a new value gets the next free name, such as `TOKEN_2`. The first line
+that uses a variable says which secret it holds. korin never sets these variables for you:
+set them yourself before you paste a line.
+
+A line that holds only part of a secret, such as one field of a JSON secret, shows that part
+as `«secret:name»`, and says it cannot be pasted.
+
 ## Where secrets come from
 
 | Source | Example |

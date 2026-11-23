@@ -70,7 +70,7 @@ A gate shows a script of up to 20 lines in full, under its step:
 --8<-- "docs-site/docs/generated/transcripts/reference/steps/script.prompt-1.html"
 
 A longer script shows its length. Press `o` at the prompt to read it in your pager. With more
-than one script, korin asks which. `--script-lines <n>`, `KORIN_SCRIPT_LINES` or the
+than one script, or with outputs folded earlier in the run, korin asks which. `--script-lines <n>`, `KORIN_SCRIPT_LINES` or the
 [config file](config.md) set the limit; `0` never shows a script in full. Here the limit is 3:
 
 --8<-- "docs-site/docs/generated/transcripts/reference/steps/script-long.prompt-1.html"
@@ -203,6 +203,14 @@ may add `fail`:
 If the limit passes first, the wizard stops, and shows the last value of every capture in
 the body.
 
+In a terminal, each try that does not match leaves one line in the run log, such as
+`↻ try 2 · 2s  ready = 2`, with the time since the poll started and the captures it made.
+The try that matches prints in full, then `# until matched after 3 tries · 4s`. A try that
+stops, on an error, `fail`, the limit or Ctrl-C, prints in full, so you see why. While the
+poll runs, the plan pane shows whether a try is running or korin is waiting for the next one,
+and a bar of the time used against the limit. Without a live view, every try prints as it
+runs, under `# try N`.
+
 ```korin title="poll.korin"
 --8<-- "docs-site/examples/reference/steps/poll.korin"
 ```
@@ -217,7 +225,8 @@ running when the limit passes is cancelled.
 
 ## `note`, `warn` and `record`
 
-All three print a line. `warn` marks it as a warning. `record` also writes it to the run's
+All three print a line in the run log: `# note: …`, `# warn: …` or `# record: …`. `warn`
+marks it as a warning. `record` also writes it to the run's
 `report.md`, so use it for facts you want to keep: what was changed, and to what.
 
 ```korin title="messages.korin"
