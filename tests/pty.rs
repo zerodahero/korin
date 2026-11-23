@@ -1878,7 +1878,7 @@ fn a_short_script_shows_in_full_and_a_long_one_opens_in_the_pager() {
         &["run", "w.korin", "--script-lines", "3"],
         &script_env(dir.path(), "fake-pager"),
     );
-    s.wait_for("o open script]");
+    s.wait_for("o open]");
     let text = s.text();
     assert!(text.contains("│ echo short"), "{text}");
     assert!(text.contains("│ # token «secret:token»"), "{text}");
@@ -1886,9 +1886,9 @@ fn a_short_script_shows_in_full_and_a_long_one_opens_in_the_pager() {
     assert!(!text.contains(TOKEN), "{text}");
     // Two scripts: `o` lists them, and the pager gets a redacted copy of the one picked.
     key(&mut s, "o");
-    s.wait_for("script to open");
+    s.wait_for("number to open");
     s.send("1\r");
-    s.wait_for_nth("o open script]", 2);
+    s.wait_for_nth("o open]", 2);
     key(&mut s, "y");
     assert_eq!(s.wait(), 0, "{}", s.text());
     let paged = std::fs::read_to_string(dir.path().join("paged.txt")).unwrap();
@@ -1902,6 +1902,76 @@ fn a_short_script_shows_in_full_and_a_long_one_opens_in_the_pager() {
 }
 
 #[test]
+fn o_at_a_later_gate_opens_a_folded_output_in_full() {
+    let dir = setup(
+        "stage \"a\"\n  read many\nstage \"b\"\n  read true\n",
+        &[
+            ("many", "seq 1 40"),
+            ("fake-pager", "cp \"$1\" \"$PWD/paged.txt\""),
+        ],
+    );
+    let env = vec![("PAGER", dir.path().join("bin").join("fake-pager"))];
+    let mut s = start_with_env(dir.path(), &["run", "w.korin"], &env);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("Run stage 2? [y/N · s skip · v values · f full · l legend · o open]");
+    // One folded output: `o` opens it at once, in full.
+    key(&mut s, "o");
+    s.wait_for_nth("o open]", 2);
+    key(&mut s, "y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let paged = std::fs::read_to_string(dir.path().join("paged.txt")).unwrap();
+    let expected = (1..=40).fold(String::new(), |mut text, n| {
+        let _ = writeln!(text, "{n}");
+        text
+    });
+    assert_eq!(paged, expected);
+    // The spools went with the run's scratch root, under the run's TMPDIR.
+    let tmp = dir.path().join("tmp");
+    let leftover: Vec<_> = std::fs::read_dir(&tmp)
+        .map(|d| d.flatten().map(|e| e.path()).collect())
+        .unwrap_or_default();
+    assert!(
+        leftover.is_empty(),
+        "left in {}: {leftover:?}",
+        tmp.display()
+    );
+}
+
+#[test]
+fn the_o_picker_lists_scripts_then_outputs_newest_first() {
+    let dir = setup(
+        "stage \"a\"\n  read many 1\n  read many 2\nstage \"b\"\n  read true\n",
+        &[
+            ("many", "seq \"$1\" 40"),
+            ("fake-pager", "cp \"$1\" \"$PWD/paged.txt\""),
+        ],
+    );
+    let env = vec![("PAGER", dir.path().join("bin").join("fake-pager"))];
+    let mut s = start_with_env(dir.path(), &["run", "w.korin"], &env);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("Run stage 2?");
+    key(&mut s, "o");
+    s.wait_for("number to open");
+    let text = s.text();
+    let listing = &text[text.rfind("open:").unwrap()..];
+    let first = listing
+        .find("1  output  1.2  $ many 2")
+        .unwrap_or_else(|| panic!("{listing}"));
+    let second = listing
+        .find("2  output  1.1  $ many 1")
+        .unwrap_or_else(|| panic!("{listing}"));
+    assert!(first < second, "{listing}");
+    s.send("2\r");
+    s.wait_for_nth("o open]", 2);
+    key(&mut s, "y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let paged = std::fs::read_to_string(dir.path().join("paged.txt")).unwrap();
+    assert!(paged.starts_with("1\n2\n"), "{paged}");
+}
+
+#[test]
 fn without_a_pager_the_script_prints_redacted() {
     let dir = script_setup("stage \"a\"\n  script read ./short.sh\n");
     let mut s = start_with_env(
@@ -1909,10 +1979,10 @@ fn without_a_pager_the_script_prints_redacted() {
         &["run", "w.korin", "--script-lines", "0"],
         &script_env(dir.path(), "no-such-pager"),
     );
-    s.wait_for("o open script]");
+    s.wait_for("o open]");
     assert!(s.text().contains("│ 3 lines · o to open"), "{}", s.text());
     key(&mut s, "o");
-    s.wait_for_nth("o open script]", 2);
+    s.wait_for_nth("o open]", 2);
     let text = s.text();
     assert!(text.contains("│ # token «secret:token»"), "{text}");
     assert!(!text.contains(TOKEN), "{text}");

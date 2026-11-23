@@ -170,7 +170,6 @@ pub fn read_spool(path: &Path, mut each: impl FnMut(Stream, &str)) -> std::io::R
 }
 
 /// A spool's text with its stream tags removed, for a pager.
-#[allow(dead_code)] // the `o` picker opens spools; see the next commit
 ///
 /// # Errors
 ///

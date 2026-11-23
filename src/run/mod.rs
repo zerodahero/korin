@@ -201,6 +201,18 @@ struct CommandBlock {
     notes: Vec<String>,
     /// Whether the command succeeded.
     ok: bool,
+    /// The step's id and its `$` line as plain text, for the `o` picker.
+    step: String,
+    label: String,
+}
+
+/// A folded output that `o` can open in full.
+#[derive(Debug, Clone)]
+struct Folded {
+    step: String,
+    label: String,
+    hidden: usize,
+    spool: PathBuf,
 }
 
 /// Where a stage stands, as the plan pane shows it.
@@ -358,7 +370,7 @@ impl Keys {
             parts.push("l legend".to_string());
         }
         if self.open {
-            parts.push("o open script".to_string());
+            parts.push("o open".to_string());
         }
         if self.scroll {
             parts.push("↑↓ scroll".to_string());
@@ -507,6 +519,8 @@ struct Runner<'p> {
     building: Option<CommandBlock>,
     /// Blocks a poll holds back until it knows a try's fate.
     scopes: log::Scopes<Block>,
+    /// The outputs folded so far, oldest first, for the `o` picker.
+    folded: RefCell<Vec<Folded>>,
     /// How far a prompt's content is scrolled, in lines, when it is taller than the terminal.
     pane_scroll: Cell<usize>,
     /// While a prompt's content is taller than the terminal, how many of its lines are below
@@ -678,6 +692,7 @@ impl<'p> Runner<'p> {
             records: Vec::new(),
             building: None,
             scopes: log::Scopes::default(),
+            folded: RefCell::new(Vec::new()),
             pane_scroll: Cell::new(0),
             pane_below: Cell::new(None),
             stage_now: 0,
@@ -1355,13 +1370,13 @@ impl<'p> Runner<'p> {
         redraw: &dyn Fn(&Self),
     ) -> Result<Key, Stop> {
         let keys = Keys {
-            open: !self.prompt_scripts.borrow().is_empty(),
+            open: !self.prompt_scripts.borrow().is_empty() || !self.folded.borrow().is_empty(),
             ..keys
         };
         loop {
             match self.prompt(style, keys, redraw)? {
                 Key::Open => {
-                    self.in_dialog(Self::open_script)?;
+                    self.in_dialog(Self::open_item)?;
                     {
                         let mut screen = self.screen.borrow_mut();
                         screen.erase_to_mark();
@@ -1448,43 +1463,75 @@ impl<'p> Runner<'p> {
 
     /// Opens one of the prompt's scripts in the pager: a redacted copy of its pinned bytes,
     /// never the file itself. With no pager, prints it instead.
-    fn open_script(&mut self) -> Result<(), Stop> {
+    /// The `o` picker: the scripts of the steps to come, then the outputs folded so far,
+    /// newest first. With only one, it opens at once.
+    fn open_item(&mut self) -> Result<(), Stop> {
         let scripts = self.prompt_scripts.borrow().clone();
-        let file = if scripts.len() == 1 {
-            scripts[0].clone()
+        let outputs: Vec<Folded> = self.folded.borrow().iter().rev().cloned().collect();
+        let total = scripts.len() + outputs.len();
+        let choice = if total == 1 {
+            0
         } else {
-            self.say("");
+            self.say("  open:");
+            let width = self.width().saturating_sub(24).max(20);
             for (index, file) in scripts.iter().enumerate() {
+                let name = self.shorten_text(&render::escape_controls(&file.display().to_string()));
+                self.say(&format!("  {:>4}  script  {name}", index + 1));
+            }
+            for (index, output) in outputs.iter().enumerate() {
+                let label = pane::clip(&render::escape_controls(&output.label), width);
                 self.say(&format!(
-                    "  {:>4}  {}",
-                    index + 1,
-                    self.shorten_text(&render::escape_controls(&file.display().to_string()))
+                    "  {:>4}  output  {}  {label}  +{} lines",
+                    scripts.len() + index + 1,
+                    output.step,
+                    output.hidden
                 ));
             }
             let answer =
-                self.read_line(&self.opts.theme.ask("script to open, Enter to go back:"))?;
-            match answer
-                .trim()
-                .parse::<usize>()
-                .ok()
-                .and_then(|n| scripts.get(n.wrapping_sub(1)))
-            {
-                Some(file) => file.clone(),
-                None => return Ok(()),
+                self.read_line(&self.opts.theme.ask("number to open, Enter to go back:"))?;
+            match answer.trim().parse::<usize>() {
+                Ok(n) if (1..=total).contains(&n) => n - 1,
+                _ => return Ok(()),
             }
         };
-        let Some(pin) = self.pins.get(&file) else {
-            self.say("  the script could not be read");
+        if choice < scripts.len() {
+            self.open_script(&scripts[choice]);
             return Ok(());
+        }
+        let output = &outputs[choice - scripts.len()];
+        match log::spool_text(&output.spool) {
+            Ok(text) => {
+                self.page(&format!("output-{}.txt", output.step), &text);
+                Ok(())
+            }
+            Err(e) => {
+                self.say(&format!("  the output could not be read: {e}"));
+                Ok(())
+            }
+        }
+    }
+
+    /// Opens a script, as the gate showed it, in the pager.
+    fn open_script(&mut self, file: &Path) {
+        let Some(pin) = self.pins.get(file) else {
+            self.say("  the script could not be read");
+            return;
         };
         let Ok(text) = std::str::from_utf8(&pin.bytes) else {
             self.say("  the script is not text, so it cannot be shown");
-            return Ok(());
+            return;
         };
         let shown = self.redactor.redact(text);
         let name = file
             .file_name()
             .map_or_else(|| "script".into(), |n| n.to_string_lossy().into_owned());
+        self.page(&name, &shown);
+    }
+
+    /// Shows redacted text in the pager, from a copy in the run's scratch root, or prints it
+    /// when there is no pager.
+    fn page(&mut self, name: &str, shown: &str) {
+        let name = name.replace('/', "_");
         let copy = self.scratch_root.join(format!("view-{name}"));
         let pager = self.pager_argv();
         let opened = std::fs::write(&copy, shown.as_bytes()).is_ok()
@@ -1511,7 +1558,6 @@ impl<'p> Runner<'p> {
                 self.say(&format!("  │ {}", render::escape_controls(line)));
             }
         }
-        Ok(())
     }
 
     /// The pager to run: the config key `pager`, else `$PAGER`, else `less`, split into
@@ -2787,7 +2833,7 @@ impl<'p> Runner<'p> {
             }
             script_sha256 = self.pins.get(&file).map(|pin| hex(&pin.hash));
         }
-        self.say_command(command, scratch, invocation)?;
+        self.say_command(command, &step.id, scratch, invocation)?;
         // The journal, the suspend prompt and any failure detail show the full command.
         let shown = render::strip_marks(&render::argv(self.p, &command.argv, &Full(self)));
         let mut start = json!({"invocation_id": invocation, "step": step.id, "command_kind": command.kind.keyword(), "argv": shown, "exe": exe.display().to_string()});
@@ -3505,6 +3551,7 @@ impl<'p> Runner<'p> {
     fn say_command(
         &mut self,
         command: &Command,
+        step: &str,
         scratch: &Path,
         invocation: &str,
     ) -> Result<(), Stop> {
@@ -3536,9 +3583,12 @@ impl<'p> Runner<'p> {
         // A live view builds the command's block while it runs, and shows it in the live
         // window. An interactive program takes the whole terminal, so its line prints now.
         if live && command.kind != CommandKind::Interactive {
+            let label = render::strip_marks(&render::join_breaks(&line.lines.join("\n")));
             self.building = Some(CommandBlock {
                 head: format!("\n{head}"),
                 journal: format!("{}/out/{invocation}.stdout", self.journal_rel()),
+                step: step.to_string(),
+                label,
                 ..CommandBlock::default()
             });
             let lines = head.split('\n').map(str::to_string).collect();
@@ -3644,6 +3694,16 @@ impl<'p> Runner<'p> {
                 shown += 1;
             }
             self.screen.borrow_mut().print(&text);
+        }
+        if mode == log::Mode::Folded
+            && let Some(spool) = &block.spool
+        {
+            self.folded.borrow_mut().push(Folded {
+                step: block.step.clone(),
+                label: block.label.clone(),
+                hidden: block.lines - shown,
+                spool: spool.clone(),
+            });
         }
         if shown < block.lines {
             let status = if block.ok { "ok · " } else { "" };
