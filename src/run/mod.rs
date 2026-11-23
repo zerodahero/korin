@@ -1008,13 +1008,6 @@ impl<'p> Runner<'p> {
         Some(self.opts.theme.legend(&entries, None))
     }
 
-    /// Prints the legend for some prefix labels, if legend lines show.
-    fn say_legend(&self, labels: &[String]) {
-        if let Some(line) = self.legend_line(labels) {
-            self.screen.borrow_mut().print(&format!("{line}\n"));
-        }
-    }
-
     /// Sets or removes a value, and keeps the compact view's named prefixes in step with it:
     /// a name's prefix always follows its current value, and goes away with it.
     fn set_value(&mut self, sym: Sym, value: Option<Value>) {
@@ -1358,7 +1351,6 @@ impl<'p> Runner<'p> {
             "╰─❯ {}",
             render::escape_controls(&self.opts.invocation)
         ));
-        self.say_legend(&["<pwd>".to_string(), "<tmp>".to_string()]);
     }
 
     // ---- inputs ----

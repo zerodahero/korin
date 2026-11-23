@@ -1568,7 +1568,8 @@ fn the_legend_explains_each_prefix_and_l_hides_it() {
     let before = s.text();
     // Under the preview that shows it. The run log shows full paths, so it needs none.
     assert_eq!(before.matches(&entry).count(), 1, "{before}");
-    assert!(before.contains("<pwd> = "), "{before}");
+    // The run log shows full paths, so the intro has no legend either.
+    assert!(!before.contains("<pwd> = "), "{before}");
     std::thread::sleep(Duration::from_millis(400));
     s.send("l");
     s.wait_for_nth("[y/N · s skip · v values · f full · l legend]", 2);
