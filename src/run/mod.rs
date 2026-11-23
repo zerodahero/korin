@@ -11,7 +11,7 @@ mod screen;
 use screen::Screen;
 
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{IsTerminal, Write};
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
@@ -19,7 +19,6 @@ use std::time::{Duration, Instant};
 
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 use serde_json::json;
-use unicode_width::UnicodeWidthStr as _;
 
 use crate::ast::{CmpOp, CommandKind, GateMode, Mode, SayKind, Span};
 use crate::diag::Diag;
@@ -444,6 +443,8 @@ struct Runner<'p> {
     legend_used: RefCell<Option<Vec<String>>>,
     /// Labels whose path was just set or changed, shown once after the step that set them.
     legend_pending: Vec<String>,
+    /// The secret variables a `$` line has already explained, each named once per run.
+    announced_vars: HashSet<String>,
     /// The stage running now, or about to run; 0 before stage 1.
     stage_now: usize,
     /// Whether the current stage's steps have started, past its gate or pause.
@@ -606,6 +607,7 @@ impl<'p> Runner<'p> {
             legend: Cell::new(legend),
             legend_used: RefCell::new(None),
             legend_pending: Vec::new(),
+            announced_vars: HashSet::new(),
             stage_now: 0,
             in_stage: false,
             hand_set: false,
@@ -2307,14 +2309,14 @@ impl<'p> Runner<'p> {
             StepKind::Say { kind, text } => {
                 // One full, redacted text: the journal keeps it, the terminal shows its view.
                 let text = self.display_interpolated(text);
-                let viewed = self.shorten_text(&text);
-                match kind {
-                    SayKind::Note => self.say(&format!("\n  {viewed}")),
-                    SayKind::Warn => self.say(&format!("\n  ⚠ {viewed}")),
-                    SayKind::Record => {
-                        self.say(&format!("\n  ✓ {viewed}"));
-                        self.journal.report(&format!("- {text}"));
-                    }
+                let keyword = match kind {
+                    SayKind::Note => "note",
+                    SayKind::Warn => "warn",
+                    SayKind::Record => "record",
+                };
+                self.say(&comment(&format!("{keyword}: {text}")));
+                if *kind == SayKind::Record {
+                    self.journal.report(&format!("- {text}"));
                 }
                 self.journal
                     .event("say", json!({"step": step.id, "text": text}));
@@ -2492,14 +2494,7 @@ impl<'p> Runner<'p> {
             }
             script_sha256 = self.pins.get(&file).map(|pin| hex(&pin.hash));
         }
-        let viewed = render::argv(self.p, &command.argv, self);
-        let prefix = format!("  {} ❯ ", step.id);
-        let broken =
-            render::command_lines(self.p, &command.argv, self, prefix.width(), self.width());
-        self.say_block(
-            &format!("\n{prefix}{viewed}"),
-            &format!("\n{prefix}{}", broken.join("\n")),
-        );
+        self.say_command(command, scratch)?;
         // The journal, the suspend prompt and any failure detail show the full command.
         let shown = render::strip_marks(&render::argv(self.p, &command.argv, &Full(self)));
         let mut start = json!({"invocation_id": invocation, "step": step.id, "command_kind": command.kind.keyword(), "argv": shown, "exe": exe.display().to_string()});
@@ -2604,16 +2599,13 @@ impl<'p> Runner<'p> {
             // One buffer per stream: a secret split across two reads is held until whole.
             let mut buffers = [StreamRedactor::default(), StreamRedactor::default()];
             let mut line_start = true;
-            let gutter = self.opts.theme.gutter();
+            // The run log reads like a shell session: output follows its `$` line as it is.
+            let gutter = String::new();
             let screen = &self.screen;
             let live = screen.borrow().live();
-            let prefixes = self.prefixes();
             let theme = self.opts.theme;
-            // Shortens whole lines only, for the terminal; the journal gets the raw bytes.
-            let view_lines = |text: &str| match &prefixes {
-                Some(prefixes) => theme.output(&prefixes.shorten_text(text)),
-                None => text.to_string(),
-            };
+            // Removes korin's own marks, so output cannot pose as a colored value.
+            let view_lines = |text: &str| theme.output(text);
             // A live view writes whole lines only, so it can count the rows it must erase.
             let mut partial = String::new();
             let mut on_output = |is_err: bool, chunk: &[u8]| {
@@ -2689,7 +2681,7 @@ impl<'p> Runner<'p> {
                 .collect();
             self.write_streams(invocation, &stdout, &stderr, published, &unresolved);
             if escaped {
-                self.say(&format!("  ⚠ step {}: output pipes stayed open after the command was cancelled; a process it started may still be running", step.id));
+                self.note(&format!("⚠ step {}: output pipes stayed open after the command was cancelled; a process it started may still be running", step.id));
                 self.journal
                     .event("escaped", json!({"invocation_id": invocation}));
             }
@@ -2838,13 +2830,19 @@ impl<'p> Runner<'p> {
                 && let Extract::Value(data) = result
             {
                 let name = self.p.sym(capture.sym).name.clone();
-                let items = match data {
-                    Data::Str(s) => vec![s.clone()],
-                    Data::List(items) => items.clone(),
+                // Each list item gets a shell variable of its own in `$` lines.
+                let items: Vec<(Option<usize>, String)> = match data {
+                    Data::Str(s) => vec![(None, s.clone())],
+                    Data::List(items) => items
+                        .iter()
+                        .cloned()
+                        .enumerate()
+                        .map(|(i, s)| (Some(i), s))
+                        .collect(),
                     Data::Bool(_) => Vec::new(),
                 };
-                for item in items {
-                    if let Err(e) = self.redactor.add_value(&name, &item) {
+                for (position, item) in items {
+                    if let Err(e) = self.redactor.add_value_at(&name, position, &item) {
                         secret_error = Some(e);
                         *result = Extract::Fail("the secret is too short to redact safely".into());
                     }
@@ -2895,21 +2893,20 @@ impl<'p> Runner<'p> {
             }
         }
         if command.secret_producing && published {
-            let gutter = self.opts.theme.gutter();
             let theme = self.opts.theme;
-            let out = theme.output(&self.shorten_text(&self.redactor.redact_bytes(&stdout)));
-            let err = theme.output(&self.shorten_text(&self.redactor.redact_bytes(&stderr)));
+            let out = theme.output(&self.redactor.redact_bytes(&stdout));
+            let err = theme.output(&self.redactor.redact_bytes(&stderr));
             let mut screen = self.screen.borrow_mut();
-            screen.print(&indent(&out, &gutter));
-            screen.print(&indent(&err, &gutter));
+            screen.print(&indent(&out, ""));
+            screen.print(&indent(&err, ""));
         } else if !published {
-            self.say(&format!(
-                "  output withheld: {}",
+            self.note(&format!(
+                "output withheld: {}",
                 placeholder(stdout.len() + stderr.len(), &unresolved)
             ));
         }
         if escaped {
-            self.say(&format!("  ⚠ step {}: output pipes stayed open after the command ended; a process it started may still be running", step.id));
+            self.note(&format!("⚠ step {}: output pipes stayed open after the command ended; a process it started may still be running", step.id));
             self.journal
                 .event("escaped", json!({"invocation_id": invocation}));
         }
@@ -2922,7 +2919,18 @@ impl<'p> Runner<'p> {
                 "expect",
                 json!({"invocation_id": invocation, "name": self.p.sym(sym).name}),
             );
-            self.say(&format!("    expect: {}", self.p.sym(sym).name));
+        }
+        // The exit status, when it is worth a look, and the expect that explains it.
+        let code = match status {
+            Status::Exited(0) => None,
+            Status::Exited(c) => Some(format!("exit {c}")),
+            Status::Signaled(s) => Some(format!("signal {}", crate::signals::name(s))),
+        };
+        let expect = matched.map(|sym| format!("expect {}", self.p.sym(sym).name));
+        let status_note: Vec<String> = code.into_iter().chain(expect).collect();
+        if !status_note.is_empty() {
+            let tail = if succeeded { " · continuing" } else { "" };
+            self.note(&format!("{}{tail}", status_note.join(" · ")));
         }
 
         // Store values and log captures.
@@ -2933,6 +2941,12 @@ impl<'p> Runner<'p> {
                 Extract::Value(data) => {
                     if published {
                         self.journal.event("capture", json!({"invocation_id": invocation, "name": name, "value": data.to_json()}));
+                        let shown = if capture.secret {
+                            format!("«secret:{name}»")
+                        } else {
+                            self.capture_shown(data)
+                        };
+                        self.note(&format!("{name} = {shown}"));
                     } else {
                         self.journal.event(
                             "capture",
@@ -2952,6 +2966,7 @@ impl<'p> Runner<'p> {
                     );
                 }
                 Extract::Absent => {
+                    self.note(&format!("{name} absent"));
                     self.journal.event(
                         "capture",
                         json!({"invocation_id": invocation, "name": name, "absent": true}),
@@ -3059,6 +3074,104 @@ impl<'p> Runner<'p> {
                 stop.detail("this is a korin bug if `korin check` passed; please report it")
             }
         })
+    }
+
+    /// A command's real words for its `$` line, each split into literal text and values, so
+    /// the line can name secrets as variables and still color values. Mirrors [`Self::args`].
+    fn shell_words(
+        &self,
+        command: &Command,
+        scratch: &Path,
+    ) -> Result<(render::ShellEnv, Vec<render::Segments>), Stop> {
+        let segments = |t: &Interpolated| -> Result<render::Segments, Stop> {
+            let mut out = Vec::new();
+            for part in &t.parts {
+                match part {
+                    IPart::Lit(text) => out.push((text.clone(), false)),
+                    IPart::Sym { sym, .. } if *sym == self.p.korin_out => {
+                        out.push((scratch.display().to_string(), true));
+                    }
+                    IPart::Sym { sym, .. } => {
+                        out.push((data_text(&self.value(*sym)?.data), true));
+                    }
+                }
+            }
+            Ok(out)
+        };
+        let mut words = Vec::new();
+        for t in &command.argv {
+            if let [
+                IPart::Sym {
+                    sym, splat: true, ..
+                },
+            ] = t.parts.as_slice()
+                && let Data::List(items) = &self.value(*sym)?.data
+            {
+                words.extend(items.iter().map(|i| vec![(i.clone(), true)]));
+            } else {
+                words.push(segments(t)?);
+            }
+        }
+        let mut env = Vec::new();
+        for (name, value) in &command.env {
+            env.push((name.clone(), segments(value)?));
+        }
+        Ok((env, words))
+    }
+
+    /// Prints a command's `$` line, and the notes it needs: each secret variable the first
+    /// time a line uses it, and a warning when the line cannot be pasted as it is.
+    fn say_command(&mut self, command: &Command, scratch: &Path) -> Result<(), Stop> {
+        let (env, words) = self.shell_words(command, scratch)?;
+        let width = self.screen.borrow().live().then(|| self.width());
+        let scratch_text = scratch.display().to_string();
+        let line = render::shell_line(&env, &words, &self.redactor, Some(&scratch_text), width);
+        // A safety net: the line names secrets as variables, so redaction changes nothing.
+        let text = self.redact_marked(&line.lines.join("\n"));
+        let shown = self.opts.theme.lines(&text);
+        self.screen.borrow_mut().print(&format!("\n{shown}\n"));
+        for found in &line.vars {
+            let Some(var) = &found.var else { continue };
+            if self.announced_vars.insert(var.clone()) {
+                self.journal.event(
+                    "secret_var",
+                    json!({"name": found.name, "var": var, "value": found.label}),
+                );
+                self.note(&format!("uses ${{{var}}} ({})", found.label));
+            }
+        }
+        if !line.partial.is_empty() {
+            self.note(&format!(
+                "not pasteable: holds part of {}",
+                line.partial.join(", ")
+            ));
+        }
+        Ok(())
+    }
+
+    /// A captured value on one line for a note: redacted, escaped, and cut to fit.
+    fn capture_shown(&self, data: &Data) -> String {
+        let text = match data {
+            Data::Str(s) => s.clone(),
+            Data::List(items) => format!("[{}]", items.join(", ")),
+            Data::Bool(b) => b.to_string(),
+        };
+        if text.is_empty() {
+            return "\"\"".into();
+        }
+        let text = render::escape_controls(&self.redactor.redact(&text));
+        let room = self.width().saturating_sub(20).max(20);
+        if text.chars().count() > room {
+            let cut: String = text.chars().take(room).collect();
+            format!("{cut}…")
+        } else {
+            text
+        }
+    }
+
+    /// Prints a `↳` note under a command.
+    fn note(&self, text: &str) {
+        self.say(&format!("  ↳ {text}"));
     }
 
     /// The argv for a command. Withheld values never get here.
@@ -3342,6 +3455,14 @@ fn excerpts(mut stop: Stop, redactor: &Redactor, stdout: &[u8], stderr: &[u8]) -
         }
     }
     stop
+}
+
+/// Text as `#` comment lines for the run log, one `# ` per line.
+fn comment(text: &str) -> String {
+    text.lines()
+        .map(|line| format!("# {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Indents streamed output, continuing a line that an earlier piece left open.

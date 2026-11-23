@@ -479,6 +479,155 @@ fn argument(
     shown_word(prefixes, &borrowed)
 }
 
+/// The name a `$` line gives the scratch directory's match; it is not a secret.
+const KORIN_OUT: &str = "korin.out";
+
+/// A command's own variables, each with its value, leading a `$` line as `NAME=value`.
+pub type ShellEnv = Vec<(String, Segments)>;
+
+/// One word of a `$` line as real pieces: the text the command receives, and whether korin
+/// put it in (a value), so the theme can color it.
+pub type Segments = Vec<(String, bool)>;
+
+/// A command as a shell line for the run log: pasteable, with each exact secret as a braced
+/// shell variable.
+#[derive(Debug, Default)]
+pub struct ShellLine {
+    /// The command, laid out like [`command_lines`]; the first line starts with `$ `.
+    pub lines: Vec<String>,
+    /// The exact secrets the line names as variables, each once, in order.
+    pub vars: Vec<crate::redact::SecretMatch>,
+    /// Secrets shown only as `«secret:name»`, because the line holds part of one; the line
+    /// cannot be pasted as it is.
+    pub partial: Vec<String>,
+}
+
+/// Builds the `$` line for a command from its real words, before any redaction. `env` holds
+/// the command's own variables, which lead the line as `NAME=value`.
+///
+/// `korin_out` is the step's scratch directory. The command receives it as `KORIN_OUT`, and it
+/// is gone once the step ends, so the line shows it as `${KORIN_OUT}`.
+pub fn shell_line(
+    env: &[(String, Segments)],
+    words: &[Segments],
+    redactor: &crate::redact::Redactor,
+    korin_out: Option<&str>,
+    width: Option<usize>,
+) -> ShellLine {
+    let mut line = ShellLine::default();
+    let mut shown = Vec::new();
+    for (name, value) in env {
+        shown.push(format!(
+            "{}={}",
+            escape_controls(name),
+            shell_word(value, redactor, korin_out, &mut line)
+        ));
+    }
+    for word in words {
+        shown.push(shell_word(word, redactor, korin_out, &mut line));
+    }
+    if shown.is_empty() {
+        return line;
+    }
+    let laid = match width {
+        Some(width) => layout(&shown, 2, width),
+        None => vec![shown.join(" ")],
+    };
+    let mut laid = laid.into_iter();
+    line.lines
+        .push(format!("$ {}", laid.next().unwrap_or_default()));
+    line.lines.extend(laid);
+    line
+}
+
+/// One word of a `$` line. A word with no secret is quoted like any shown argument. A word
+/// with a secret is double-quoted: each exact secret becomes `${VAR}`, braced so a letter
+/// after it cannot change the name, and `\ " $` and backticks in the rest are escaped.
+fn shell_word(
+    segments: &Segments,
+    redactor: &crate::redact::Redactor,
+    korin_out: Option<&str>,
+    line: &mut ShellLine,
+) -> String {
+    let whole: String = segments.iter().map(|(t, _)| t.as_str()).collect();
+    let mut found = redactor.matches(&whole);
+    if let Some(dir) = korin_out.filter(|d| !d.is_empty()) {
+        for (start, _) in whole.match_indices(dir) {
+            let end = start + dir.len();
+            if !found.iter().any(|m| m.start < end && start < m.end) {
+                found.push(crate::redact::SecretMatch {
+                    start,
+                    end,
+                    name: KORIN_OUT.into(),
+                    var: Some("KORIN_OUT".into()),
+                    label: "the step's scratch directory".into(),
+                });
+            }
+        }
+        found.sort_by_key(|m| m.start);
+    }
+    if found.is_empty() {
+        let borrowed: Vec<(&str, bool)> = segments.iter().map(|(t, m)| (t.as_str(), *m)).collect();
+        return quote_segments(&borrowed);
+    }
+    // Which segment each byte belongs to, so values keep their marks.
+    let mut marked_at = Vec::with_capacity(whole.len());
+    for (text, marked) in segments {
+        marked_at.extend(std::iter::repeat_n(*marked, text.len()));
+    }
+    let mut out = String::from("\"");
+    let mut open = false;
+    let set_mark = |out: &mut String, on: bool, open: &mut bool| {
+        if on != *open {
+            out.push(if on { VALUE_OPEN } else { VALUE_CLOSE });
+            *open = on;
+        }
+    };
+    let mut next = found.iter().peekable();
+    let mut at = 0;
+    while at < whole.len() {
+        if let Some(m) = next.peek()
+            && m.start == at
+        {
+            set_mark(&mut out, true, &mut open);
+            if let Some(var) = &m.var {
+                let _ = write!(out, "${{{var}}}");
+                if m.name != KORIN_OUT && !line.vars.iter().any(|v| v.var == m.var) {
+                    line.vars.push((*m).clone());
+                }
+            } else {
+                let _ = write!(out, "«secret:{}»", m.name);
+                if !line.partial.contains(&m.name) {
+                    line.partial.push(m.name.clone());
+                }
+            }
+            at = m.end;
+            next.next();
+            continue;
+        }
+        let c = whole[at..].chars().next().unwrap_or_default();
+        set_mark(
+            &mut out,
+            marked_at.get(at).copied().unwrap_or(false),
+            &mut open,
+        );
+        match c {
+            '\\' | '"' | '$' | '`' => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if c.is_control() || is_mark(c) => {
+                let _ = write!(out, "\\x{:02x}", u32::from(c));
+            }
+            c => out.push(c),
+        }
+        at += c.len_utf8();
+    }
+    set_mark(&mut out, false, &mut open);
+    out.push('"');
+    out
+}
+
 /// How tightly an expression binds: `or` 1, `and` 2, `not` 3, everything else 4.
 fn precedence(e: &Expr) -> u8 {
     match e {
@@ -778,6 +927,238 @@ pub fn plan(program: &Program, width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::redact::Redactor;
+
+    /// Runs a `$` line in `sh` with `vars` exported and returns the argv it receives, one
+    /// argument per line.
+    fn through_shell(line: &ShellLine, vars: &[(&str, &str)]) -> Vec<String> {
+        let text = strip_marks(&join_breaks(&line.lines.join("\n")));
+        let command = text.strip_prefix("$ ").expect("a $ line");
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("set -- {command}; printf '%s\\n' \"$@\""))
+            .env_clear()
+            .envs(vars.iter().copied())
+            .output()
+            .expect("sh runs");
+        // `set --` takes every word, so the first one is the command itself.
+        String::from_utf8(out.stdout)
+            .unwrap()
+            .lines()
+            .skip(1)
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn words(words: &[&[(&str, bool)]]) -> Vec<Segments> {
+        words
+            .iter()
+            .map(|w| w.iter().map(|(t, m)| ((*t).to_string(), *m)).collect())
+            .collect()
+    }
+
+    #[test]
+    fn shell_lines_round_trip_through_sh() {
+        let r = Redactor::new();
+        r.add("token", "s3cr3t-token").unwrap();
+        r.add("db.password", "pa$$ \"word\"").unwrap();
+        let vars = [("TOKEN", "s3cr3t-token"), ("DB_PASSWORD", "pa$$ \"word\"")];
+        let cases: Vec<(Vec<Segments>, Vec<&str>)> = vec![
+            (
+                words(&[&[("echo", false)], &[("plain", false)]]),
+                vec!["plain"],
+            ),
+            (
+                words(&[&[("echo", false)], &[("with space", true)]]),
+                vec!["with space"],
+            ),
+            (
+                words(&[&[("echo", false)], &[("s3cr3t-token", true)]]),
+                vec!["s3cr3t-token"],
+            ),
+            (
+                words(&[
+                    &[("psql", false)],
+                    &[
+                        ("postgres://admin:", false),
+                        ("pa$$ \"word\"", true),
+                        ("@db/app", false),
+                    ],
+                ]),
+                vec!["postgres://admin:pa$$ \"word\"@db/app"],
+            ),
+            (
+                words(&[
+                    &[("echo", false)],
+                    &[("$HOME-", false), ("s3cr3t-token", true)],
+                ]),
+                vec!["$HOME-s3cr3t-token"],
+            ),
+            (
+                words(&[
+                    &[("echo", false)],
+                    &[("s3cr3t-token", true), ("suffix", false)],
+                ]),
+                vec!["s3cr3t-tokensuffix"],
+            ),
+        ];
+        for (argv, expected) in cases {
+            let line = shell_line(&[], &argv, &r, None, None);
+            assert_eq!(through_shell(&line, &vars), expected, "{:?}", line.lines);
+        }
+        let line = shell_line(
+            &[],
+            &words(&[
+                &[("echo", false)],
+                &[("s3cr3t-token", true), ("suffix", false)],
+            ]),
+            &r,
+            None,
+            None,
+        );
+        assert!(
+            strip_marks(&line.lines[0]).contains("${TOKEN}suffix"),
+            "{:?}",
+            line.lines
+        );
+        assert_eq!(line.vars.len(), 1);
+    }
+
+    #[test]
+    fn shell_lines_name_each_value_its_own_variable() {
+        let r = Redactor::new();
+        r.add("foo.bar", "first-value").unwrap();
+        r.add("foo_bar", "second-value").unwrap();
+        r.add_value_at("tokens", Some(0), "item-one-value").unwrap();
+        r.add_value_at("tokens", Some(1), "item-two-value").unwrap();
+        let argv = words(&[
+            &[("echo", false)],
+            &[("first-value", true)],
+            &[("second-value", true)],
+            &[("item-one-value", true)],
+            &[("item-two-value", true)],
+        ]);
+        let line = shell_line(&[], &argv, &r, None, None);
+        let vars = [
+            ("FOO_BAR", "first-value"),
+            ("FOO_BAR_2", "second-value"),
+            ("TOKENS_1", "item-one-value"),
+            ("TOKENS_2", "item-two-value"),
+        ];
+        assert_eq!(
+            through_shell(&line, &vars),
+            [
+                "first-value",
+                "second-value",
+                "item-one-value",
+                "item-two-value"
+            ]
+        );
+
+        // A recaptured value gets a new variable; a line built before keeps the old one.
+        let r = Redactor::new();
+        r.add_value("token", "old-token-value").unwrap();
+        let old = shell_line(
+            &[],
+            &words(&[&[("echo", false)], &[("old-token-value", true)]]),
+            &r,
+            None,
+            None,
+        );
+        r.add_value("token", "new-token-value").unwrap();
+        let new = shell_line(
+            &[],
+            &words(&[&[("echo", false)], &[("new-token-value", true)]]),
+            &r,
+            None,
+            None,
+        );
+        assert!(
+            strip_marks(&old.lines[0]).contains("${TOKEN}"),
+            "{:?}",
+            old.lines
+        );
+        assert!(
+            strip_marks(&new.lines[0]).contains("${TOKEN_2}"),
+            "{:?}",
+            new.lines
+        );
+        let vars = [("TOKEN", "old-token-value"), ("TOKEN_2", "new-token-value")];
+        assert_eq!(through_shell(&old, &vars), ["old-token-value"]);
+        assert_eq!(through_shell(&new, &vars), ["new-token-value"]);
+    }
+
+    #[test]
+    fn a_derived_secret_form_is_shown_redacted_and_not_pasteable() {
+        let r = Redactor::new();
+        r.add_value("creds", r#"{"key":"leaf-secret-value"}"#)
+            .unwrap();
+        let whole = shell_line(
+            &[],
+            &words(&[
+                &[("echo", false)],
+                &[(r#"{"key":"leaf-secret-value"}"#, true)],
+            ]),
+            &r,
+            None,
+            None,
+        );
+        assert_eq!(whole.partial, Vec::<String>::new());
+        assert!(strip_marks(&whole.lines[0]).contains("${CREDS}"));
+        let leaf = shell_line(
+            &[],
+            &words(&[&[("echo", false)], &[("leaf-secret-value", true)]]),
+            &r,
+            None,
+            None,
+        );
+        assert_eq!(leaf.partial, ["creds"]);
+        assert!(leaf.lines[0].contains("«secret:creds»"));
+        assert!(!leaf.lines[0].contains("leaf-secret-value"));
+    }
+
+    #[test]
+    fn the_scratch_directory_shows_as_korin_out() {
+        let r = Redactor::new();
+        let dir = "/tmp/korin-123/0001-s1.1";
+        let line = shell_line(
+            &[],
+            &words(&[&[("nvim", false)], &[(dir, true), ("/notes.md", false)]]),
+            &r,
+            Some(dir),
+            None,
+        );
+        assert_eq!(
+            strip_marks(&line.lines[0]),
+            "$ nvim \"${KORIN_OUT}/notes.md\""
+        );
+        assert!(line.vars.is_empty(), "{:?}", line.vars);
+        assert_eq!(
+            through_shell(&line, &[("KORIN_OUT", dir)]),
+            [format!("{dir}/notes.md")]
+        );
+    }
+
+    #[test]
+    fn env_leads_the_shell_line_as_an_assignment() {
+        let r = Redactor::new();
+        r.add("token", "s3cr3t-token").unwrap();
+        let line = shell_line(
+            &[("API_TOKEN".into(), vec![("s3cr3t-token".into(), true)])],
+            &words(&[
+                &[("sh", false)],
+                &[("-c", false)],
+                &[("echo $API_TOKEN", false)],
+            ]),
+            &r,
+            None,
+            None,
+        );
+        assert_eq!(
+            strip_marks(&line.lines[0]),
+            "$ API_TOKEN=\"${TOKEN}\" sh -c 'echo $API_TOKEN'"
+        );
+    }
 
     #[test]
     fn marks_never_change_how_an_argument_is_quoted() {

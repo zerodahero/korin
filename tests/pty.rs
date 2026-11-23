@@ -796,7 +796,7 @@ fn f_and_enter_toggles_with_require_enter() {
 }
 
 #[test]
-fn the_terminal_shortens_and_the_journal_keeps_full_text() {
+fn the_run_log_shows_full_paths_and_the_journal_never_shortens() {
     let (dir, target) = target_setup(concat!(
         "  read lister {target}/a.txt\n",
         "  record \"wrote {target}/a.txt\"\n",
@@ -807,9 +807,13 @@ fn the_terminal_shortens_and_the_journal_keeps_full_text() {
     s.answer("y");
     assert_eq!(s.wait(), 0, "{}", s.text());
     let text = s.text();
-    assert!(text.contains("1.1 ❯ lister <target>/a.txt"), "{text}");
-    assert!(text.contains("listed <target>/a.txt"), "{text}");
-    assert!(text.contains("✓ wrote <target>/a.txt"), "{text}");
+    // The run log reads like a shell session, so its paths are real and pasteable.
+    assert!(text.contains(&format!("$ lister {target}/a.txt")), "{text}");
+    assert!(text.contains(&format!("\nlisted {target}/a.txt")), "{text}");
+    assert!(
+        text.contains(&format!("# record: wrote {target}/a.txt")),
+        "{text}"
+    );
     assert!(text.contains("journal: ./.korin/runs/"), "{text}");
     let run = run_dir(dir.path());
     let report = std::fs::read_to_string(run.join("report.md")).unwrap();
@@ -856,25 +860,29 @@ fn a_prefix_follows_the_current_value_of_its_name() {
     let dir = setup(
         concat!(
             "stage \"a\"\n",
-            "  each d in [\"/a/b/c\", \"/x/y/z\"]\n",
-            "    read pick {d} /a/b/c/q\n",
-            "      capture p = text\n",
-            "    read echo /a/b/c/old {p}/new\n",
+            "  read pick /x/y/z\n",
+            "    capture p = text\n",
+            "stage \"b\"\n",
+            "  read echo /a/b/c/old /x/y/z/q {p}/new\n",
         ),
         &[("pick", "echo \"$1\"")],
     );
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.answer("y");
-    assert_eq!(s.wait(), 0, "{}", s.text());
+    s.wait_for("Run stage 2?");
+    // At the second gate p is /x/y/z: only paths under it shorten.
     let text = s.text();
-    // While p is /a/b/c, both paths shorten.
-    assert!(text.contains("│ <p>/old <p>/new"), "{text}");
-    // The next command clears p before it shows, so the old prefix is gone.
-    assert!(text.contains("❯ pick /x/y/z /a/b/c/q"), "{text}");
-    assert!(!text.contains("<p>/q"), "{text}");
-    // Once p is /x/y/z, only the new path shortens.
-    assert!(text.contains("│ /a/b/c/old <p>/new"), "{text}");
+    let gate = &text[text.rfind("Stage 2/2").unwrap()..];
+    assert!(gate.contains("/a/b/c/old <p>/q <p>/new"), "{gate}");
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    // The run log keeps the real paths.
+    assert!(
+        s.text().contains("$ echo /a/b/c/old /x/y/z/q /x/y/z/new"),
+        "{}",
+        s.text()
+    );
 }
 
 // ---- guide mode ----
@@ -903,12 +911,12 @@ fn a_guide_pauses_before_each_stage_and_shows_no_preview() {
     std::thread::sleep(Duration::from_millis(300));
     assert!(!s.text().contains("first-ran"), "x continued: {}", s.text());
     s.send("\r");
-    s.wait_for("1.1 ❯ echo first-ran");
+    s.wait_for("$ echo first-ran");
     s.wait_for("Stage 2/2");
     std::thread::sleep(Duration::from_millis(400));
     s.send(" ");
     assert_eq!(s.wait(), 0, "{}", s.text());
-    assert!(s.text().contains("2.2 ❯ echo second-ran"), "{}", s.text());
+    assert!(s.text().contains("$ echo second-ran"), "{}", s.text());
     let events = events(dir.path());
     assert_eq!(events.matches("\"pause\"").count(), 2, "{events}");
     assert!(!events.contains("\"gate\""), "{events}");
@@ -925,7 +933,7 @@ fn a_guide_pause_takes_a_line_with_require_enter() {
     std::thread::sleep(Duration::from_millis(400));
     s.send("\r");
     assert_eq!(s.wait(), 0, "{}", s.text());
-    assert!(s.text().contains("1.1 ❯ echo ran"), "{}", s.text());
+    assert!(s.text().contains("$ echo ran"), "{}", s.text());
 }
 
 #[test]
@@ -938,7 +946,7 @@ fn a_guide_pauses_before_an_interactive_step() {
     s.wait_for("↵ continue");
     s.answer("");
     s.wait_for("↵ open · Ctrl-C cancel");
-    assert!(s.text().contains("1.1 ❯ fakeui"), "{}", s.text());
+    assert!(s.text().contains("$ fakeui"), "{}", s.text());
     std::thread::sleep(Duration::from_millis(400));
     assert!(
         !marker(dir.path(), "opened").exists(),

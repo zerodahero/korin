@@ -4,20 +4,20 @@
 
 ━━ Preflight · Which account? ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  p.1 ❯ aws sts get-caller-identity --output json
-      <span class="k-border">│</span> {
-      <span class="k-border">│</span>     "UserId": "AIDASAMPLEUSERID",
-      <span class="k-border">│</span>     "Account": "123456789012",
-      <span class="k-border">│</span>     "Arn": "arn:aws:iam::123456789012:user/ada"
-      <span class="k-border">│</span> }
+<span class="k-blue k-bold">$</span> <span class="k-bold">aws</span> sts get-caller-identity <span class="k-blue">--output</span> json
+{
+    "UserId": "AIDASAMPLEUSERID",
+    "Account": "123456789012",
+    "Arn": "arn:aws:iam::123456789012:user/ada"
+}
+  <span class="k-border">↳</span> <span class="k-fg-dim">account = 123456789012</span>
   <span class="k-green k-bold">✓</span> <span class="k-bold">preflight done · 1 command</span>
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Restart</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
-  <span class="k-fg-dim">2.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> shop
-      <span class="k-border">│</span> deployment.apps/api restarted
-
-  <span class="k-green k-bold">✓</span> <span class="k-bold">restarted api in 123456789012</span>
+<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> shop
+deployment.apps/api restarted
+<span class="k-comment"># record: restarted api in 123456789012</span>
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 1 command</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Restart the API completed</span>

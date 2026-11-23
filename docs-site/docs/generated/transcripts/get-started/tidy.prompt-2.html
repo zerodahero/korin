@@ -4,14 +4,13 @@
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Find merged branches</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
-  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">git</span> branch <span class="k-blue">--merged</span> <span class="k-cyan">main</span> <span class="k-green">'--format=%(refname:short)'</span>
-      <span class="k-border">│</span> add-logo
-      <span class="k-border">│</span> fix-typo
-      <span class="k-border">│</span> main
-
-  add-logo is merged into main.
-
-  fix-typo is merged into main.
+<span class="k-blue k-bold">$</span> <span class="k-bold">git</span> branch <span class="k-blue">--merged</span> <span class="k-cyan">main</span> <span class="k-green">'--format=%(refname:short)'</span>
+add-logo
+fix-typo
+main
+  <span class="k-border">↳</span> <span class="k-fg-dim">merged = [add-logo, fix-typo, main]</span>
+<span class="k-comment"># note: add-logo is merged into main.</span>
+<span class="k-comment"># note: fix-typo is merged into main.</span>
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command</span>
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Delete them</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>

@@ -4,48 +4,54 @@
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Before</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
-  <span class="k-fg-dim">1.1.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> get deployment web <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">-o</span> json
-      <span class="k-border">│</span> {
-      <span class="k-border">│</span>   "metadata": {"name": "web", "namespace": "shop"},
-      <span class="k-border">│</span>   "spec": {
-      <span class="k-border">│</span>     "replicas": 3,
-      <span class="k-border">│</span>     "template": {"spec": {"containers": [{"name": "web", "image": "registry.example.com/web:
-2.3.1"}]}}
-      <span class="k-border">│</span>   },
-      <span class="k-border">│</span>   "status": {
-      <span class="k-border">│</span>     "readyReplicas": 3,
-      <span class="k-border">│</span>     "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
-      <span class="k-border">│</span>   }
-      <span class="k-border">│</span> }
+<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment web <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">-o</span> json
+{
+  "metadata": {"name": "web", "namespace": "shop"},
+  "spec": {
+    "replicas": 3,
+    "template": {"spec": {"containers": [{"name": "web", "image": "registry.example.com/web:2.3.1"}]
+}}
+  },
+  "status": {
+    "readyReplicas": 3,
+    "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
+  }
+}
+  <span class="k-border">↳</span> <span class="k-fg-dim">web.image = registry.example.com/web:2.3.1</span>
+  <span class="k-border">↳</span> <span class="k-fg-dim">web.ready = 3</span>
+  <span class="k-border">↳</span> <span class="k-fg-dim">web.wanted = 3</span>
 
-  <span class="k-fg-dim">1.2.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> get deployment api <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">-o</span> json
-      <span class="k-border">│</span> {
-      <span class="k-border">│</span>   "metadata": {"name": "api", "namespace": "shop"},
-      <span class="k-border">│</span>   "spec": {
-      <span class="k-border">│</span>     "replicas": 2,
-      <span class="k-border">│</span>     "template": {"spec": {"containers": [{"name": "api", "image": "registry.example.com/api:
-2.3.1"}]}}
-      <span class="k-border">│</span>   },
-      <span class="k-border">│</span>   "status": {
-      <span class="k-border">│</span>     "readyReplicas": 2,
-      <span class="k-border">│</span>     "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
-      <span class="k-border">│</span>   }
-      <span class="k-border">│</span> }
+<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment api <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">-o</span> json
+{
+  "metadata": {"name": "api", "namespace": "shop"},
+  "spec": {
+    "replicas": 2,
+    "template": {"spec": {"containers": [{"name": "api", "image": "registry.example.com/api:2.3.1"}]
+}}
+  },
+  "status": {
+    "readyReplicas": 2,
+    "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
+  }
+}
+  <span class="k-border">↳</span> <span class="k-fg-dim">api.image = registry.example.com/api:2.3.1</span>
+  <span class="k-border">↳</span> <span class="k-fg-dim">api.ready = 2</span>
+  <span class="k-border">↳</span> <span class="k-fg-dim">api.wanted = 2</span>
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 2 commands</span>
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Restart</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
-  <span class="k-fg-dim">2.1.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>web <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
-      <span class="k-border">│</span> deployment.apps/web restarted
+<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>web <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
+deployment.apps/web restarted
 
-  <span class="k-fg-dim">2.1.2</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span>web <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">--timeout</span> 5m
-      <span class="k-border">│</span> deployment "web" successfully rolled out
+<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span>web <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">--timeout</span> 5m
+deployment "web" successfully rolled out
 
-  <span class="k-fg-dim">2.2.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
-      <span class="k-border">│</span> deployment.apps/api restarted
+<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
+deployment.apps/api restarted
 
-  <span class="k-fg-dim">2.2.2</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">--timeout</span> 5m
-      <span class="k-border">│</span> deployment "api" successfully rolled out
+<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">--timeout</span> 5m
+deployment "api" successfully rolled out
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 4 commands</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Restart the shop completed</span>

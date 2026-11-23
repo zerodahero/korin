@@ -397,6 +397,25 @@ impl Theme {
             self.paint(Role::Prompt, "❯", out);
             out.push(' ');
             self.inline(rest, None, Text::Plain, out);
+        } else if let Some(c) = p.shell.captures(line) {
+            out.push_str(&c[1]);
+            self.paint(Role::Prompt, "$", out);
+            out.push(' ');
+            self.command(&c[2], true, out);
+            return true;
+        } else if let Some(c) = p.note.captures(line) {
+            out.push_str(&c[1]);
+            self.paint(Role::Frame, "↳", out);
+            out.push(' ');
+            self.inline(&c[2], Some(Role::Dim), Text::Plain, out);
+        } else if let Some(c) = p.comment.captures(line) {
+            out.push_str(&c[1]);
+            let role = if c[2].starts_with("warn:") {
+                Role::Warn
+            } else {
+                Role::Ghost
+            };
+            self.paint(role, &format!("# {}", strip_marks(&c[2])), out);
         } else if let Some(c) = p.stage.captures(line) {
             out.push_str(&c[1]);
             self.paint(Role::Frame, "━━", out);
@@ -501,6 +520,7 @@ impl Theme {
             let end = rest.find(' ').unwrap_or(rest.len());
             let word = &rest[..end];
             let plain = !word.is_empty()
+                && !word.contains('=')
                 && !word.starts_with(['\'', '$', '<', '«', VALUE_OPEN, PREFIX_OPEN]);
             if plain {
                 match word.rfind('/') {
@@ -669,6 +689,9 @@ impl Theme {
 }
 
 struct Patterns {
+    shell: Regex,
+    note: Regex,
+    comment: Regex,
     stage: Regex,
     tags: Regex,
     stage_end: Regex,
@@ -687,6 +710,12 @@ fn patterns() -> &'static Patterns {
     PATTERNS.get_or_init(|| {
         let re = |s: &str| Regex::new(s).expect("theme pattern compiles");
         Patterns {
+            // A command in the run log, as a shell shows it: `$ echo hi`.
+            shell: re(r"^(\s*)\$ (.*)$"),
+            // A note under a command: `  ↳ status = available`.
+            note: re(r"^(\s*)↳ (.*)$"),
+            // korin's own line in the run log: `# note: snapshot started`.
+            comment: re(r"^(\s*)# (.*)$"),
             // The rule that starts a stage: `━━ Stage 1/2 · Title ━━━━`.
             stage: re(r"^(\s*)━━ (Stage \d+/\d+) · (.*?) (━+)$"),
             // The plan's tags under a stage rule: `  read-only, gate; valid --from start`.

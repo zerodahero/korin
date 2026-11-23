@@ -1041,7 +1041,7 @@ EOF
     env.wizard("stage \"a\"\n  read emit\n    capture v = jq .v\n  read take {v}\n");
     let out = env.run_yes(&[]);
     assert_eq!(out.code, 0, "{}", out.text);
-    assert!(out.text.contains(r"1.2 ❯ take $'a b\rX'"), "{}", out.text);
+    assert!(out.text.contains(r"$ take $'a b\rX'"), "{}", out.text);
 }
 
 #[test]
@@ -1328,7 +1328,13 @@ fn a_secret_spanning_a_substituted_value_is_still_redacted() {
     ));
     let out = env.run_yes_env(&[], &[("KORIN_SECRET_PW", "word-susan")]);
     assert_eq!(out.code, 0, "{}", out.text);
-    assert!(out.text.contains("1.1 ❯ tool «secret:pw»"), "{}", out.text);
+    // The `$` line names the secret as a shell variable, so it can be pasted.
+    assert!(out.text.contains("$ tool \"${PW}\""), "{}", out.text);
+    assert!(
+        out.text.contains("↳ uses ${PW} (secret pw)"),
+        "{}",
+        out.text
+    );
     assert!(
         env.leaks("word-susan", &out).is_empty(),
         "{:?}",

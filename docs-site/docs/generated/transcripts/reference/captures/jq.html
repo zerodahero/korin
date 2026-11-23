@@ -4,21 +4,21 @@
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Pull request</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
-  <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">gh</span> pr view <span class="k-cyan">42</span> <span class="k-blue">--json</span> title,author,labels,files
-      <span class="k-border">│</span> {
-      <span class="k-border">│</span>   "author": {"login": "grace"},
-      <span class="k-border">│</span>   "files": [{"path": "src/cart.rs"}, {"path": "src/checkout.rs"}],
-      <span class="k-border">│</span>   "labels": [{"name": "bug"}, {"name": "checkout"}],
-      <span class="k-border">│</span>   "title": "Keep the cart when a payment fails"
-      <span class="k-border">│</span> }
-
-  #42 by grace: Keep the cart when a payment fails
-
-  Files: [<span class="k-green">"src/cart.rs"</span>,<span class="k-green">"src/checkout.rs"</span>]
-
-  Label: bug
-
-  Label: checkout
+<span class="k-blue k-bold">$</span> <span class="k-bold">gh</span> pr view <span class="k-cyan">42</span> <span class="k-blue">--json</span> title,author,labels,files
+{
+  "author": {"login": "grace"},
+  "files": [{"path": "src/cart.rs"}, {"path": "src/checkout.rs"}],
+  "labels": [{"name": "bug"}, {"name": "checkout"}],
+  "title": "Keep the cart when a payment fails"
+}
+  <span class="k-border">↳</span> <span class="k-fg-dim">title = Keep the cart when a payment fails</span>
+  <span class="k-border">↳</span> <span class="k-fg-dim">author = grace</span>
+  <span class="k-border">↳</span> <span class="k-fg-dim">labels = [bug, checkout]</span>
+  <span class="k-border">↳</span> <span class="k-fg-dim">files = ["src/cart.rs","src/checkout.rs"]</span>
+<span class="k-comment"># note: #42 by grace: Keep the cart when a payment fails</span>
+<span class="k-comment"># note: Files: ["src/cart.rs","src/checkout.rs"]</span>
+<span class="k-comment"># note: Label: bug</span>
+<span class="k-comment"># note: Label: checkout</span>
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Summarize a pull request completed</span>

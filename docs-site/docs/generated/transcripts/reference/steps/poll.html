@@ -4,51 +4,59 @@
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Wait</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
-  <span class="k-fg-dim">1.1.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> get deployment checkout <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
-      <span class="k-border">│</span> {
-      <span class="k-border">│</span>   "metadata": {"name": "checkout", "namespace": "shop"},
-      <span class="k-border">│</span>   "spec": {
-      <span class="k-border">│</span>     "replicas": 3,
-      <span class="k-border">│</span>     "template": {"spec": {"containers": [{"name": "checkout", "image": "registry.example.com
-/checkout:3.1.0"}]}}
-      <span class="k-border">│</span>   },
-      <span class="k-border">│</span>   "status": {
-      <span class="k-border">│</span>     "readyReplicas": 1,
-      <span class="k-border">│</span>     "conditions": [{"type": "Progressing", "reason": "ReplicaSetUpdated"}]
-      <span class="k-border">│</span>   }
-      <span class="k-border">│</span> }
+<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment checkout <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
+{
+  "metadata": {"name": "checkout", "namespace": "shop"},
+  "spec": {
+    "replicas": 3,
+    "template": {"spec": {"containers": [{"name": "checkout", "image": "registry.example.com/checkou
+t:3.1.0"}]}}
+  },
+  "status": {
+    "readyReplicas": 1,
+    "conditions": [{"type": "Progressing", "reason": "ReplicaSetUpdated"}]
+  }
+}
+  <span class="k-border">↳</span> <span class="k-fg-dim">ready = 1</span>
+  <span class="k-border">↳</span> <span class="k-fg-dim">wanted = 3</span>
+  <span class="k-border">↳</span> <span class="k-fg-dim">reason = ReplicaSetUpdated</span>
   <span class="k-fg-dim">… waiting 2s (attempt 1)</span>
 
-  <span class="k-fg-dim">1.1.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> get deployment checkout <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
-      <span class="k-border">│</span> {
-      <span class="k-border">│</span>   "metadata": {"name": "checkout", "namespace": "shop"},
-      <span class="k-border">│</span>   "spec": {
-      <span class="k-border">│</span>     "replicas": 3,
-      <span class="k-border">│</span>     "template": {"spec": {"containers": [{"name": "checkout", "image": "registry.example.com
-/checkout:3.1.0"}]}}
-      <span class="k-border">│</span>   },
-      <span class="k-border">│</span>   "status": {
-      <span class="k-border">│</span>     "readyReplicas": 2,
-      <span class="k-border">│</span>     "conditions": [{"type": "Progressing", "reason": "ReplicaSetUpdated"}]
-      <span class="k-border">│</span>   }
-      <span class="k-border">│</span> }
+<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment checkout <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
+{
+  "metadata": {"name": "checkout", "namespace": "shop"},
+  "spec": {
+    "replicas": 3,
+    "template": {"spec": {"containers": [{"name": "checkout", "image": "registry.example.com/checkou
+t:3.1.0"}]}}
+  },
+  "status": {
+    "readyReplicas": 2,
+    "conditions": [{"type": "Progressing", "reason": "ReplicaSetUpdated"}]
+  }
+}
+  <span class="k-border">↳</span> <span class="k-fg-dim">ready = 2</span>
+  <span class="k-border">↳</span> <span class="k-fg-dim">wanted = 3</span>
+  <span class="k-border">↳</span> <span class="k-fg-dim">reason = ReplicaSetUpdated</span>
   <span class="k-fg-dim">… waiting 2s (attempt 2)</span>
 
-  <span class="k-fg-dim">1.1.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> get deployment checkout <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
-      <span class="k-border">│</span> {
-      <span class="k-border">│</span>   "metadata": {"name": "checkout", "namespace": "shop"},
-      <span class="k-border">│</span>   "spec": {
-      <span class="k-border">│</span>     "replicas": 3,
-      <span class="k-border">│</span>     "template": {"spec": {"containers": [{"name": "checkout", "image": "registry.example.com
-/checkout:3.1.0"}]}}
-      <span class="k-border">│</span>   },
-      <span class="k-border">│</span>   "status": {
-      <span class="k-border">│</span>     "readyReplicas": 3,
-      <span class="k-border">│</span>     "conditions": [{"type": "Progressing", "reason": "ReplicaSetUpdated"}]
-      <span class="k-border">│</span>   }
-      <span class="k-border">│</span> }
-
-  checkout has 3 of 3 replicas ready.
+<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment checkout <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
+{
+  "metadata": {"name": "checkout", "namespace": "shop"},
+  "spec": {
+    "replicas": 3,
+    "template": {"spec": {"containers": [{"name": "checkout", "image": "registry.example.com/checkou
+t:3.1.0"}]}}
+  },
+  "status": {
+    "readyReplicas": 3,
+    "conditions": [{"type": "Progressing", "reason": "ReplicaSetUpdated"}]
+  }
+}
+  <span class="k-border">↳</span> <span class="k-fg-dim">ready = 3</span>
+  <span class="k-border">↳</span> <span class="k-fg-dim">wanted = 3</span>
+  <span class="k-border">↳</span> <span class="k-fg-dim">reason = ReplicaSetUpdated</span>
+<span class="k-comment"># note: checkout has 3 of 3 replicas ready.</span>
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 3 commands</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Wait for the rollout completed</span>
