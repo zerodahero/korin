@@ -18,7 +18,7 @@ use crate::theme::Choice;
 use crate::view::View;
 
 /// The keys a config file may set, in the order `korin config` lists them.
-pub const KEYS: &[&str] = &["view", "require-enter", "color"];
+pub const KEYS: &[&str] = &["view", "legend", "require-enter", "color"];
 
 /// A loaded config file. Each key the file sets keeps its value.
 #[derive(Debug, Default)]
@@ -28,6 +28,7 @@ pub struct Config {
     /// Whether the file exists.
     pub exists: bool,
     pub view: Option<View>,
+    pub legend: Option<bool>,
     pub require_enter: Option<bool>,
     pub color: Option<Choice>,
 }
@@ -63,6 +64,7 @@ pub struct Flags {
 #[derive(Debug, Clone, Copy)]
 pub struct Effective {
     pub view: (View, Source),
+    pub legend: (bool, Source),
     pub require_enter: (bool, Source),
     pub color: (Choice, Source),
 }
@@ -72,6 +74,11 @@ impl Effective {
     pub fn listing(&self) -> Vec<(&'static str, String, Source)> {
         vec![
             ("view", view_name(self.view.0).to_string(), self.view.1),
+            (
+                "legend",
+                bool_name(self.legend.0).to_string(),
+                self.legend.1,
+            ),
             (
                 "require-enter",
                 bool_name(self.require_enter.0).to_string(),
@@ -199,6 +206,7 @@ pub fn parse(path: &Path, text: &str) -> Result<Config, Vec<Diag>> {
                     View::Compact
                 });
             }),
+            "legend" => boolean(node).map(|b| config.legend = Some(b)),
             "require-enter" => boolean(node).map(|b| config.require_enter = Some(b)),
             "color" => one_of(node, &["auto", "always", "never"]).map(|v| {
                 config.color = Some(match v.as_str() {
@@ -229,6 +237,9 @@ pub fn resolve(config: &Config, flags: Flags) -> Effective {
     let view = config
         .view
         .map_or((View::Compact, Source::Default), |v| (v, Source::File));
+    let legend = config
+        .legend
+        .map_or((true, Source::Default), |v| (v, Source::File));
     let require_enter = if flags.require_enter {
         (true, Source::Flag)
     } else if let Some(v) = std::env::var_os("KORIN_REQUIRE_ENTER").filter(|v| !v.is_empty()) {
@@ -247,6 +258,7 @@ pub fn resolve(config: &Config, flags: Flags) -> Effective {
     };
     Effective {
         view,
+        legend,
         require_enter,
         color,
     }

@@ -1,10 +1,12 @@
 <pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Archive the build</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">2 stages</span>
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run compact.korin
+  <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Find the build</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
   <span class="k-fg-dim">1.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">realpath</span> build
       <span class="k-border">│</span> <span class="k-teal">&lt;pwd&gt;</span>/build
+  <span class="k-teal">&lt;build&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project/build</span>
 
   <span class="k-fg-dim">1.2</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">ls</span> <span class="k-teal">&lt;build&gt;</span><span class="k-fg-dim">/</span>out
       <span class="k-border">│</span> app.css
@@ -14,4 +16,5 @@
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Archive</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
   <span class="k-fg-dim">2.1</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">tar</span> <span class="k-blue">-czf</span> <span class="k-teal">&lt;build&gt;</span><span class="k-fg-dim">/</span>app.tar.gz <span class="k-blue">-C</span> <span class="k-teal">&lt;pwd&gt;</span><span class="k-cyan">/build</span> out
-  <span class="k-magenta">?</span> <span class="k-bold">Run stage 2?</span> <span class="k-fg-dim">[y/N · f full]</span></code></pre>
+  <span class="k-teal">&lt;build&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project/build</span> <span class="k-border">·</span> <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project</span>
+  <span class="k-magenta">?</span> <span class="k-bold">Run stage 2?</span> <span class="k-fg-dim">[y/N · f full · l legend]</span></code></pre>

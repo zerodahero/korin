@@ -51,6 +51,7 @@ fn a_missing_file_gives_the_defaults() {
         "{text}"
     );
     assert_eq!(line(&text, "view"), ["view", "compact", "default"]);
+    assert_eq!(line(&text, "legend"), ["legend", "#true", "default"]);
     assert_eq!(
         line(&text, "require-enter"),
         ["require-enter", "#false", "default"]
@@ -60,13 +61,15 @@ fn a_missing_file_gives_the_defaults() {
 
 #[test]
 fn the_file_sets_each_key() {
-    let (_dir, path) =
-        with_config("// my preferences\nview full\nrequire-enter #true\ncolor never\n");
+    let (_dir, path) = with_config(
+        "// my preferences\nview full\nlegend #false\nrequire-enter #true\ncolor never\n",
+    );
     let out = korin(&path, &["config"], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
     let text = stdout(&out);
     assert!(!text.contains("not found"), "{text}");
     assert_eq!(line(&text, "view"), ["view", "full", "file"]);
+    assert_eq!(line(&text, "legend"), ["legend", "#false", "file"]);
     assert_eq!(
         line(&text, "require-enter"),
         ["require-enter", "#true", "file"]

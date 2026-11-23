@@ -492,7 +492,7 @@ fn nested_confirm_shows_the_rest_of_the_stage() {
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.answer("y");
-    s.wait_for("Continue? [y/N · f full]");
+    s.wait_for("Continue? [y/N · f full · l legend]");
     let text = s.text();
     let next = &text[text.rfind("next:").expect("confirm lists what comes next")..];
     assert!(next.contains("after-the-block"), "{next}");
@@ -519,7 +519,7 @@ fn deeply_nested_confirm_shows_every_remaining_step() {
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.answer("y");
-    s.wait_for("Continue? [y/N · f full]");
+    s.wait_for("Continue? [y/N · f full · l legend]");
     let text = s.text();
     let next = &text[text.rfind("next:").expect("confirm lists what comes next")..];
     for expected in ["inner-rest", "middle-rest", "outer-rest"] {
@@ -643,7 +643,8 @@ fn one_key_answers_a_gate_and_keys_while_arming_are_ignored() {
     assert_eq!(s.wait(), 0, "{}", s.text());
     assert!(marker(dir.path(), "touched").exists());
     assert!(
-        s.text().contains("Run stage 1? [y/N · f full] y"),
+        s.text()
+            .contains("Run stage 1? [y/N · f full · l legend] y"),
         "{}",
         s.text()
     );
@@ -666,7 +667,8 @@ fn enter_alone_declines_and_the_terminal_modes_come_back() {
     s.send("\r");
     assert_eq!(s.wait(), 1, "{}", s.text());
     assert!(
-        s.text().contains("Run stage 2? [y/N · f full] n"),
+        s.text()
+            .contains("Run stage 2? [y/N · f full · l legend] n"),
         "{}",
         s.text()
     );
@@ -749,7 +751,7 @@ fn f_at_a_gate_redraws_the_preview_in_full() {
     let (dir, target) = target_setup("  read lister {target}/a.txt\n");
     let param = format!("target={target}");
     let mut s = start(dir.path(), &["run", "w.korin", "--param", &param]);
-    s.wait_for("[y/N · f full]");
+    s.wait_for("[y/N · f full · l legend]");
     assert!(s.text().contains("lister <target>/a.txt"), "{}", s.text());
     std::thread::sleep(Duration::from_millis(400));
     s.send("f");
@@ -779,7 +781,7 @@ fn f_and_enter_toggles_with_require_enter() {
         dir.path(),
         &["run", "w.korin", "--require-enter", "--param", &param],
     );
-    s.wait_for("[y/N · f full]");
+    s.wait_for("[y/N · f full · l legend]");
     std::thread::sleep(Duration::from_millis(400));
     s.send("f\r");
     s.wait_for("[y/N · f compact]");
@@ -1011,4 +1013,67 @@ fn the_config_file_sets_the_starting_view_and_require_enter() {
     assert!(!s.text().contains("stage 1 done"), "{}", s.text());
     s.send("\r");
     assert_eq!(s.wait(), 0, "{}", s.text());
+}
+
+// ---- the legend ----
+
+#[test]
+fn the_legend_explains_each_prefix_and_l_hides_it() {
+    let (dir, target) = target_setup("  read lister {target}/a.txt\n");
+    let param = format!("target={target}");
+    let mut s = start(dir.path(), &["run", "w.korin", "--param", &param]);
+    s.wait_for("[y/N · f full · l legend]");
+    let entry = format!("<target> = {target}");
+    let before = s.text();
+    // Once when the param is set, and once under the preview that shows it.
+    assert_eq!(before.matches(&entry).count(), 2, "{before}");
+    assert!(before.contains("<pwd> = "), "{before}");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("l");
+    s.wait_for_nth("[y/N · f full · l legend]", 2);
+    let after = s.text();
+    let redrawn = &after[after.find("legend] l").unwrap()..];
+    assert!(redrawn.contains("lister <target>/a.txt"), "{redrawn}");
+    assert!(
+        !redrawn.contains(&entry),
+        "the legend is still shown:\n{redrawn}"
+    );
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let events = std::fs::read_to_string(run_dir(dir.path()).join("events.jsonl")).unwrap();
+    assert!(!events.contains(" = "), "{events}");
+}
+
+#[test]
+fn the_config_file_can_start_with_the_legend_hidden() {
+    let (dir, target) = target_setup("  read lister {target}/a.txt\n");
+    let config = dir.path().join("config.kdl");
+    std::fs::write(&config, "legend #false\n").unwrap();
+    let param = format!("target={target}");
+    let mut s = start_with_env(
+        dir.path(),
+        &["run", "w.korin", "--param", &param],
+        &[("KORIN_CONFIG", config)],
+    );
+    s.wait_for("[y/N · f full · l legend]");
+    assert!(!s.text().contains(" = "), "{}", s.text());
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+}
+
+#[test]
+fn the_footer_lists_each_name_while_a_stage_runs() {
+    let (dir, target) = target_setup("  read lister {target}/a.txt\n  read sleep 0.3\n");
+    let param = format!("target={target}");
+    let mut s = start(dir.path(), &["run", "w.korin", "--param", &param]);
+    s.wait_for("[y/N · f full · l legend]");
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let text = s.text();
+    let running = &text[text.find("legend] y").unwrap()..];
+    assert!(running.contains("Stage 1/1"), "{running}");
+    assert!(
+        running.contains(&format!("<target> = {target}")),
+        "{running}"
+    );
 }

@@ -271,6 +271,7 @@ fn run(
         grace: std::time::Duration::from_secs(kill_grace),
         require_enter: effective.require_enter.0,
         view: effective.view.0,
+        legend: effective.legend.0,
         runs_dir: cwd.join(".korin").join("runs"),
         cwd,
         theme,

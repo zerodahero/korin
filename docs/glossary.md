@@ -278,6 +278,14 @@ ask or capture holding an absolute path with at least three components. Code: `P
 - UI label: `<name>/`
 - Avoid: alias (that word names a template call's `as`)
 
+### Legend
+
+The compact view's `<name> = <path>` lines, which say what each path prefix stands for. `l`
+at a prompt hides or shows them. Never in the journal. Code: `Runner::say_legend`.
+
+- UI label: legend
+- Avoid: key
+
 ### Config
 
 The user's `config.kdl` of reader preferences, such as the starting view. Never a project

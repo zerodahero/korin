@@ -311,6 +311,33 @@ impl Theme {
         out
     }
 
+    /// A legend line: each prefix label and the path it stands for, such as
+    /// `  <build> = ~/project/build · <pwd> = ~/project`. With `width`, entries that do not
+    /// fit are left out, and `…` says so.
+    pub fn legend(self, entries: &[(String, String)], width: Option<usize>) -> String {
+        use unicode_width::UnicodeWidthStr as _;
+        let mut out = String::from("  ");
+        let mut used = 2;
+        for (index, (label, path)) in entries.iter().enumerate() {
+            let sep = if index == 0 { "" } else { " · " };
+            let plain = format!("{sep}{label} = {path}");
+            if let Some(width) = width
+                && used + plain.width() + 2 > width
+            {
+                self.paint(Role::Frame, if index == 0 { "…" } else { " …" }, &mut out);
+                break;
+            }
+            used += plain.width();
+            if index > 0 {
+                self.paint(Role::Frame, sep, &mut out);
+            }
+            self.paint(Role::Prefix, label, &mut out);
+            self.paint(Role::Dim, " = ", &mut out);
+            self.paint(Role::Path, path, &mut out);
+        }
+        out
+    }
+
     /// The live count after a hidden prompt, such as `· 52 chars`.
     pub fn hidden_count(self, count: usize) -> String {
         let mut out = String::new();

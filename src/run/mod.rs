@@ -101,6 +101,8 @@ pub struct Options {
     pub require_enter: bool,
     /// The view a run in a terminal starts in. Without a terminal, the view is always full.
     pub view: View,
+    /// Whether the compact view starts with its legend of path prefixes shown.
+    pub legend: bool,
     /// Where run directories go, normally `.korin/runs`.
     pub runs_dir: PathBuf,
     /// The directory commands run in.
@@ -179,6 +181,8 @@ enum Key {
     Continue,
     /// Switch between the compact and the full view, then ask again.
     ToggleView,
+    /// Show or hide the legend, then ask again.
+    ToggleLegend,
 }
 
 impl Key {
@@ -189,6 +193,7 @@ impl Key {
             Key::No => "n",
             Key::Continue => "",
             Key::ToggleView => "f",
+            Key::ToggleLegend => "l",
         }
     }
 }
@@ -198,6 +203,8 @@ impl Key {
 struct Keys {
     /// `f`: switch between the compact and the full view.
     view: bool,
+    /// `l`: show or hide the legend. Offered only in the compact view, which has one.
+    legend: bool,
 }
 
 impl Keys {
@@ -210,6 +217,9 @@ impl Keys {
         if self.view {
             parts.push(format!("f {}", view.other()));
         }
+        if self.legend {
+            parts.push("l legend".to_string());
+        }
         if parts.is_empty() {
             "Ctrl-C cancel".to_string()
         } else {
@@ -221,6 +231,7 @@ impl Keys {
     fn key_for_bytes(self, bytes: &[u8]) -> Option<Key> {
         match bytes {
             [b'f' | b'F', ..] if self.view => Some(Key::ToggleView),
+            [b'l' | b'L', ..] if self.legend => Some(Key::ToggleLegend),
             _ => None,
         }
     }
@@ -229,6 +240,7 @@ impl Keys {
     fn key_for_line(self, line: &str) -> Option<Key> {
         match line {
             "f" | "F" if self.view => Some(Key::ToggleView),
+            "l" | "L" if self.legend => Some(Key::ToggleLegend),
             _ => None,
         }
     }
@@ -328,6 +340,12 @@ struct Runner<'p> {
     /// Values that name a directory, as path prefixes for the compact view: each name's
     /// current value, already redacted, in the order the names were first set.
     named: Vec<(Sym, String)>,
+    /// Whether the compact view shows its legend: `<name> = <path>` lines. `l` switches it.
+    legend: Cell<bool>,
+    /// While a preview draws, the prefix labels it shows, for the legend under it.
+    legend_used: RefCell<Option<Vec<String>>>,
+    /// Labels whose path was just set or changed, shown once after the step that set them.
+    legend_pending: Vec<String>,
     /// `$PWD`, when it names the cwd by another path, such as through a symlink. Paths the
     /// operator types often start with it, so it shortens to `<pwd>` too.
     pwd_alias: Option<String>,
@@ -438,6 +456,7 @@ impl<'p> Runner<'p> {
         // lines are told apart from real output only by color, so it also needs color.
         let theme = opts.theme;
         let view = opts.view;
+        let legend = opts.legend;
         let live = tty && theme.enabled() && terminal_size::terminal_size().is_some();
         let cwd_for_alias = opts.cwd.clone();
         Ok(Self {
@@ -458,6 +477,9 @@ impl<'p> Runner<'p> {
             footer: None,
             view: Cell::new(if tty { view } else { View::Full }),
             named: Vec::new(),
+            legend: Cell::new(legend),
+            legend_used: RefCell::new(None),
+            legend_pending: Vec::new(),
             pwd_alias: pwd_alias(&cwd_for_alias),
         })
     }
@@ -472,6 +494,7 @@ impl<'p> Runner<'p> {
         self.intro();
         let p = self.p;
         let result = self.params().and_then(|()| {
+            self.flush_legend();
             for stage in &p.stages {
                 if stage.number < from {
                     continue;
@@ -533,7 +556,9 @@ impl<'p> Runner<'p> {
     /// colored only if removing the marks gives exactly the plain line, redacted. Otherwise it
     /// prints that plain line without value colors.
     fn say(&self, line: &str) {
-        let shown = self.opts.theme.lines(&self.redact_marked(line));
+        let line = self.redact_marked(line);
+        self.note_prefixes(&line);
+        let shown = self.opts.theme.lines(&line);
         self.screen.borrow_mut().print(&format!("{shown}\n"));
     }
 
@@ -554,8 +579,86 @@ impl<'p> Runner<'p> {
             View::Compact => crate::view::cut_lines(&chosen, self.width()),
             View::Full => chosen,
         };
+        self.note_prefixes(&chosen);
         let shown = self.opts.theme.lines(&chosen);
         self.screen.borrow_mut().print(&format!("{shown}\n"));
+    }
+
+    /// While a preview draws, remembers each prefix label the text shows.
+    fn note_prefixes(&self, text: &str) {
+        let mut used = self.legend_used.borrow_mut();
+        let Some(used) = used.as_mut() else {
+            return;
+        };
+        let mut rest = text;
+        while let Some(start) = rest.find(render::PREFIX_OPEN) {
+            let after = &rest[start + render::PREFIX_OPEN.len_utf8()..];
+            let Some(end) = after.find(render::PREFIX_CLOSE) else {
+                break;
+            };
+            let label = &after[..end];
+            if !used.iter().any(|l| l == label) {
+                used.push(label.to_string());
+            }
+            rest = &after[end + render::PREFIX_CLOSE.len_utf8()..];
+        }
+    }
+
+    /// Prints a preview's steps, then the legend for the prefixes they show.
+    fn say_preview(&self, steps: &[&Step]) {
+        *self.legend_used.borrow_mut() = Some(Vec::new());
+        self.say_steps(steps);
+        let used = self.legend_used.borrow_mut().take().unwrap_or_default();
+        self.say_legend(&used);
+    }
+
+    /// Whether legend lines show: in the compact view, unless `l` turned them off.
+    fn legend_on(&self) -> bool {
+        self.legend.get() && self.view.get() == View::Compact
+    }
+
+    /// The path a prefix label stands for, as the legend shows it. `~` has no entry.
+    fn legend_path(&self, label: &str) -> Option<String> {
+        let path = match label {
+            "<pwd>" => self.opts.cwd.to_string_lossy().into_owned(),
+            "<tmp>" => std::env::var("TMPDIR")
+                .ok()
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| "/tmp".into())
+                .trim_end_matches('/')
+                .to_string(),
+            _ => {
+                let name = label.strip_prefix('<')?.strip_suffix('>')?;
+                self.named
+                    .iter()
+                    .find(|(sym, _)| self.p.sym(*sym).name == name)?
+                    .1
+                    .clone()
+            }
+        };
+        Some(render::escape_controls(&home_relative(Path::new(&path))))
+    }
+
+    /// Prints the legend for some prefix labels, if legend lines show.
+    fn say_legend(&self, labels: &[String]) {
+        if !self.legend_on() {
+            return;
+        }
+        let entries: Vec<(String, String)> = labels
+            .iter()
+            .filter_map(|label| Some((label.clone(), self.legend_path(label)?)))
+            .collect();
+        if entries.is_empty() {
+            return;
+        }
+        let line = self.opts.theme.legend(&entries, None);
+        self.screen.borrow_mut().print(&format!("{line}\n"));
+    }
+
+    /// Prints the legend for names whose path a step just set, once.
+    fn flush_legend(&mut self) {
+        let pending = std::mem::take(&mut self.legend_pending);
+        self.say_legend(&pending);
     }
 
     /// Prints steps, with their commands laid out to read well.
@@ -583,12 +686,21 @@ impl<'p> Runner<'p> {
                 self.values.remove(&sym);
             }
         }
+        let label = format!("<{}>", self.p.sym(sym).name);
         match (self.named.iter().position(|(s, _)| *s == sym), prefix) {
-            (Some(index), Some(path)) => self.named[index].1 = path,
+            (Some(index), Some(path)) => {
+                if self.named[index].1 != path {
+                    self.legend_pending.push(label);
+                }
+                self.named[index].1 = path;
+            }
             (Some(index), None) => {
                 self.named.remove(index);
             }
-            (None, Some(path)) => self.named.push((sym, path)),
+            (None, Some(path)) => {
+                self.legend_pending.push(label);
+                self.named.push((sym, path));
+            }
             (None, None) => {}
         }
     }
@@ -711,7 +823,24 @@ impl<'p> Runner<'p> {
             })
             .collect();
         let footer = self.footer.as_ref().map(|(stage, step)| {
-            theme.footer(&self.redactor.redact(stage), &self.redactor.redact(step))
+            let mut footer =
+                theme.footer(&self.redactor.redact(stage), &self.redactor.redact(step));
+            // Under the footer, every name known so far and the path it stands for.
+            if self.legend_on() {
+                let entries: Vec<(String, String)> = self
+                    .named
+                    .iter()
+                    .filter_map(|(sym, _)| {
+                        let label = format!("<{}>", self.p.sym(*sym).name);
+                        Some((label.clone(), self.legend_path(&label)?))
+                    })
+                    .collect();
+                if !entries.is_empty() {
+                    footer.push('\n');
+                    footer.push_str(&theme.legend(&entries, Some(width)));
+                }
+            }
+            footer
         });
         let mut screen = self.screen.borrow_mut();
         screen.set_ghost(lines);
@@ -731,6 +860,7 @@ impl<'p> Runner<'p> {
             "╰─❯ {}",
             render::escape_controls(&self.opts.invocation)
         ));
+        self.say_legend(&["<pwd>".to_string(), "<tmp>".to_string()]);
     }
 
     // ---- inputs ----
@@ -800,7 +930,10 @@ impl<'p> Runner<'p> {
         question: &dyn Fn(&Self) -> String,
         redraw: &dyn Fn(&Self),
     ) -> Result<bool, Stop> {
-        let keys = Keys { view: true };
+        let keys = Keys {
+            view: true,
+            legend: true,
+        };
         Ok(self.prompt(&Style::Question(question), keys, redraw)? == Key::Yes)
     }
 
@@ -809,7 +942,10 @@ impl<'p> Runner<'p> {
     /// prompt is erased once answered, where the view allows.
     fn pause(&self, action: &str, toggle: bool) -> Result<(), Stop> {
         self.screen.borrow_mut().mark();
-        let keys = Keys { view: toggle };
+        let keys = Keys {
+            view: toggle,
+            legend: toggle,
+        };
         self.prompt(&Style::Pause(action), keys, &|_| {})?;
         self.screen.borrow_mut().erase_to_mark();
         Ok(())
@@ -831,6 +967,11 @@ impl<'p> Runner<'p> {
         redraw: &dyn Fn(&Self),
     ) -> Result<Key, Stop> {
         loop {
+            // The full view has no legend, so `l` is not offered there.
+            let keys = Keys {
+                legend: keys.legend && self.view.get() == View::Compact,
+                ..keys
+            };
             let hint = keys.hint(style, self.view.get());
             let prompt = match style {
                 Style::Question(question) => self.opts.theme.question(&question(self), &hint),
@@ -865,8 +1006,12 @@ impl<'p> Runner<'p> {
                 Some(key)
             };
             match key {
-                Some(Key::ToggleView) => {
-                    self.view.set(self.view.get().toggled());
+                Some(toggle @ (Key::ToggleView | Key::ToggleLegend)) => {
+                    if toggle == Key::ToggleView {
+                        self.view.set(self.view.get().toggled());
+                    } else {
+                        self.legend.set(!self.legend.get());
+                    }
                     {
                         let mut screen = self.screen.borrow_mut();
                         screen.erase_to_mark();
@@ -894,7 +1039,7 @@ impl<'p> Runner<'p> {
         self.screen.borrow_mut().mark();
         if !guide && !stage.steps.is_empty() {
             self.say("");
-            self.say_steps(&stage.steps.iter().collect::<Vec<_>>());
+            self.say_preview(&stage.steps.iter().collect::<Vec<_>>());
         }
         self.journal.event(
             "stage_start",
@@ -922,10 +1067,14 @@ impl<'p> Runner<'p> {
                     .event("pause", json!({"stage": stage.number, "auto": true}));
                 self.journal.report("- continued by `--yes`");
             } else {
-                self.prompt(&Style::Pause("continue"), Keys { view: true }, &|r| {
+                let keys = Keys {
+                    view: true,
+                    legend: true,
+                };
+                self.prompt(&Style::Pause("continue"), keys, &|r| {
                     if !stage.steps.is_empty() {
                         r.say("");
-                        r.say_steps(&stage.steps.iter().collect::<Vec<_>>());
+                        r.say_preview(&stage.steps.iter().collect::<Vec<_>>());
                     }
                 })?;
                 self.journal.event("pause", json!({"stage": stage.number}));
@@ -940,7 +1089,7 @@ impl<'p> Runner<'p> {
             } else if self.ask_yes(&|_| format!("Run stage {}?", stage.number), &|r| {
                 if !stage.steps.is_empty() {
                     r.say("");
-                    r.say_steps(&stage.steps.iter().collect::<Vec<_>>());
+                    r.say_preview(&stage.steps.iter().collect::<Vec<_>>());
                 }
             })? {
                 self.journal
@@ -1028,6 +1177,7 @@ impl<'p> Runner<'p> {
             self.rests.push(rest);
             let result = self.step(step, rest, &path, suffix, deadline);
             self.rests.pop();
+            self.flush_legend();
             result?;
         }
         Ok(())
@@ -1064,12 +1214,12 @@ impl<'p> Runner<'p> {
                 self.screen.borrow_mut().mark();
                 if !steps.is_empty() {
                     self.say("  next:");
-                    self.say_steps(&steps);
+                    self.say_preview(&steps);
                 }
                 let redraw = |r: &Self| {
                     if !steps.is_empty() {
                         r.say("  next:");
-                        r.say_steps(&steps);
+                        r.say_preview(&steps);
                     }
                 };
                 if self.ask_yes(&|r| r.shorten_text(&text), &redraw)? {

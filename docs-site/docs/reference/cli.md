@@ -36,6 +36,19 @@ Press `f` at a gate, a `confirm` or a guide's pause to switch to the full view, 
 every path and value as it runs. Press `f` again to switch back. The choice holds for the
 rest of the run.
 
+#### The legend
+
+A legend says what each prefix stands for, as `<build> = ~/project/build`. It shows:
+
+- under the intro, for `<pwd>` and `<tmp>`;
+- after the step that sets a `<name>`, or changes its path;
+- under each preview, for every prefix the preview uses;
+- under the footer while a stage runs, for every `<name>` known so far.
+
+`~` never gets a legend line. Press `l` at a gate, a `confirm` or a pause to hide the legend,
+and again to show it. The choice holds for the rest of the run. Set `legend #false` in your
+[config file](config.md) to start with it hidden. The full view has no legend.
+
 ```korin title="compact.korin"
 --8<-- "docs-site/examples/reference/cli/compact.korin"
 ```

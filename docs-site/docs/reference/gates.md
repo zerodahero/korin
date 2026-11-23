@@ -33,6 +33,8 @@ One key answers a gate or a `confirm`; there is no need to press Enter.
 
 - `y` approves.
 - `n`, Enter or Esc declines. The default is no.
+- `l` hides or shows the legend of path prefixes, in the compact view. See
+  [The legend](cli.md#the-legend).
 - `f` switches between the compact and the full view, draws the preview again, and asks
   again. See [Compact view](cli.md#compact-view).
 - Any other key, such as an arrow key, is ignored.

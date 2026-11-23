@@ -27,12 +27,15 @@ The file is [KDL](https://kdl.dev) version 2. Each key is one line: the key, the
 | Key | Values | Default | Also set by |
 |---|---|---|---|
 | `view` | `compact`, `full` | `compact` | – |
+| `legend` | `#true`, `#false` | `#true` | – |
 | `require-enter` | `#true`, `#false` | `#false` | `--require-enter`, `KORIN_REQUIRE_ENTER` |
 | `color` | `auto`, `always`, `never` | `auto` | `--color` |
 
 - **`view`** is the view a run in a terminal starts in. See
   [Compact view](cli.md#compact-view). `f` still switches during a run. A run without a
   terminal always shows the full view.
+- **`legend`** shows the compact view's legend of path prefixes. See
+  [The legend](cli.md#the-legend). `l` still switches during a run.
 - **`require-enter`** makes gates and `confirm` read `y` and then Enter, instead of a
   single key.
 - **`color`** works like `--color`. With `auto`, `NO_COLOR` still turns color off.
@@ -57,6 +60,7 @@ comes from: `flag`, `env`, `file` or `default`.
 ```text
 /home/ada/.config/korin/config.kdl
 view           full       file
+legend         #true      default
 require-enter  #true      file
 color          auto       default
 ```

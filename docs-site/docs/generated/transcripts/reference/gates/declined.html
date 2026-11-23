@@ -1,5 +1,6 @@
 <pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Drain a node</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">2 stages</span>
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run declined.korin --param node=node-7
+  <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Pods on the node</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
@@ -17,7 +18,7 @@
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Drain</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 
   <span class="k-fg-dim">2.1</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> drain <span class="k-cyan">node-7</span> <span class="k-blue">--ignore-daemonsets --delete-emptydir-data</span>
-  <span class="k-magenta">?</span> <span class="k-bold">Run stage 2?</span> <span class="k-fg-dim">[y/N · f full]</span> n
+  <span class="k-magenta">?</span> <span class="k-bold">Run stage 2?</span> <span class="k-fg-dim">[y/N · f full · l legend]</span> n
 
 <span class="k-red k-bold">✗</span> <span class="k-bold">stage 2 was not approved; nothing in it ran</span>
   <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-drain-a-node</span></code></pre>
