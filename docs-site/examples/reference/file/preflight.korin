@@ -1,0 +1,14 @@
+korin 1
+title "Restart the API"
+gates mutating
+
+preflight "Which account?"
+  read aws sts get-caller-identity --output json
+    capture account = jq .Account
+
+stage "Check"
+  note "Working in account {account}."
+
+stage "Restart"
+  mutate kubectl rollout restart deployment/api -n shop
+  record "restarted api in {account}"

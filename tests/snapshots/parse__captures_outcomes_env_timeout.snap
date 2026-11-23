@@ -14,6 +14,7 @@ Wizard {
     },
     uses: [],
     params: [],
+    preflight: None,
     stages: [
         Stage {
             title: "s" @ 24..27,

@@ -1,4 +1,5 @@
 [
+  (preflight)
   (stage)
   (define)
   (when)

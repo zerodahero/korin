@@ -47,6 +47,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "preflight"
+        },
+        {
+          "type": "SYMBOL",
           "name": "stage"
         },
         {
@@ -333,6 +337,43 @@
         {
           "type": "SYMBOL",
           "name": "_newline"
+        }
+      ]
+    },
+    "preflight": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "preflight"
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "title",
+              "content": {
+                "type": "SYMBOL",
+                "name": "string"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_newline"
+        },
+        {
+          "type": "FIELD",
+          "name": "body",
+          "content": {
+            "type": "SYMBOL",
+            "name": "block"
+          }
         }
       ]
     },

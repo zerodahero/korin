@@ -1,0 +1,24 @@
+<pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Restart the API</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">2 stages</span>
+<span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run preflight.korin --from Restart
+  <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
+
+━━ Preflight · Which account? ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  p.1 ❯ aws sts get-caller-identity --output json
+      <span class="k-border">│</span> {
+      <span class="k-border">│</span>     "UserId": "AIDASAMPLEUSERID",
+      <span class="k-border">│</span>     "Account": "123456789012",
+      <span class="k-border">│</span>     "Arn": "arn:aws:iam::123456789012:user/ada"
+      <span class="k-border">│</span> }
+  <span class="k-green k-bold">✓</span> <span class="k-bold">preflight done · 1 command</span>
+
+<span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Restart</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+
+  <span class="k-fg-dim">2.1</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> shop
+      <span class="k-border">│</span> deployment.apps/api restarted
+
+  <span class="k-green k-bold">✓</span> <span class="k-bold">restarted api in 123456789012</span>
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 1 command</span>
+
+<span class="k-green k-bold">✓</span> <span class="k-bold">Restart the API completed</span>
+  <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-restart-the-api</span></code></pre>

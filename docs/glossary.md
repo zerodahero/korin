@@ -307,3 +307,11 @@ the operator can change. Code: `Runner::values_view`.
 A value the operator gave in the values view. Event: `value_set`.
 
 - UI label: set by hand
+
+### Preflight
+
+The read-only block before stage 1, for lookups every run needs. It runs first, even with
+`--from`, and has no number: its steps are `p.1`, `p.2`. Code: `Program.preflight`, a
+`Stage` numbered 0.
+
+- UI label: preflight

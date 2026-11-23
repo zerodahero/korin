@@ -1,6 +1,6 @@
 korin 1
 title "Migrate the orders database"
-# Read-only stages run after they are shown; stages that change something wait at a gate.
+# Read-only stages pause after they are shown; stages that change something wait at a gate.
 gates mutating
 # Every program this wizard may start. `korin check` rejects anything else.
 allow aws, kubectl, curl
@@ -9,7 +9,8 @@ param cluster = "orders-db"
 param namespace = "shop"
 param release required
 
-stage "Preflight"
+# The preflight only reads. It runs first, even when a run starts later with --from.
+preflight "Check the deployment"
   # Ask the CLI for JSON, and take values with jq.
   read kubectl get deployment orders -n {namespace} -o json
     capture ready  = jq .status.readyReplicas // 0

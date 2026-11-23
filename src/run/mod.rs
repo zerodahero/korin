@@ -75,7 +75,8 @@ pub fn resolve_from(program: &Program, from: &str) -> Result<usize, Box<Diag>> {
         })?;
     if let Some(first) = program.from_blockers(stage).first() {
         let info = program.sym(first.sym);
-        let defined = &program.stages[info.stage - 1];
+        let number = info.stage.unwrap_or(0);
+        let defined = &program.stages[number - 1];
         return Err(Box::new(
             Diag::error(
                 &first.loc.file,
@@ -87,7 +88,7 @@ pub fn resolve_from(program: &Program, from: &str) -> Result<usize, Box<Diag>> {
                 ),
             )
             .label("used here")
-            .help(format!("start at stage {} or earlier", info.stage)),
+            .help(format!("start at stage {number} or earlier")),
         ));
     }
     Ok(stage)
@@ -518,6 +519,10 @@ impl<'p> Runner<'p> {
         let p = self.p;
         let result = self.params().and_then(|()| {
             self.flush_legend();
+            // The preflight runs first, even with `--from`.
+            if let Some(preflight) = &p.preflight {
+                self.stage(preflight)?;
+            }
             for stage in &p.stages {
                 if stage.number < from {
                     continue;
@@ -1015,9 +1020,10 @@ impl<'p> Runner<'p> {
                     info.kind,
                     SymKind::Param | SymKind::Ask | SymKind::Capture | SymKind::Expect
                 );
-                let earlier = info.stage < self.stage_now;
-                let made_here =
-                    info.stage == self.stage_now && self.in_stage && self.touched.contains(&sym);
+                let earlier = info.stage.is_none_or(|s| s < self.stage_now);
+                let made_here = info.stage == Some(self.stage_now)
+                    && self.in_stage
+                    && self.touched.contains(&sym);
                 listed && (earlier || made_here)
             })
             .collect()
@@ -1330,10 +1336,13 @@ impl<'p> Runner<'p> {
         self.stage_now = stage.number;
         self.in_stage = false;
         self.touched.clear();
-        self.say(&format!(
-            "\n{}",
+        let rule = if stage.is_preflight() {
+            render::preflight_rule(&stage.title, self.width())
+        } else {
             render::stage_rule(stage.number, total, &stage.title, self.width())
-        ));
+        };
+        self.say(&format!("\n{rule}"));
+        let id = stage_id(stage);
         let guide = self.p.mode == Mode::Guide;
         // Everything after the header is the preview; a live view erases it once approved.
         // A guide shows no preview: its stage just runs, after a pause.
@@ -1344,20 +1353,23 @@ impl<'p> Runner<'p> {
         }
         self.journal.event(
             "stage_start",
-            json!({"stage": stage.number, "title": stage.title, "mutating": stage.mutating}),
+            json!({"stage": id, "title": stage.title, "mutating": stage.mutating}),
         );
-        self.journal
-            .report(&format!("\n## Stage {} · {}\n", stage.number, stage.title));
+        self.journal.report(&if stage.is_preflight() {
+            format!("\n## Preflight · {}\n", stage.title)
+        } else {
+            format!("\n## Stage {} · {}\n", stage.number, stage.title)
+        });
         self.check_withheld_boundaries(&stage.steps)?;
         let gated = !guide && (self.p.gates == GateMode::All || stage.mutating);
         if guide {
             if self.opts.yes {
                 self.journal
-                    .event("pause", json!({"stage": stage.number, "auto": true}));
+                    .event("pause", json!({"stage": id, "auto": true}));
                 self.journal.report("- continued by `--yes`");
             } else {
                 self.pause("continue", true)?;
-                self.journal.event("pause", json!({"stage": stage.number}));
+                self.journal.event("pause", json!({"stage": id}));
                 self.journal.report("- continued");
             }
         } else if !gated {
@@ -1365,7 +1377,7 @@ impl<'p> Runner<'p> {
             // runs when the operator continues.
             if self.opts.yes {
                 self.journal
-                    .event("pause", json!({"stage": stage.number, "auto": true}));
+                    .event("pause", json!({"stage": id, "auto": true}));
                 self.journal.report("- continued by `--yes`");
             } else {
                 let keys = Keys {
@@ -1379,43 +1391,50 @@ impl<'p> Runner<'p> {
                         r.say_preview(&stage.steps.iter().collect::<Vec<_>>());
                     }
                 })?;
-                self.journal.event("pause", json!({"stage": stage.number}));
+                self.journal.event("pause", json!({"stage": id}));
                 self.journal.report("- continued");
             }
         } else {
             if self.opts.yes {
                 self.say("  approved by --yes");
-                self.journal
-                    .event("gate_auto", json!({"stage": stage.number}));
+                self.journal.event("gate_auto", json!({"stage": id}));
                 self.journal.report("- gate approved by `--yes`");
-            } else if self.ask_yes(&|_| format!("Run stage {}?", stage.number), &|r| {
+            } else if self.ask_yes(&|_| format!("Run {}?", stage.name()), &|r| {
                 if !stage.steps.is_empty() {
                     r.say("");
                     r.say_preview(&stage.steps.iter().collect::<Vec<_>>());
                 }
             })? {
                 self.journal
-                    .event("gate", json!({"stage": stage.number, "approved": true}));
+                    .event("gate", json!({"stage": id, "approved": true}));
                 self.journal.report("- gate approved");
             } else {
                 self.journal
-                    .event("gate", json!({"stage": stage.number, "approved": false}));
+                    .event("gate", json!({"stage": id, "approved": false}));
                 return Err(Stop::failed(format!(
-                    "stage {} was not approved; nothing in it ran",
-                    stage.number
+                    "{} was not approved; nothing in it ran",
+                    stage.name()
                 )));
             }
         }
         self.screen.borrow_mut().erase_to_mark();
         self.in_stage = true;
-        let prefix = format!("s{}", stage.number);
+        let prefix = if stage.is_preflight() {
+            "p".to_string()
+        } else {
+            format!("s{}", stage.number)
+        };
         let before = self.seq;
         self.footer = Some((
-            format!(
-                "Stage {}/{total} · {}",
-                stage.number,
-                render::escape_controls(&stage.title)
-            ),
+            if stage.is_preflight() {
+                format!("Preflight · {}", render::escape_controls(&stage.title))
+            } else {
+                format!(
+                    "Stage {}/{total} · {}",
+                    stage.number,
+                    render::escape_controls(&stage.title)
+                )
+            },
             String::new(),
         ));
         let result = self.steps(&stage.steps, &prefix, "", None);
@@ -1429,7 +1448,12 @@ impl<'p> Runner<'p> {
             1 => " · 1 command".into(),
             n => format!(" · {n} commands"),
         };
-        self.say(&format!("  ✓ stage {} done{tail}", stage.number));
+        let done = if stage.is_preflight() {
+            "preflight".to_string()
+        } else {
+            format!("stage {}", stage.number)
+        };
+        self.say(&format!("  ✓ {done} done{tail}"));
         Ok(())
     }
 
@@ -2672,7 +2696,7 @@ fn known_inputs(p: &Program) -> Vec<(String, bool)> {
         .iter()
         .map(|param| (p.sym(param.sym).name.clone(), param.secret))
         .collect();
-    for stage in &p.stages {
+    for stage in p.all_stages() {
         asks(&stage.steps, p, &mut out);
     }
     out
@@ -2805,6 +2829,15 @@ impl Drop for RestoreModes {
             nix::sys::termios::SetArg::TCSANOW,
             &self.0,
         );
+    }
+}
+
+/// How the journal names a stage: its number, or `"preflight"`.
+fn stage_id(stage: &ir::Stage) -> serde_json::Value {
+    if stage.is_preflight() {
+        json!("preflight")
+    } else {
+        json!(stage.number)
     }
 }
 

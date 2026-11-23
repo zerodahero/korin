@@ -447,3 +447,54 @@ fn a_guide_has_no_gates_and_mode_takes_two_words() {
         "ok"
     );
 }
+
+#[test]
+fn a_preflight_only_reads_even_through_a_template() {
+    let out = check(&[
+        (
+            "main.korin",
+            concat!(
+                "korin 1\ntitle \"t\"\n",
+                "use \"./lib/m.korin\"\n",
+                "preflight\n",
+                "  read git status\n",
+                "  interactive nvim notes.md\n",
+                "  ask who \"Who?\"\n",
+                "  confirm \"Go on?\"\n",
+                "  mutate git push\n",
+                "  m.change()\n",
+                "stage \"a\"\n",
+                "  mutate git push\n",
+            ),
+        ),
+        (
+            "lib/m.korin",
+            "define change()\n  read git status\n  script mutate ./fix.sh\n",
+        ),
+    ]);
+    assert!(
+        out.contains("a preflight only reads, so it cannot contain `mutate`"),
+        "{out}"
+    );
+    assert!(
+        out.contains("`m.change()` runs `script mutate`, and a preflight only reads")
+            || out.contains("runs `script mutate`, and a preflight only reads"),
+        "{out}"
+    );
+    // Only those two: interactive, ask and confirm are allowed, and stages may mutate.
+    assert_eq!(out.lines().count(), 2, "{out}");
+}
+
+#[test]
+fn preflight_values_never_block_from() {
+    let body = concat!(
+        "preflight\n",
+        "  read aws sts get-caller-identity\n",
+        "    capture account = jq .Account\n",
+        "stage \"a\"\n",
+        "  read true\n",
+        "stage \"b\"\n",
+        "  note \"{account}\"\n",
+    );
+    assert_eq!(from(body, "b"), "ok 2");
+}

@@ -19,6 +19,9 @@ param <name> required
 param <name> = "<default, may use {other_param}>"
 param <name> secret            # from KORIN_SECRET_<NAME>, or asked with hidden input
 
+preflight ["<title>"]          # optional, once, before stage 1; read-only; runs even with --from
+  <steps>
+
 stage "<title>"
   <steps>
 ```

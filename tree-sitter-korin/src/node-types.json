@@ -1068,6 +1068,32 @@
     }
   },
   {
+    "type": "preflight",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "block",
+            "named": true
+          }
+        ]
+      },
+      "title": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "string",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "reference",
     "named": true,
     "fields": {},
@@ -1205,6 +1231,10 @@
         },
         {
           "type": "param",
+          "named": true
+        },
+        {
+          "type": "preflight",
           "named": true
         },
         {
@@ -1670,6 +1700,10 @@
   },
   {
     "type": "poll",
+    "named": false
+  },
+  {
+    "type": "preflight",
     "named": false
   },
   {

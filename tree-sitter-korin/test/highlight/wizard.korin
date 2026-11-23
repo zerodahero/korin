@@ -6,6 +6,11 @@ param cluster required
 #     ^ variable.parameter
 #             ^ keyword.modifier
 
+preflight "Look up IDs"
+# <- keyword
+#         ^ string
+  read aws sts get-caller-identity
+
 stage "Snapshot"
 # <- keyword
   rds.cluster({cluster}) as src

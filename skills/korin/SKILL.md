@@ -47,6 +47,9 @@ safe to approve and safe to run again:
   `capture secret`, then `env NAME={name}` on the step that needs them.
 - **List every program in `allow`.** Use `gates mutating` when the read-only stages are safe
   to run on Enter alone: they show a preview and pause, with no y/N.
+- **Put the lookups every run needs in a `preflight`.** It runs first, even with `--from`,
+  so later stages can read its values on any start. Keep it to `read` and `script read`: no
+  `ask` or `confirm`.
 - **Use `mode guide` for a tour that changes nothing**, such as onboarding or a status
   check. A guide has no gates and pauses before each stage; `korin check` rejects any
   `mutate` in it, and any `gates` line.

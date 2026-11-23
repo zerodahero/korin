@@ -1395,3 +1395,42 @@ fn an_unattended_guide_passes_its_pauses_with_yes() {
         plan.text
     );
 }
+
+// ---- the preflight ----
+
+#[test]
+fn the_preflight_runs_first_even_with_from() {
+    let env = Env::new();
+    env.script("bin/lookup", "#!/bin/sh\necho id-42\n");
+    env.script("bin/use-id", "#!/bin/sh\necho \"using $1\"\n");
+    env.wizard(concat!(
+        "preflight \"Look up IDs\"\n",
+        "  read lookup\n",
+        "    capture id = text\n",
+        "stage \"one\"\n",
+        "  read true\n",
+        "stage \"two\"\n",
+        "  read use-id {id}\n",
+    ));
+    for args in [&[][..], &["--from", "two"][..]] {
+        let out = env.run_yes(args);
+        assert_eq!(out.code, 0, "{args:?}: {}", out.text);
+        assert!(out.text.contains("Preflight · Look up IDs"), "{}", out.text);
+        assert!(out.text.contains("using id-42"), "{}", out.text);
+        let starts: Vec<serde_json::Value> = env
+            .events_of("stage_start")
+            .iter()
+            .map(|e| e["stage"].clone())
+            .collect();
+        let expected = if args.is_empty() {
+            vec![serde_json::json!("preflight"), 1.into(), 2.into()]
+        } else {
+            vec![serde_json::json!("preflight"), 2.into()]
+        };
+        assert_eq!(starts, expected, "{args:?}");
+        let first = &env.events_of("command_start")[0];
+        assert_eq!(first["invocation_id"], "0001-p.1");
+        assert_eq!(first["step"], "p.1");
+        std::fs::remove_dir_all(env.path(".korin")).unwrap();
+    }
+}

@@ -175,6 +175,7 @@ impl<'a> Parser<'a> {
         let mut uses = Vec::new();
         let mut params = Vec::new();
         let mut stages = Vec::new();
+        let mut preflight: Option<Stage> = None;
 
         for node in rest {
             let mut cur = self.cur(node);
@@ -190,11 +191,15 @@ impl<'a> Parser<'a> {
                 keyword.as_str(),
                 "title" | "gates" | "mode" | "unattended" | "allow"
             );
-            if header_keyword && !stages.is_empty() {
+            if header_keyword && (!stages.is_empty() || preflight.is_some()) {
                 self.errors.push(self.err(
                     "misplaced",
                     node.span(),
-                    format!("`{keyword}` belongs in the header, before the first stage"),
+                    if stages.is_empty() {
+                        format!("`{keyword}` belongs in the header, before the preflight")
+                    } else {
+                        format!("`{keyword}` belongs in the header, before the first stage")
+                    },
                 ));
                 continue;
             }
@@ -271,13 +276,28 @@ impl<'a> Parser<'a> {
                     }
                     Ok(())
                 }
+                "preflight" => {
+                    if let Some(first) = &preflight {
+                        Err(self
+                            .err("preflight", node.span(), "a wizard has at most one `preflight`")
+                            .related(first.span, "the first one is here"))
+                    } else if let Some(stage) = stages.first() {
+                        Err(self
+                            .err("preflight", node.span(), "the `preflight` comes before the first stage")
+                            .related(stage.span, "stage 1 is here")
+                            .help("move the `preflight` block above the first `stage`"))
+                    } else {
+                        preflight = self.preflight(node);
+                        Ok(())
+                    }
+                }
                 "define" => Err(self
                     .err("misplaced", node.span(), "`define` belongs in a module file")
                     .help("move templates into a file and import it with `use \"./lib/name.korin\"`")),
                 "korin" => Err(self.err("header", node.span(), "`korin` must appear only once, on the first line")),
                 other => Err(self
                     .err("syntax", node.span(), format!("unexpected `{other}` at the top level"))
-                    .help("top-level lines are header lines, `use`, `param` or `stage`; steps go indented under a stage")),
+                    .help("top-level lines are header lines, `use`, `param`, `preflight` or `stage`; steps go indented under a stage")),
             };
             if let Err(diag) = result {
                 self.errors.push(diag);
@@ -315,6 +335,7 @@ impl<'a> Parser<'a> {
             },
             uses,
             params,
+            preflight,
             stages,
         })
     }
@@ -450,6 +471,32 @@ impl<'a> Parser<'a> {
         if node.children.is_empty() {
             self.errors
                 .push(self.err("syntax", node.span(), "the stage has no steps"));
+            return None;
+        }
+        let steps = self.steps(&node.children);
+        Some(Stage {
+            title,
+            steps,
+            span: node.span(),
+        })
+    }
+
+    /// `preflight` or `preflight "Title"`, then its steps.
+    fn preflight(&mut self, node: &Node) -> Option<Stage> {
+        let title = self.recover(|p| {
+            let mut cur = p.cur(node);
+            let keyword = cur.expect_keyword("preflight")?;
+            let title = if cur.at_end() {
+                Spanned::new("Preflight".to_string(), keyword)
+            } else {
+                cur.plain_string()?
+            };
+            cur.expect_end()?;
+            Ok(title)
+        })?;
+        if node.children.is_empty() {
+            self.errors
+                .push(self.err("syntax", node.span(), "the preflight has no steps"));
             return None;
         }
         let steps = self.steps(&node.children);

@@ -13,6 +13,7 @@
   "unattended"
   "allow"
   "param"
+  "preflight"
   "stage"
   "exports"
   "confirm"

@@ -223,3 +223,33 @@ fn on_may_name_an_expect_called_like_a_match_keyword() {
     let file = SourceFile::new("w.korin", "w.korin", &src);
     assert!(parse_wizard(&file).is_ok());
 }
+
+#[test]
+fn preflight_with_and_without_a_title() {
+    let titled = wizard(&with_header(
+        "preflight \"Look up IDs\"\n  read aws sts get-caller-identity\nstage \"a\"\n  read true\n",
+    ));
+    assert!(titled.contains("\"Look up IDs\""), "{titled}");
+    let plain = wizard(&with_header(
+        "preflight\n  read aws sts get-caller-identity\nstage \"a\"\n  read true\n",
+    ));
+    assert!(plain.contains("\"Preflight\""), "{plain}");
+}
+
+#[test]
+fn preflight_comes_once_and_before_the_first_stage() {
+    let after = errors(&with_header(
+        "stage \"a\"\n  read true\npreflight\n  read true\n",
+    ));
+    assert!(after.contains("comes before the first stage"), "{after}");
+    let twice = errors(&with_header(
+        "preflight\n  read true\npreflight\n  read true\nstage \"a\"\n  read true\n",
+    ));
+    assert!(twice.contains("at most one `preflight`"), "{twice}");
+    let empty = errors(&with_header("preflight\nstage \"a\"\n  read true\n"));
+    assert!(empty.contains("the preflight has no steps"), "{empty}");
+    let header = errors(&with_header(
+        "preflight\n  read true\ngates mutating\nstage \"a\"\n  read true\n",
+    ));
+    assert!(header.contains("before the preflight"), "{header}");
+}

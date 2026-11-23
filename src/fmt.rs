@@ -2,8 +2,8 @@
 //!
 //! The formatter works line by line, so comments survive. It re-indents each block to two
 //! spaces per level, trims trailing whitespace, keeps at most one blank line in a row, puts one
-//! blank line before every top-level `stage` and `define`, and aligns the `=` in a run of
-//! `capture` lines at the same depth.
+//! blank line before every top-level `preflight`, `stage` and `define`, and aligns the `=` in a
+//! run of `capture` lines at the same depth.
 
 /// Formats a file that already parses.
 pub fn format(text: &str) -> String {
@@ -49,8 +49,11 @@ pub fn format(text: &str) -> String {
             continue;
         }
         let depth = depths[index].unwrap_or(0);
-        let top_block =
-            depth == 0 && (content.starts_with("stage ") || content.starts_with("define "));
+        let top_block = depth == 0
+            && (content.starts_with("stage ")
+                || content.starts_with("define ")
+                || content == "preflight"
+                || content.starts_with("preflight "));
         if top_block && lines.last().is_some_and(|l| !l.is_empty()) {
             // Keep a comment that introduces the block attached to it.
             let mut insert_at = lines.len();
@@ -156,5 +159,13 @@ mod tests {
         );
         assert_eq!(format(input), expected);
         assert_eq!(format(expected), expected, "formatting is idempotent");
+    }
+
+    #[test]
+    fn a_preflight_gets_a_blank_line_like_a_stage() {
+        let input = "korin 1\ntitle \"t\"\npreflight\n  read true\nstage \"a\"\n  read true\n";
+        let expected =
+            "korin 1\ntitle \"t\"\n\npreflight\n  read true\n\nstage \"a\"\n  read true\n";
+        assert_eq!(format(input), expected);
     }
 }

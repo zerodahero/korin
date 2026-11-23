@@ -70,6 +70,8 @@ pub struct Wizard {
     pub header: Header,
     pub uses: Vec<Use>,
     pub params: Vec<Param>,
+    /// The read-only block before stage 1, if any. Its title defaults to "Preflight".
+    pub preflight: Option<Stage>,
     pub stages: Vec<Stage>,
 }
 

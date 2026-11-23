@@ -67,6 +67,7 @@ module.exports = grammar({
       $.allow,
       $.use,
       $.param,
+      $.preflight,
       $.stage,
       $.define,
     ),
@@ -104,6 +105,13 @@ module.exports = grammar({
     ),
 
     // ---- blocks ----
+
+    preflight: $ => seq(
+      'preflight',
+      optional(field('title', $.string)),
+      $._newline,
+      field('body', $.block),
+    ),
 
     stage: $ => seq('stage', field('title', $.string), $._newline, field('body', $.block)),
 

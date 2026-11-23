@@ -315,6 +315,13 @@ pub fn stage_rule(number: usize, total: usize, title: &str, width: usize) -> Str
     head + &"━".repeat(fill)
 }
 
+/// The header that starts the preflight: `━━ Preflight · Title ━━━━`.
+pub fn preflight_rule(title: &str, width: usize) -> String {
+    let head = format!("━━ Preflight · {} ", escape_controls(title));
+    let fill = width.min(RULE_MAX).saturating_sub(head.width()).max(2);
+    head + &"━".repeat(fill)
+}
+
 /// A command as the operator sees it, on one line: each argument quoted once it is fully
 /// known, so a value with spaces reads as one argument and a control character cannot hide.
 pub fn argv(program: &Program, argv: &[Interpolated], values: &dyn Values) -> String {
@@ -694,6 +701,24 @@ pub fn plan(program: &Program, width: usize) -> String {
         .collect();
     if !params.is_empty() {
         out.push(format!("params: {}", params.join(", ")));
+    }
+    if let Some(preflight) = &program.preflight {
+        out.push(String::new());
+        let gated = program.gates == GateMode::All || preflight.mutating;
+        out.push(preflight_rule(&preflight.title, width));
+        out.push(format!(
+            "  read-only, {}; runs first, even with --from",
+            if guide {
+                "pause"
+            } else if gated {
+                "gate"
+            } else {
+                "pause"
+            },
+        ));
+        for step in &preflight.steps {
+            step_lines(program, step, 1, &Placeholders, Some(width), &mut out);
+        }
     }
     let total = program.stages.len();
     for stage in &program.stages {

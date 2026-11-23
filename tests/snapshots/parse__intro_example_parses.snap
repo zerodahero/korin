@@ -74,6 +74,7 @@ Wizard {
             span: 287..311,
         },
     ],
+    preflight: None,
     stages: [
         Stage {
             title: "Identity" @ 364..374,

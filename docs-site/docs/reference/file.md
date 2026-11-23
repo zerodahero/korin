@@ -75,6 +75,34 @@ step. Every stage is shown in full before it runs, and asks for approval at its
 Stages are numbered from 1. Steps are numbered within their stage: `2.3` is the third step of
 stage 2, and `2.3.1` is the first step inside it.
 
+## Preflight
+
+`preflight` starts a block of lookups that every run needs: account IDs, the current state,
+what is already done. It comes after the header and params, before the first stage, and a
+wizard has at most one. A title is optional: `preflight "Which account?"`. Without one, the
+title is "Preflight".
+
+```korin title="preflight.korin"
+--8<-- "docs-site/examples/reference/file/preflight.korin"
+```
+
+--8<-- "docs-site/docs/generated/transcripts/reference/file/preflight.html"
+
+- **It only reads.** `korin check` rejects `mutate` and `script mutate` in it, even inside a
+  template. `interactive`, `ask` and `confirm` are allowed, but keep a preflight to `read`
+  and `script read`, so it can run at the start of every run without asking anything.
+- **It runs first, even with `--from`.** Its values are always there, so a later stage that
+  reads them never blocks a [start with `--from`](../guides/resume.md#start-at-a-later-stage).
+- **It has no number.** It shows as "Preflight", and its steps are `p.1`, `p.2` and so on.
+  Stage numbers, and the names `--from` takes, stay the same whether or not a wizard has a
+  preflight.
+- **It is shown before it runs**, like a stage that only reads: a gate under `gates all`, and
+  a pause under `gates mutating` or `mode guide`.
+
+The same wizard, started with `--from Restart`:
+
+--8<-- "docs-site/docs/generated/transcripts/reference/file/preflight-from.html"
+
 ## Module files
 
 A module file holds only `use` and `define` lines, and no header. See

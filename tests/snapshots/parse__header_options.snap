@@ -72,6 +72,7 @@ Wizard {
             span: 145..162,
         },
     ],
+    preflight: None,
     stages: [
         Stage {
             title: "s" @ 169..172,

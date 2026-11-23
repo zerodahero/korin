@@ -108,12 +108,22 @@ struct Naming {
     exports: HashSet<String>,
 }
 
+/// Why a block may only read, for [`Compiler::check_read_only`].
+#[derive(Clone, Copy)]
+enum ReadOnly {
+    /// A stage of a `mode guide` wizard, with where the mode is declared.
+    Guide(Option<Span>),
+    /// The preflight.
+    Preflight,
+}
+
 struct Ctx {
     imports: HashMap<String, ModId>,
     file: Arc<SourceFile>,
     scopes: Vec<HashMap<String, Binding>>,
     guards: Vec<Guard>,
-    stage: usize,
+    /// The stage being compiled: `Some(0)` for the preflight, `None` outside any stage.
+    stage: Option<usize>,
     naming: Option<Naming>,
 }
 
@@ -180,7 +190,7 @@ impl Compiler {
             ty: Ty::Scalar,
             secret: false,
             optional: false,
-            stage: 0,
+            stage: None,
             producer: None,
             step_expects: Vec::new(),
             on: None,
@@ -373,7 +383,7 @@ impl Compiler {
             file: Arc::clone(file),
             scopes: vec![HashMap::new()],
             guards: Vec::new(),
-            stage: 0,
+            stage: None,
             naming: None,
         };
 
@@ -414,6 +424,19 @@ impl Compiler {
             });
         }
 
+        let preflight = wizard.preflight.as_ref().map(|preflight| {
+            ctx.stage = Some(0);
+            let steps = self.steps(&mut ctx, &preflight.steps, "p");
+            self.check_read_only(&steps, None, ReadOnly::Preflight);
+            ir::Stage {
+                number: 0,
+                title: preflight.title.value.clone(),
+                mutating: steps_mutating(&steps),
+                steps,
+                loc: ctx.loc(preflight.span),
+            }
+        });
+
         let mut stages = Vec::new();
         let mut titles: HashMap<&str, Span> = HashMap::new();
         for (index, stage) in wizard.stages.iter().enumerate() {
@@ -429,10 +452,10 @@ impl Compiler {
                     .help("stage titles must be unique, so `--from` can name them"),
                 );
             }
-            ctx.stage = index + 1;
+            ctx.stage = Some(index + 1);
             let steps = self.steps(&mut ctx, &stage.steps, &(index + 1).to_string());
             if wizard.header.mode == ast::Mode::Guide {
-                self.check_guide(&steps, None, wizard.header.mode_span);
+                self.check_read_only(&steps, None, ReadOnly::Guide(wizard.header.mode_span));
             }
             stages.push(ir::Stage {
                 number: index + 1,
@@ -450,6 +473,7 @@ impl Compiler {
             mode: wizard.header.mode,
             unattended: wizard.header.unattended.is_some(),
             params,
+            preflight,
             stages,
             syms: std::mem::take(&mut self.syms),
             references: std::mem::take(&mut self.references),
@@ -553,11 +577,11 @@ impl Compiler {
 
     fn record_reference(&mut self, ctx: &Ctx, sym: Sym, span: Span) {
         let info = &self.syms[sym];
-        if matches!(info.kind, SymKind::Param | SymKind::KorinOut) || info.stage == 0 {
+        if matches!(info.kind, SymKind::Param | SymKind::KorinOut) || info.stage.is_none() {
             return;
         }
         self.references.push(ir::Reference {
-            stage: ctx.stage,
+            stage: ctx.stage.unwrap_or(0),
             sym,
             loc: ctx.loc(span),
         });
@@ -829,13 +853,23 @@ impl Compiler {
     /// A guide wizard only reads, so the checker rejects every step that changes state, at
     /// any depth. A step inside a template is reported at the call in the wizard, which is
     /// where the author can act; `call` is that call's step, once the walk is inside one.
-    fn check_guide(&mut self, steps: &[ir::Step], call: Option<&ir::Step>, mode: Option<Span>) {
+    /// Rejects `mutate` and `script mutate` in a block that may only read: a guide's stages,
+    /// or the preflight. Steps inside templates count, and are reported at the call.
+    fn check_read_only(&mut self, steps: &[ir::Step], call: Option<&ir::Step>, why: ReadOnly) {
+        let (code, what) = match why {
+            ReadOnly::Guide(_) => ("guide", "a guide"),
+            ReadOnly::Preflight => ("preflight", "a preflight"),
+        };
         for step in steps {
             match &step.kind {
                 ir::StepKind::Command(c)
                     if matches!(c.kind, CommandKind::Mutate | CommandKind::ScriptMutate) =>
                 {
                     let keyword = c.kind.keyword();
+                    let way_out = match why {
+                        ReadOnly::Guide(_) => "remove `mode guide`",
+                        ReadOnly::Preflight => "move it into a stage",
+                    };
                     let mut diag = match call {
                         Some(call) => {
                             let label = match &call.kind {
@@ -845,27 +879,34 @@ impl Compiler {
                             let (line, _) = step.loc.file.line_col(step.loc.span.start);
                             Diag::error(
                                 &call.loc.file,
-                                "guide",
+                                code,
                                 call.loc.span,
-                                format!("`{label}` runs `{keyword}`, and a guide only reads"),
+                                format!("`{label}` runs `{keyword}`, and {what} only reads"),
                             )
                             .label("this template call")
                             .help(format!(
                                 "step {} at {}:{line} is `{keyword}`; call a template that only \
-                                 reads, or remove `mode guide`",
+                                 reads, or {way_out}",
                                 step.id, step.loc.file.name
                             ))
                         }
                         None => Diag::error(
                             &step.loc.file,
-                            "guide",
+                            code,
                             step.loc.span,
-                            format!("a guide only reads, so it cannot contain `{keyword}`"),
+                            format!("{what} only reads, so it cannot contain `{keyword}`"),
                         )
-                        .help("use `read` or `script read`, or remove `mode guide` to gate each stage"),
+                        .help(match why {
+                            ReadOnly::Guide(_) => {
+                                "use `read` or `script read`, or remove `mode guide` to gate each stage"
+                            }
+                            ReadOnly::Preflight => {
+                                "use `read` or `script read`, or move the step into a stage"
+                            }
+                        }),
                     };
                     let in_wizard = Arc::ptr_eq(&diag_file(call, step), &self.wizard_file);
-                    if let Some(mode) = mode
+                    if let ReadOnly::Guide(Some(mode)) = why
                         && in_wizard
                     {
                         diag = diag.related(mode, "guide mode declared here");
@@ -873,11 +914,11 @@ impl Compiler {
                     self.push(diag);
                 }
                 ir::StepKind::Call { body, .. } => {
-                    self.check_guide(body, call.or(Some(step)), mode);
+                    self.check_read_only(body, call.or(Some(step)), why);
                 }
                 ir::StepKind::When { body, .. }
                 | ir::StepKind::Each { body, .. }
-                | ir::StepKind::Poll { body, .. } => self.check_guide(body, call, mode),
+                | ir::StepKind::Poll { body, .. } => self.check_read_only(body, call, why),
                 _ => {}
             }
         }

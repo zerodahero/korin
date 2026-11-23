@@ -38,6 +38,9 @@ korin run mutating.korin --param image=registry.example.com/api:2.4.0 --from Rol
 
 --8<-- "docs-site/docs/generated/transcripts/reference/gates/from.html"
 
+A [preflight](../reference/file.md#preflight) runs first, even with `--from`. Put the lookups
+every run needs there, and a later start still has their values.
+
 korin allows `--from` only when no later step uses a value made in a skipped stage: a
 capture, an expect, a template export or an `ask` answer. Params are fine, because you give
 them again. `korin plan` marks each stage as a valid start or not, and names the value that

@@ -164,3 +164,62 @@ define cluster(id, region)
             (identifier)
             (capture_mode
               (jq_filter))))))))
+
+========================================
+preflight with a title
+========================================
+
+korin 1
+title "t"
+preflight "Look up IDs"
+  read aws sts get-caller-identity
+stage "one"
+  read true
+
+----------------------------------------
+
+(source_file
+  (version
+    (integer))
+  (title
+    (string))
+  (preflight
+    (string)
+    (block
+      (command
+        (word)
+        (word)
+        (word))))
+  (stage
+    (string)
+    (block
+      (command
+        (word)))))
+
+========================================
+preflight without a title
+========================================
+
+korin 1
+title "t"
+preflight
+  read true
+stage "one"
+  read true
+
+----------------------------------------
+
+(source_file
+  (version
+    (integer))
+  (title
+    (string))
+  (preflight
+    (block
+      (command
+        (word))))
+  (stage
+    (string)
+    (block
+      (command
+        (word)))))

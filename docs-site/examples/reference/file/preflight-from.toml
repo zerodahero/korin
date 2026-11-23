@@ -1,0 +1,4 @@
+fakes = true
+wizard = "preflight.korin"
+args = ["--from", "Restart"]
+answers = ["", "y"]

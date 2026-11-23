@@ -57,8 +57,9 @@ pub struct SymInfo {
     pub ty: Ty,
     pub secret: bool,
     pub optional: bool,
-    /// The stage that defines it (1-based); 0 for params.
-    pub stage: usize,
+    /// The stage that defines it: `Some(n)` for stage n (1-based), `Some(0)` for the
+    /// preflight, and `None` for params and `korin.out`.
+    pub stage: Option<usize>,
     /// The step that produces it, for plan placeholders such as `<x ← 2.1>`.
     pub producer: Option<String>,
     /// For a capture: the expects of its step, which must all be false for it to exist.
@@ -233,6 +234,7 @@ pub struct Param {
 
 #[derive(Debug, Clone)]
 pub struct Stage {
+    /// The stage's number (1-based), or 0 for the preflight.
     pub number: usize,
     pub title: String,
     pub steps: Vec<Step>,
@@ -240,9 +242,25 @@ pub struct Stage {
     pub loc: Loc,
 }
 
+impl Stage {
+    pub fn is_preflight(&self) -> bool {
+        self.number == 0
+    }
+
+    /// How a message names it: `stage 2`, or `the preflight`.
+    pub fn name(&self) -> String {
+        if self.is_preflight() {
+            "the preflight".to_string()
+        } else {
+            format!("stage {}", self.number)
+        }
+    }
+}
+
 /// A use of a runtime value, recorded for the `--from` check.
 #[derive(Debug, Clone)]
 pub struct Reference {
+    /// The stage that reads the value, or 0 for the preflight.
     pub stage: usize,
     pub sym: Sym,
     pub loc: Loc,
@@ -256,6 +274,8 @@ pub struct Program {
     pub mode: Mode,
     pub unattended: bool,
     pub params: Vec<Param>,
+    /// The read-only block before stage 1, numbered 0.
+    pub preflight: Option<Stage>,
     pub stages: Vec<Stage>,
     pub syms: Vec<SymInfo>,
     pub references: Vec<Reference>,
@@ -268,14 +288,20 @@ impl Program {
     }
 
     /// Why the run cannot start at `stage` (1-based): the uses of values from skipped stages.
+    /// The preflight always runs, so its values never block a start.
     pub fn from_blockers(&self, stage: usize) -> Vec<&Reference> {
         self.references
             .iter()
             .filter(|u| {
                 let info = &self.syms[u.sym];
-                u.stage >= stage && info.stage > 0 && info.stage < stage
+                u.stage >= stage && info.stage.is_some_and(|s| s > 0 && s < stage)
             })
             .collect()
+    }
+
+    /// The preflight, if any, then every stage, in run order.
+    pub fn all_stages(&self) -> impl Iterator<Item = &Stage> {
+        self.preflight.iter().chain(&self.stages)
     }
 
     /// Every executable the program may run.
@@ -293,7 +319,7 @@ impl Program {
             }
         }
         let mut out = Vec::new();
-        for stage in &self.stages {
+        for stage in self.all_stages() {
             walk(&stage.steps, &mut out);
         }
         out
