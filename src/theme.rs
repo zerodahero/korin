@@ -311,6 +311,22 @@ impl Theme {
         out
     }
 
+    /// The live count after a hidden prompt, such as `· 52 chars`.
+    pub fn hidden_count(self, count: usize) -> String {
+        let mut out = String::new();
+        self.paint(Role::Frame, "· ", &mut out);
+        let unit = if count == 1 { "char" } else { "chars" };
+        self.paint(Role::Dim, &format!("{count} {unit}"), &mut out);
+        out
+    }
+
+    /// What a hidden prompt shows once answered, in place of the count.
+    pub fn hidden_done(self) -> String {
+        let mut out = String::new();
+        self.paint(Role::Ok, "✓", &mut out);
+        out
+    }
+
     /// The theme for miette's diagnostics.
     pub fn diagnostics(self) -> miette::GraphicalTheme {
         use miette::{GraphicalTheme, ThemeCharacters, ThemeStyles};

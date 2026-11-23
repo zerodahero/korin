@@ -706,13 +706,10 @@ impl<'p> Runner<'p> {
         }
         if secret {
             self.screen.borrow_mut().hide();
-            let value =
-                rpassword::prompt_password(self.opts.theme.ask(&format!("{name} (hidden):")))
-                    .map_err(|e| Stop::failed(format!("cannot read `{name}`: {e}")))?;
-            if self.signals.take_interrupt() {
-                return Err(Stop::cancelled("interrupted with Ctrl-C"));
-            }
-            Ok(value)
+            let prompt = self.opts.theme.ask(&format!("{name} (hidden):"));
+            let value = read_hidden_interruptible(&self.signals, &prompt, self.opts.theme)?;
+            self.screen.borrow_mut().echoed(&format!("{prompt}✓"));
+            Ok(value.to_string())
         } else {
             self.read_line(&self.opts.theme.ask(&format!("{name}:")))
         }
@@ -2277,6 +2274,107 @@ impl Drop for RestoreModes {
             nix::sys::termios::SetArg::TCSANOW,
             &self.0,
         );
+    }
+}
+
+/// Reads a hidden value from the terminal. Nothing typed is echoed: the prompt shows only a
+/// live count of the characters so far, so a person can tell that a paste arrived. Backspace
+/// removes the last character, Ctrl-U clears the line, Enter submits, and escape sequences
+/// such as arrow keys are ignored. Once submitted, the line shows `✓` in place of the count,
+/// so the length never stays in the scrollback. Ctrl-C and `SIGTERM` cancel the run.
+fn read_hidden_interruptible(
+    signals: &Signals,
+    prompt: &str,
+    theme: Theme,
+) -> Result<Zeroizing<String>, Stop> {
+    use nix::sys::termios::{LocalFlags, SetArg, SpecialCharacterIndices, tcgetattr, tcsetattr};
+    use std::io::Read as _;
+
+    let stdin = std::io::stdin();
+    let saved = tcgetattr(&stdin)
+        .map_err(|e| Stop::failed(format!("cannot read the terminal's modes: {e}")))?;
+    let mut keys = saved.clone();
+    keys.local_flags
+        .remove(LocalFlags::ICANON | LocalFlags::ECHO);
+    keys.control_chars[SpecialCharacterIndices::VMIN as usize] = 1;
+    keys.control_chars[SpecialCharacterIndices::VTIME as usize] = 0;
+    let _ = nix::sys::termios::tcflush(&stdin, nix::sys::termios::FlushArg::TCIFLUSH);
+    tcsetattr(&stdin, SetArg::TCSANOW, &keys)
+        .map_err(|e| Stop::failed(format!("cannot set the terminal's modes: {e}")))?;
+    let mut restore = saved;
+    restore.local_flags.remove(LocalFlags::PENDIN);
+    let _restore = RestoreModes(restore);
+
+    // Bytes, so a UTF-8 character split across two reads is kept whole.
+    let mut value: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::new());
+    let draw = |value: &[u8]| {
+        let count = String::from_utf8_lossy(value).chars().count();
+        print!("\r{prompt}{}\x1b[K", theme.hidden_count(count));
+        let _ = std::io::stdout().flush();
+    };
+    draw(&value);
+    let mut escape = false;
+    loop {
+        let [sig_int, sig_term, _] = signals.fds();
+        let mut fds = [
+            PollFd::new(stdin.as_fd(), PollFlags::POLLIN),
+            PollFd::new(sig_int, PollFlags::POLLIN),
+            PollFd::new(sig_term, PollFlags::POLLIN),
+        ];
+        let _ = poll(&mut fds, PollTimeout::from(50u16));
+        let readable = fds[0].revents().is_some_and(|r| !r.is_empty());
+        if signals.take_interrupt() {
+            println!();
+            return Err(Stop::cancelled("interrupted with Ctrl-C"));
+        }
+        if signals.take_terminate() {
+            println!();
+            return Err(Stop::cancelled("korin received SIGTERM or SIGHUP"));
+        }
+        if !readable {
+            continue;
+        }
+        let mut buf = Zeroizing::new([0u8; 256]);
+        let read = match stdin.lock().read(&mut buf[..]) {
+            Ok(0) => return Err(Stop::cancelled("the terminal closed")),
+            Ok(n) => n,
+            Err(e) => return Err(Stop::failed(format!("cannot read the terminal: {e}"))),
+        };
+        for &byte in &buf[..read] {
+            if escape {
+                // An escape sequence ends with a byte in 0x40..=0x7e, after its `[` or `O`.
+                if (0x40..=0x7e).contains(&byte) && byte != b'[' && byte != b'O' {
+                    escape = false;
+                }
+                continue;
+            }
+            match byte {
+                b'\r' | b'\n' => {
+                    print!("\r{prompt}{}\x1b[K\r\n", theme.hidden_done());
+                    let _ = std::io::stdout().flush();
+                    return match String::from_utf8(std::mem::take(&mut *value)) {
+                        Ok(text) => Ok(Zeroizing::new(text)),
+                        Err(e) => {
+                            let mut bytes = e.into_bytes();
+                            zeroize::Zeroize::zeroize(&mut bytes);
+                            Err(Stop::failed("the hidden value is not valid UTF-8"))
+                        }
+                    };
+                }
+                0x1b => escape = true,
+                0x7f | 0x08 => {
+                    // Drop the last character: its continuation bytes, then its first byte.
+                    while value.last().is_some_and(|b| b & 0xc0 == 0x80) {
+                        value.pop();
+                    }
+                    value.pop();
+                }
+                0x15 => value.clear(),
+                b if b < 0x20 => {}
+                b => value.push(b),
+            }
+        }
+        draw(&value);
     }
 }
 

@@ -923,3 +923,48 @@ fn a_guide_pauses_before_an_interactive_step() {
     assert_eq!(s.wait(), 0, "{}", s.text());
     assert!(marker(dir.path(), "opened").exists());
 }
+
+// ---- hidden input ----
+
+/// What the terminal shows once every byte so far is drawn, row by row.
+fn screen(s: &Session) -> String {
+    let rows = std::num::NonZero::new(40).unwrap();
+    let cols = std::num::NonZero::new(200).unwrap();
+    let mut parser = vt100::Parser::new(rows, cols, 0);
+    parser.process(&s.bytes());
+    parser.screen().contents()
+}
+
+#[test]
+fn hidden_input_counts_characters_and_leaves_only_a_tick() {
+    let dir = setup(
+        "stage \"a\"\n  ask secret token \"Token?\"\n  read showlen {token}\n",
+        &[("showlen", "echo \"len=${#1}\"")],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("y");
+    s.wait_for("token (hidden):");
+    s.send("ab");
+    s.wait_for("· 2 chars");
+    // A paste arrives as one read; é is two bytes but one character.
+    s.send("cdé");
+    s.wait_for("· 5 chars");
+    s.send("\x7f");
+    s.wait_for("· 4 chars");
+    // An arrow key is ignored, and Ctrl-U clears the line.
+    s.send("\x1b[D\x15");
+    s.wait_for("· 0 chars");
+    s.send("s3cret");
+    s.wait_for("· 6 chars");
+    s.send("\r");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let shown = screen(&s);
+    assert!(shown.contains("token (hidden): ✓"), "{shown}");
+    assert!(!shown.contains("chars"), "the length stayed on screen:\n{shown}");
+    assert!(!s.text().contains("s3cret"), "{}", s.text());
+    // The command got the whole value, and the journal holds no length.
+    assert!(s.text().contains("len=6"), "{}", s.text());
+    assert!(!events(dir.path()).contains("chars"));
+}

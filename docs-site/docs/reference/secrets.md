@@ -14,7 +14,18 @@ journal and the report show `«secret:name»`.
 
 A secret param is never read from the command line. Give it in the environment as
 `KORIN_SECRET_<NAME>`, such as `KORIN_SECRET_DB_PASSWORD`, or type it when korin asks.
-korin asks with hidden input.
+
+## Hidden input
+
+korin asks for a secret with hidden input: nothing you type appears. The prompt shows only
+a count of the characters so far, such as `token (hidden): · 52 chars`, so you can tell that
+a paste arrived whole. This helps with a password manager whose clipboard empties after a
+few seconds.
+
+- Backspace removes the last character, and Ctrl-U clears the line.
+- Enter submits. The count then becomes `✓`, so the length does not stay in the
+  scrollback. The journal and the report never record it.
+- Ctrl-C cancels the run.
 
 A secret must be at least 4 characters long. Shorter values would match too much ordinary
 text.
