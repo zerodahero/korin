@@ -25,6 +25,12 @@ pub struct Screen {
     pane_rows: Option<usize>,
     /// Rows written since [`Screen::mark`], for erasing a gate's preview.
     since_mark: Option<usize>,
+    /// How many dialogs are open. While one is, prints go into the pane, not the run log.
+    dialogs: usize,
+    /// The lines an open dialog printed, its prompts and answers included.
+    dialog: Vec<String>,
+    /// The pane a dialog took over, drawn again once the dialog closes.
+    saved: Vec<String>,
 }
 
 impl Screen {
@@ -34,6 +40,9 @@ impl Screen {
             pane: Vec::new(),
             pane_rows: None,
             since_mark: None,
+            dialogs: 0,
+            dialog: Vec::new(),
+            saved: Vec::new(),
         }
     }
 
@@ -49,6 +58,12 @@ impl Screen {
         if !self.live {
             print!("{text}");
             flush();
+            return;
+        }
+        if self.dialogs > 0 {
+            self.dialog
+                .extend(text.trim_end_matches('\n').split('\n').map(str::to_string));
+            self.show_dialog();
             return;
         }
         self.hide();
@@ -103,20 +118,83 @@ impl Screen {
         self.since_mark = self.live.then_some(0);
     }
 
-    /// Counts a line the terminal showed without [`Screen::print`]: a prompt and the answer
-    /// the terminal echoed, ending with the newline of the Enter key.
-    pub fn echoed(&mut self, visible: &str) {
-        if let Some(count) = &mut self.since_mark {
-            *count += rows(&format!("{visible}\n"), width());
+    /// Opens a dialog, such as the values view: until [`Screen::end_dialog`], prints go into
+    /// the plan pane in place of what it showed, so the run log stays a log of the run.
+    /// Dialogs nest; the outermost one keeps the pane it took over.
+    pub fn begin_dialog(&mut self) {
+        if !self.live {
+            return;
+        }
+        if self.dialogs == 0 {
+            self.hide();
+            self.saved = std::mem::take(&mut self.pane);
+            self.dialog.clear();
+        }
+        self.dialogs += 1;
+    }
+
+    /// Starts an open dialog's lines over, as when the values view lists its rows again.
+    pub fn dialog_restart(&mut self) {
+        if self.dialogs > 0 {
+            self.dialog.clear();
         }
     }
 
+    /// Whether rows are being counted since a [`Screen::mark`], to be erased: a gate or a
+    /// pause is open.
+    pub fn marking(&self) -> bool {
+        self.since_mark.is_some()
+    }
+
+    /// Whether a dialog is still open, as when one dialog opened another.
+    pub fn dialog_open(&self) -> bool {
+        self.dialogs > 0
+    }
+
+    /// Closes a dialog. Once the outermost one closes, the pane it took over comes back.
+    pub fn end_dialog(&mut self) {
+        if !self.live || self.dialogs == 0 {
+            return;
+        }
+        self.dialogs -= 1;
+        if self.dialogs == 0 {
+            self.hide();
+            self.dialog.clear();
+            self.pane = std::mem::take(&mut self.saved);
+            self.show();
+        }
+    }
+
+    /// Draws an open dialog's lines in the pane: the newest ones, as many as fit with a row
+    /// left for its next prompt.
+    fn show_dialog(&mut self) {
+        let cols = width();
+        let budget = height().saturating_sub(3);
+        let mut used = 0;
+        let mut start = self.dialog.len();
+        while start > 0 {
+            let r = rows(&format!("{}\n", self.dialog[start - 1]), cols);
+            if used + r > budget {
+                break;
+            }
+            used += r;
+            start -= 1;
+        }
+        let lines = self.dialog[start..].to_vec();
+        self.hide();
+        self.pane = lines;
+        self.show();
+    }
+
     /// Counts a prompt line the terminal showed under the pane, with the answer it echoed,
-    /// so the next erase removes it with the pane. With no pane on screen it counts toward
-    /// [`Screen::mark`] instead.
+    /// so the next erase removes it with the pane. In a dialog, the line joins the dialog's
+    /// lines, so it stays in view. With no pane on screen it counts toward [`Screen::mark`].
     pub fn prompted(&mut self, visible: &str) {
         if !self.live {
             return;
+        }
+        if self.dialogs > 0 {
+            self.dialog.push(visible.to_string());
         }
         let added = rows(&format!("{visible}\n"), width());
         match &mut self.pane_rows {

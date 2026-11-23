@@ -471,6 +471,8 @@ struct Runner<'p> {
     legend_used: RefCell<Option<Vec<String>>>,
     /// The secret variables a `$` line has already explained, each named once per run.
     announced_vars: HashSet<String>,
+    /// `#` lines a dialog leaves for the run log, printed once the dialog closes.
+    records: Vec<String>,
     /// How far a prompt's content is scrolled, in lines, when it is taller than the terminal.
     pane_scroll: Cell<usize>,
     /// While a prompt's content is taller than the terminal, how many of its lines are below
@@ -639,6 +641,7 @@ impl<'p> Runner<'p> {
             legend: Cell::new(legend),
             legend_used: RefCell::new(None),
             announced_vars: HashSet::new(),
+            records: Vec::new(),
             pane_scroll: Cell::new(0),
             pane_below: Cell::new(None),
             stage_now: 0,
@@ -1054,13 +1057,17 @@ impl<'p> Runner<'p> {
         lines
     }
 
-    /// Erases a gate's pane, its prompt, and anything a dialog printed since the mark.
-    fn close_gate(&self) {
-        let mut screen = self.screen.borrow_mut();
-        screen.erase_to_mark();
-        screen.clear_all();
+    /// Erases a gate's pane, its prompt, and anything printed since the mark, then prints
+    /// the records its dialogs left.
+    fn close_gate(&mut self) {
+        {
+            let mut screen = self.screen.borrow_mut();
+            screen.erase_to_mark();
+            screen.clear_all();
+        }
         self.pane_below.set(None);
         self.pane_scroll.set(0);
+        self.flush_records();
     }
 
     /// The `#` line that records how a stage began or ended in the run log, such as
@@ -1194,7 +1201,13 @@ impl<'p> Runner<'p> {
             } else if let Some(default) = &param.default {
                 self.text(default)?
             } else if param.required || param.secret {
-                self.prompt_value(&name, param.secret)?
+                let secret = param.secret;
+                self.in_dialog(|r| {
+                    let value = r.prompt_value(&name, secret)?;
+                    r.records
+                        .push(answer_record(&name, &value, secret, "param"));
+                    Ok(value)
+                })?
             } else {
                 continue;
             };
@@ -1221,10 +1234,11 @@ impl<'p> Runner<'p> {
             )));
         }
         if secret {
-            self.screen.borrow_mut().hide();
             let prompt = self.opts.theme.ask(&format!("{name} (hidden):"));
             let value = read_hidden_interruptible(&self.signals, &prompt, self.opts.theme)?;
-            self.screen.borrow_mut().echoed(&format!("{prompt}✓"));
+            self.screen
+                .borrow_mut()
+                .prompted(&format!("{prompt}{}", self.opts.theme.hidden_done()));
             Ok(value.to_string())
         } else {
             self.read_line(&self.opts.theme.ask(&format!("{name}:")))
@@ -1233,12 +1247,38 @@ impl<'p> Runner<'p> {
 
     /// Reads a line from the terminal. Ctrl-C and `SIGTERM` cancel the run instead of being lost.
     fn read_line(&self, prompt: &str) -> Result<String, Stop> {
-        self.screen.borrow_mut().hide();
         let answer = read_line_interruptible(&self.signals, prompt)?;
         self.screen
             .borrow_mut()
-            .echoed(&format!("{prompt}{answer}"));
+            .prompted(&format!("{prompt}{answer}"));
         Ok(answer)
+    }
+
+    /// Runs a dialog, such as the values view, in the plan pane. Records it leaves, such as a
+    /// value set by hand, go into the run log once it closes, however it ends.
+    fn in_dialog<T>(
+        &mut self,
+        dialog: impl FnOnce(&mut Self) -> Result<T, Stop>,
+    ) -> Result<T, Stop> {
+        self.screen.borrow_mut().begin_dialog();
+        let result = dialog(self);
+        self.screen.borrow_mut().end_dialog();
+        // At a gate or a pause, what was printed since its mark is erased when it closes,
+        // so the records wait until then.
+        let screen = self.screen.borrow();
+        let hold = screen.dialog_open() || (screen.live() && screen.marking());
+        drop(screen);
+        if !hold {
+            self.flush_records();
+        }
+        result
+    }
+
+    /// Prints the records dialogs left, such as values set by hand, into the run log.
+    fn flush_records(&mut self) {
+        for record in std::mem::take(&mut self.records) {
+            self.say(&record);
+        }
     }
 
     /// Waits for the operator in a guide: Enter or Space continues, and Ctrl-C cancels. With
@@ -1256,6 +1296,7 @@ impl<'p> Runner<'p> {
         };
         self.ask(&Style::Pause(action), keys, &|_| {})?;
         self.screen.borrow_mut().erase_to_mark();
+        self.flush_records();
         Ok(())
     }
 
@@ -1274,9 +1315,7 @@ impl<'p> Runner<'p> {
         loop {
             match self.prompt(style, keys, redraw)? {
                 Key::Open => {
-                    // A dialog prints in the run log, under where the pane was.
-                    self.screen.borrow_mut().clear_all();
-                    self.open_script()?;
+                    self.in_dialog(Self::open_script)?;
                     {
                         let mut screen = self.screen.borrow_mut();
                         screen.erase_to_mark();
@@ -1285,8 +1324,7 @@ impl<'p> Runner<'p> {
                     redraw(self);
                 }
                 Key::Values => {
-                    self.screen.borrow_mut().clear_all();
-                    self.values_view()?;
+                    self.in_dialog(Self::values_view)?;
                     {
                         let mut screen = self.screen.borrow_mut();
                         screen.erase_to_mark();
@@ -1561,8 +1599,6 @@ impl<'p> Runner<'p> {
         if !self.skip_dialog(&decided, &[], Some(stage.number), &what, false)? {
             return Ok(false);
         }
-        self.close_gate();
-        self.say(&format!("\n{}", self.stage_comment(stage, "skipped")));
         self.journal.event(
             "stage_skip",
             json!({"stage": id, "by": "operator", "needs": []}),
@@ -1768,6 +1804,12 @@ impl<'p> Runner<'p> {
         );
         let who = if by == "operator" { "by hand" } else { by };
         self.journal.report(&format!("- `{name}` set {who}"));
+        let shown = if self.p.sym(sym).secret {
+            "••••".to_string()
+        } else {
+            self.capture_shown(&data)
+        };
+        self.records.push(format!("# {name} = {shown}  ({who})"));
         self.set_value(
             sym,
             Some(Value {
@@ -1862,8 +1904,9 @@ impl<'p> Runner<'p> {
     /// Lists every value known so far, and lets the operator change one by its number.
     fn values_view(&mut self) -> Result<(), Stop> {
         loop {
+            // Each pass lists the values afresh, with what changed.
+            self.screen.borrow_mut().dialog_restart();
             let rows = self.value_rows();
-            self.say("");
             if rows.is_empty() {
                 self.say("  values: none yet");
                 return Ok(());
@@ -1921,7 +1964,6 @@ impl<'p> Runner<'p> {
                 .copied()
                 .find(|c| line.len() == 1 && line.starts_with(*c)));
         }
-        self.screen.borrow_mut().hide();
         let (choice, echo) = read_key_interruptible(&self.signals, prompt, |bytes| match bytes {
             [b'\r' | b'\n', ..] | [0x1b] => Some((None, "")),
             [b, ..] => choices
@@ -1930,7 +1972,9 @@ impl<'p> Runner<'p> {
                 .map(|c| (Some(*c), choice_echo(*c))),
             [] => None,
         })?;
-        self.screen.borrow_mut().echoed(&format!("{prompt}{echo}"));
+        self.screen
+            .borrow_mut()
+            .prompted(&format!("{prompt}{echo}"));
         Ok(choice)
     }
 
@@ -1963,6 +2007,8 @@ impl<'p> Runner<'p> {
                 );
                 self.journal
                     .report(&format!("- `{}` cleared by hand", info.name));
+                self.records
+                    .push(format!("# {} cleared  (by hand)", info.name));
                 self.set_value(sym, None);
                 self.hand_set = true;
             }
@@ -1977,9 +2023,10 @@ impl<'p> Runner<'p> {
         loop {
             let result = if info.secret {
                 let prompt = theme.ask(&format!("{} (hidden):", info.name));
-                self.screen.borrow_mut().hide();
                 let text = read_hidden_interruptible(&self.signals, &prompt, theme)?;
-                self.screen.borrow_mut().echoed(&format!("{prompt}✓"));
+                self.screen
+                    .borrow_mut()
+                    .prompted(&format!("{prompt}{}", theme.hidden_done()));
                 Ok(Data::Str(text.to_string()))
             } else {
                 match info.ty {
@@ -2173,8 +2220,9 @@ impl<'p> Runner<'p> {
             loop {
                 match self.ask(&style, keys, &preview)? {
                     Key::Skip => {
-                        self.screen.borrow_mut().clear_all();
-                        if self.operator_skip(stage)? {
+                        if self.in_dialog(|r| r.operator_skip(stage))? {
+                            self.close_gate();
+                            self.say(&format!("\n{}", self.stage_comment(stage, "skipped")));
                             return Ok(());
                         }
                         {
@@ -2373,13 +2421,15 @@ impl<'p> Runner<'p> {
                             return Ok(());
                         }
                         Key::Skip => {
-                            self.screen.borrow_mut().clear_all();
                             let partial = skip::made_by(steps.iter().copied());
                             let what =
                                 format!("the rest of {}", self.p.stage(self.stage_now).name());
                             let decided = self.skipped.clone();
                             let now = Some(self.stage_now);
-                            if self.skip_dialog(&decided, &partial, now, &what, false)? {
+                            let skipped = self.in_dialog(|r| {
+                                r.skip_dialog(&decided, &partial, now, &what, false)
+                            })?;
+                            if skipped {
                                 self.close_gate();
                                 self.journal.event(
                                     "stage_skip",
@@ -2426,8 +2476,14 @@ impl<'p> Runner<'p> {
                     value.clone()
                 } else {
                     let prompt = self.display_interpolated(prompt);
-                    self.say(&format!("  {}", self.shorten_text(&prompt)));
-                    self.prompt_value(&name, *secret)?
+                    let secret = *secret;
+                    self.in_dialog(|r| {
+                        r.say(&format!("  {}", r.shorten_text(&prompt)));
+                        let value = r.prompt_value(&name, secret)?;
+                        r.records
+                            .push(answer_record(&name, &value, secret, "asked"));
+                        Ok(value)
+                    })?
                 };
                 if *secret {
                     self.redactor
@@ -3613,6 +3669,17 @@ impl render::Values for Runner<'_> {
             }),
         ))
     }
+}
+
+/// The `#` line an answer leaves in the run log: `# region = us-east-1  (asked)`. A secret
+/// shows as `••••`, and a value is escaped and kept to one line.
+fn answer_record(name: &str, value: &str, secret: bool, how: &str) -> String {
+    let shown = if secret {
+        "••••".to_string()
+    } else {
+        render::escape_controls(value)
+    };
+    format!("# {name} = {shown}  ({how})")
 }
 
 /// How many lines one scroll key moves a prompt's content: half the terminal.

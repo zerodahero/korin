@@ -717,6 +717,61 @@ fn without_color_a_gate_prints_its_commands_before_it_asks() {
 }
 
 #[test]
+fn a_value_set_in_the_values_view_leaves_one_record() {
+    let dir = setup(
+        "param name = \"world\"\nstage \"a\"\n  read greet {name}\n",
+        &[("greet", "echo \"hello $1\"")],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("v");
+    s.wait_for("number to change");
+    s.send("1\r");
+    s.wait_for("r replace · Enter keep");
+    std::thread::sleep(Duration::from_millis(400));
+    s.send("r");
+    s.wait_for("? name:");
+    s.send("mars\r");
+    s.wait_for_nth("number to change", 2);
+    s.send("\r");
+    s.wait_for_nth("Run stage 1?", 2);
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let screen = s.screen();
+    assert_eq!(
+        screen.matches("# name = mars  (by hand)").count(),
+        1,
+        "{screen}"
+    );
+    // The dialog itself stayed in the pane and went with it.
+    assert!(!screen.contains("number to change"), "{screen}");
+    assert!(!screen.contains("capture"), "{screen}");
+    assert!(screen.contains("hello mars"), "{screen}");
+}
+
+#[test]
+fn without_color_the_values_view_prints_its_rows_before_it_asks() {
+    let dir = setup(
+        "param name = \"world\"\nstage \"a\"\n  read greet {name}\n",
+        &[("greet", "echo \"hello $1\"")],
+    );
+    let env = vec![("NO_COLOR", PathBuf::from("1"))];
+    let mut s = start_with_env(dir.path(), &["run", "w.korin", "--require-enter"], &env);
+    s.wait_for("Run stage 1?");
+    s.send("v\r");
+    s.wait_for("number to change");
+    let text = s.text();
+    let asked = text.rfind("number to change").unwrap();
+    let row = text.rfind("name  world").unwrap();
+    assert!(row < asked, "{text}");
+    s.send("\r");
+    s.wait_for_nth("Run stage 1?", 2);
+    s.send("y\r");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+}
+
+#[test]
 fn check_shows_graphical_diagnostics_in_a_terminal() {
     let dir = setup("stage \"a\"\n  note \"{nope}\"\n", &[]);
     let mut s = start(dir.path(), &["check", "w.korin"]);
@@ -1104,7 +1159,9 @@ fn hidden_input_counts_characters_and_leaves_only_a_tick() {
     s.send("\r");
     assert_eq!(s.wait(), 0, "{}", s.text());
     let shown = screen(&s);
-    assert!(shown.contains("token (hidden): ✓"), "{shown}");
+    // The prompt goes with the pane; the run log keeps one record, with no length.
+    assert!(shown.contains("# token = ••••  (asked)"), "{shown}");
+    assert!(!shown.contains("token (hidden):"), "{shown}");
     assert!(
         !shown.contains("chars"),
         "the length stayed on screen:\n{shown}"
@@ -1291,7 +1348,10 @@ fn a_withheld_value_shows_only_its_placeholder_until_replaced() {
     s.send("not json\r");
     s.wait_for("not a value for `report`");
     s.send("\"fixed\"\r");
-    s.wait_for_nth("number to change", 2);
+    // The listing comes back with the new value; the dialog redraws its lines in the pane,
+    // so earlier prompts show again in the raw output.
+    s.wait_for("report  \"fixed\"");
+    std::thread::sleep(Duration::from_millis(300));
     s.send("\r");
     s.wait_for_nth("Run stage 2?", 2);
     s.answer("y");
