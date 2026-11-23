@@ -238,6 +238,33 @@ each command, its output, `↳` notes under it, and `#` lines for korin's own ev
 - UI label: run log
 - Avoid: transcript (the docs site's saved runs), output (a command's own stdout and stderr)
 
+### Live window
+
+The lines above the plan pane while a command runs: its `$` line and the newest lines of its
+output. It goes once the command ends, and the command's block goes into the run log. A
+secret-producing command shows only a "held" line there. Code: `Screen::set_window`.
+
+- UI label: live window
+- Avoid: tail, preview
+
+### Fold
+
+How a long, successful command's output shows in the run log: its first lines, then
+`↳ ok · +N lines · <journal file>`. A failed command, or a poll try that failed, shows in
+full. The full output stays in the command's spool for `o`, and in the journal. Code:
+`log::Mode::Folded`.
+
+- UI label: fold
+- Avoid: collapse, truncate
+
+### Spool
+
+One command's complete, redacted output, in the order its lines arrived, in a file under the
+run's own scratch root. Full rendering and `o` read it. It lives until the run ends. Code:
+`log::Spool`.
+
+- Avoid: buffer, cache
+
 ### Mode
 
 The `mode` header line: `stepwise` or `guide`. Code: `Mode`.

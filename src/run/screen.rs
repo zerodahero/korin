@@ -21,7 +21,14 @@ pub struct Screen {
     live: bool,
     /// The plan pane's lines, already themed and fitted, without trailing newlines.
     pane: Vec<String>,
-    /// How many rows the pane takes on screen, or `None` while it is not drawn.
+    /// The live window's lines: the command running now and the tail of its output. It sits
+    /// above the pane, and both are erased and drawn together.
+    window: Vec<String>,
+    /// When the window was last drawn, so fast output redraws it only now and then.
+    window_drawn: Option<std::time::Instant>,
+    /// Whether the window changed since it was last drawn.
+    window_pending: bool,
+    /// How many rows the window and the pane take on screen, or `None` while not drawn.
     pane_rows: Option<usize>,
     /// Rows written since [`Screen::mark`], for erasing a gate's preview.
     since_mark: Option<usize>,
@@ -38,6 +45,9 @@ impl Screen {
         Self {
             live,
             pane: Vec::new(),
+            window: Vec::new(),
+            window_drawn: None,
+            window_pending: false,
             pane_rows: None,
             since_mark: None,
             dialogs: 0,
@@ -97,6 +107,40 @@ impl Screen {
         self.show();
     }
 
+    /// Replaces the live window's lines. Redraws at most every 50 ms unless `now`, so fast
+    /// output does not flood the terminal; a skipped redraw shows with the next one.
+    pub fn set_window(&mut self, lines: Vec<String>, now: bool) {
+        if !self.live || lines == self.window {
+            return;
+        }
+        self.window = lines;
+        let due = self
+            .window_drawn
+            .is_none_or(|at| at.elapsed() >= std::time::Duration::from_millis(50));
+        if now || due {
+            self.window_drawn = Some(std::time::Instant::now());
+            self.window_pending = false;
+            self.hide();
+            self.show();
+        } else {
+            self.window_pending = true;
+        }
+    }
+
+    /// Draws the window's newest lines if a redraw was skipped and is now due.
+    pub fn flush_window(&mut self) {
+        let due = self
+            .window_drawn
+            .is_none_or(|at| at.elapsed() >= std::time::Duration::from_millis(50));
+        let stale = self.pane_rows.is_some() && self.window_pending;
+        if self.live && due && stale {
+            self.window_drawn = Some(std::time::Instant::now());
+            self.window_pending = false;
+            self.hide();
+            self.show();
+        }
+    }
+
     /// Erases the pane from the screen. The next print draws it again.
     pub fn hide(&mut self) {
         if let Some(rows) = self.pane_rows.take()
@@ -107,10 +151,11 @@ impl Screen {
         }
     }
 
-    /// Erases the pane and forgets it, as at the end of a stage or a run.
+    /// Erases the pane and the window and forgets both, as at the end of a stage or a run.
     pub fn clear_all(&mut self) {
         self.hide();
         self.pane.clear();
+        self.window.clear();
     }
 
     /// Starts counting rows, so [`Screen::erase_to_mark`] can remove them later.
@@ -220,17 +265,26 @@ impl Screen {
     }
 
     fn show(&mut self) {
-        if self.pane_rows.is_some() || self.pane.is_empty() {
+        if self.pane_rows.is_some() || (self.pane.is_empty() && self.window.is_empty()) {
             return;
         }
         let cols = width();
         // The runner fits the pane to a third of the terminal; this only guards the rule
-        // that the pane is never taller than the screen.
+        // that the window and the pane are never taller than the screen. The window gives
+        // up rows first, its oldest lines first.
         let budget = height().saturating_sub(2);
+        let row_count = |line: &String| rows(&format!("{line}\n"), cols);
+        let pane_rows: usize = self.pane.iter().map(row_count).sum();
+        let mut window_room = budget.saturating_sub(pane_rows);
+        let mut start = self.window.len();
+        while start > 0 && row_count(&self.window[start - 1]) <= window_room {
+            window_room -= row_count(&self.window[start - 1]);
+            start -= 1;
+        }
         let mut text = String::new();
         let mut used = 0;
-        for line in &self.pane {
-            let line_rows = rows(&format!("{line}\n"), cols);
+        for line in self.window[start..].iter().chain(&self.pane) {
+            let line_rows = row_count(line);
             if used + line_rows > budget {
                 break;
             }

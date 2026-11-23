@@ -655,6 +655,8 @@ fn a_gate_taller_than_the_terminal_scrolls() {
         s.send("\x1b[B");
     }
     s.wait_for("(end)");
+    // A key that came after the end redraws the same page; let it finish.
+    s.settle(Duration::from_millis(500));
     let screen = s.screen();
     assert!(screen.contains("echo line-60"), "{screen}");
     assert!(!screen.contains("━━ Stage"), "{screen}");
@@ -769,6 +771,119 @@ fn without_color_the_values_view_prints_its_rows_before_it_asks() {
     s.wait_for_nth("Run stage 1?", 2);
     s.send("y\r");
     assert_eq!(s.wait(), 0, "{}", s.text());
+}
+
+#[test]
+fn a_long_output_folds_on_success_and_stays_full_on_failure() {
+    let dir = setup(
+        "stage \"a\"\n  read many\n  read many-fail\n    expect gone = exit 9\n  read many-fail\n",
+        &[("many", "seq 1 40"), ("many-fail", "seq 101 140; exit 3")],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    assert_eq!(s.wait(), 1, "{}", s.text());
+    let screen = s.screen();
+    // Success folds to its first lines, and says where the rest is.
+    assert!(
+        screen.contains("$ many\n1\n2\n3\n4\n  ↳ ok · +36 lines · ./.korin/runs/"),
+        "{screen}"
+    );
+    assert!(!screen.contains("\n40\n"), "{screen}");
+    // Failure keeps every line.
+    assert!(screen.contains("\n139\n140\n  ↳ exit 3"), "{screen}");
+}
+
+#[test]
+fn a_huge_failing_output_shows_in_full_once_in_arrival_order() {
+    let script = concat!(
+        "i=1; while [ $i -le 5000 ]; do ",
+        "if [ $i -eq 2500 ]; then echo MARKER-2500; ",
+        "elif [ $((i % 3)) -eq 0 ]; then echo \"err $i\" >&2; ",
+        "else echo \"out $i\"; fi; i=$((i + 1)); done; exit 1",
+    );
+    let dir = setup("stage \"a\"\n  read noisy\n", &[("noisy", script)]);
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    assert_eq!(s.wait(), 1, "{}", s.text());
+    let screen = s.screen();
+    assert_eq!(screen.matches("MARKER-2500").count(), 1, "the marker");
+    // Each stream keeps its own order, and both are complete.
+    let numbers = |prefix: &str| -> Vec<u32> {
+        screen
+            .lines()
+            .filter_map(|l| l.strip_prefix(prefix)?.parse().ok())
+            .collect()
+    };
+    let out = numbers("out ");
+    let err = numbers("err ");
+    assert!(out.windows(2).all(|w| w[0] < w[1]), "stdout out of order");
+    assert!(err.windows(2).all(|w| w[0] < w[1]), "stderr out of order");
+    assert_eq!(out.len() + err.len(), 4999, "lines lost");
+}
+
+const HELD_SECRET: &str = "s3cr3t-held-token-value";
+
+#[test]
+fn a_secret_producing_command_holds_its_output_until_its_secrets_resolve() {
+    let script =
+        format!("echo '{{\"token\":\"{HELD_SECRET}\"}}'; echo 'more {HELD_SECRET}' >&2; sleep 1");
+    let dir = setup(
+        "stage \"a\"\n  read issue\n    capture secret tok = jq .token\n",
+        &[("issue", &script)],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("output held until its secret captures resolve");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(!s.raw().contains(HELD_SECRET), "{}", s.raw());
+    let screen = s.screen();
+    assert!(screen.contains("more «secret:tok»"), "{screen}");
+}
+
+#[test]
+fn an_unpublished_output_never_shows() {
+    let script = format!("echo 'raw {HELD_SECRET}'; sleep 0.5");
+    let dir = setup(
+        "stage \"a\"\n  read issue\n    capture secret tok = jq .token\n",
+        &[("issue", &script)],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    assert_eq!(s.wait(), 1, "{}", s.text());
+    assert!(!s.raw().contains(HELD_SECRET), "{}", s.raw());
+    assert!(s.screen().contains("↳ output withheld"), "{}", s.screen());
+}
+
+#[test]
+fn a_secret_producing_output_shows_stdout_then_stderr_redacted() {
+    let script = format!(
+        concat!(
+            "echo '{{\"token\":\"{secret}\"}}'; ",
+            "i=1; while [ $i -le 5 ]; do echo \"out $i {secret}\"; echo \"err $i\" >&2; i=$((i + 1)); done; ",
+            "exit 4"
+        ),
+        secret = HELD_SECRET
+    );
+    let dir = setup(
+        "stage \"a\"\n  read issue\n    expect odd = exit 4\n    capture secret tok = regex /\"token\":\"([^\"]+)\"/ on odd\n  read false\n",
+        &[("issue", &script)],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    let _ = s.wait();
+    assert!(!s.raw().contains(HELD_SECRET), "{}", s.raw());
+    let screen = s.screen();
+    // Its streams were collected apart, so it shows stdout, then stderr.
+    let last_out = screen
+        .find("out 5 «secret:tok»")
+        .unwrap_or_else(|| panic!("{screen}"));
+    let first_err = screen.find("err 1\n").unwrap_or_else(|| panic!("{screen}"));
+    assert!(last_out < first_err, "{screen}");
 }
 
 #[test]

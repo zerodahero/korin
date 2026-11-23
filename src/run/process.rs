@@ -200,7 +200,9 @@ struct Cancelling {
 
 /// Runs a command in its own process group and collects its output.
 ///
-/// `on_output` receives each chunk as it arrives (`true` for stderr). Cancellation follows the
+/// `on_output` receives each chunk as it arrives (`true` for stderr). `on_tick` runs each
+/// time the loop wakes, at least every [`TICK`], so a caller can redraw what it shows while
+/// the command is quiet. Cancellation follows the
 /// protocol in `docs-site/docs/reference/options.md`: `SIGTERM` to the group, a grace period, `SIGKILL` to the
 /// group, reap, then at most two more seconds of draining.
 ///
@@ -211,6 +213,7 @@ pub fn execute(
     spec: &Spec<'_>,
     signals: &Signals,
     on_output: &mut dyn FnMut(bool, &[u8]),
+    on_tick: &mut dyn FnMut(),
 ) -> io::Result<Finished> {
     let mut child: Child = Command::new(spec.exe)
         .arg0(spec.arg0)
@@ -235,6 +238,7 @@ pub fn execute(
     let mut escaped = false;
 
     loop {
+        on_tick();
         let now = Instant::now();
         // Start or escalate cancellation.
         let interrupted = signals.take_interrupt();

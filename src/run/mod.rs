@@ -5,6 +5,7 @@
 
 pub mod capture;
 pub mod journal;
+mod log;
 mod pane;
 pub mod process;
 pub use pane::Mark;
@@ -171,6 +172,35 @@ impl Ending {
             Ending::Cancelled => 130,
         }
     }
+}
+
+/// One finished piece of the run log, held while a poll decides a try's fate.
+#[derive(Debug)]
+enum Block {
+    /// A command: its `$` line, its output and its notes.
+    Command(CommandBlock),
+    /// Lines that print as they are, such as a `#` comment or a `↻` line.
+    Lines(String),
+}
+
+/// A command's part of the run log, built while it runs. It holds data, not a rendering:
+/// whether the output folds is decided when the block reaches the run log.
+#[derive(Debug, Default)]
+struct CommandBlock {
+    /// The `$` line and the notes that name its variables, colored.
+    head: String,
+    /// The first lines of output, for a fold.
+    first: Vec<String>,
+    /// How many lines of output the command printed.
+    lines: usize,
+    /// The complete output, when it was published.
+    spool: Option<PathBuf>,
+    /// The journal's file for the output, as the fold note shows it.
+    journal: String,
+    /// The `↳` notes under the output.
+    notes: Vec<String>,
+    /// Whether the command succeeded.
+    ok: bool,
 }
 
 /// Where a stage stands, as the plan pane shows it.
@@ -473,6 +503,10 @@ struct Runner<'p> {
     announced_vars: HashSet<String>,
     /// `#` lines a dialog leaves for the run log, printed once the dialog closes.
     records: Vec<String>,
+    /// The block of the command running now, while a live view builds it.
+    building: Option<CommandBlock>,
+    /// Blocks a poll holds back until it knows a try's fate.
+    scopes: log::Scopes<Block>,
     /// How far a prompt's content is scrolled, in lines, when it is taller than the terminal.
     pane_scroll: Cell<usize>,
     /// While a prompt's content is taller than the terminal, how many of its lines are below
@@ -642,6 +676,8 @@ impl<'p> Runner<'p> {
             legend_used: RefCell::new(None),
             announced_vars: HashSet::new(),
             records: Vec::new(),
+            building: None,
+            scopes: log::Scopes::default(),
             pane_scroll: Cell::new(0),
             pane_below: Cell::new(None),
             stage_now: 0,
@@ -752,6 +788,16 @@ impl<'p> Runner<'p> {
         self.note_prefixes(&line);
         let shown = self.opts.theme.lines(&line);
         self.screen.borrow_mut().print(&format!("{shown}\n"));
+    }
+
+    /// Adds lines to the run log, or to the poll try that holds them.
+    fn log_line(&mut self, line: &str) {
+        if self.scopes.holding() {
+            let line = self.redact_marked(line);
+            self.scopes.emit(Block::Lines(line));
+        } else {
+            self.say(line);
+        }
     }
 
     /// A block that holds commands, laid out to read well (`broken`), or on one line each
@@ -2559,7 +2605,7 @@ impl<'p> Runner<'p> {
                     SayKind::Warn => "warn",
                     SayKind::Record => "record",
                 };
-                self.say(&comment(&format!("{keyword}: {text}")));
+                self.log_line(&comment(&format!("{keyword}: {text}")));
                 if *kind == SayKind::Record {
                     self.journal.report(&format!("- {text}"));
                 }
@@ -2693,7 +2739,9 @@ impl<'p> Runner<'p> {
             .map_err(|e| Stop::failed(format!("cannot create {}: {e}", scratch.display())))?;
         // Removes the scratch directory on every exit path, including a panic.
         let _guard = ScratchGuard(scratch.clone());
-        self.command_in(command, step, &invocation, &scratch, deadline)
+        let result = self.command_in(command, step, &invocation, &scratch, deadline);
+        self.finish_command(result.is_ok());
+        result
     }
 
     #[allow(clippy::too_many_lines)]
@@ -2739,7 +2787,7 @@ impl<'p> Runner<'p> {
             }
             script_sha256 = self.pins.get(&file).map(|pin| hex(&pin.hash));
         }
-        self.say_command(command, scratch)?;
+        self.say_command(command, scratch, invocation)?;
         // The journal, the suspend prompt and any failure detail show the full command.
         let shown = render::strip_marks(&render::argv(self.p, &command.argv, &Full(self)));
         let mut start = json!({"invocation_id": invocation, "step": step.id, "command_kind": command.kind.keyword(), "argv": shown, "exe": exe.display().to_string()});
@@ -2844,58 +2892,103 @@ impl<'p> Runner<'p> {
             // One buffer per stream: a secret split across two reads is held until whole.
             let mut buffers = [StreamRedactor::default(), StreamRedactor::default()];
             let mut line_start = true;
-            // The run log reads like a shell session: output follows its `$` line as it is.
-            let gutter = String::new();
             let screen = &self.screen;
             let live = screen.borrow().live();
             let theme = self.opts.theme;
-            // Removes korin's own marks, so output cannot pose as a colored value.
-            let view_lines = |text: &str| theme.output(text);
-            // A live view writes whole lines only, so it can count the rows it must erase.
-            let mut partial = String::new();
+            // A live view feeds the command's block: whole lines go to its spool, the first
+            // few are kept for a fold, and the newest show in the live window.
+            let mut spool = if live && stream {
+                self.spool_for(invocation)
+            } else {
+                None
+            };
+            let head: Vec<String> = self
+                .building
+                .as_ref()
+                .map(|b| {
+                    b.head
+                        .trim_start_matches('\n')
+                        .split('\n')
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            if live && !stream {
+                let mut lines = head.clone();
+                lines.push(theme.faint("  output held until its secret captures resolve"));
+                screen.borrow_mut().set_window(lines, true);
+            }
+            let cols = self.width().saturating_sub(1).max(20);
+            let mut first: Vec<String> = Vec::new();
+            let mut count = 0;
+            let mut tail: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+            let mut partial = [String::new(), String::new()];
+            let mut feed = |is_err: bool, whole: &str, now: bool| {
+                let kind = if is_err {
+                    log::Stream::Err
+                } else {
+                    log::Stream::Out
+                };
+                if let Some(spool) = &mut spool {
+                    spool.push(kind, whole);
+                }
+                for line in whole.lines() {
+                    count += 1;
+                    if first.len() < log::HEAD.max(log::FOLD_AT) {
+                        first.push(line.to_string());
+                    }
+                    if tail.len() == log::WINDOW {
+                        tail.pop_front();
+                    }
+                    tail.push_back(theme.output(&pane::clip(line, cols)));
+                }
+                let mut lines = head.clone();
+                lines.extend(tail.iter().cloned());
+                screen.borrow_mut().set_window(lines, now);
+            };
             let mut on_output = |is_err: bool, chunk: &[u8]| {
                 if stream {
                     let text = buffers[usize::from(is_err)].push(&redactor, chunk);
                     if live {
-                        partial.push_str(&text);
-                        if let Some(end) = partial.rfind('\n') {
-                            let whole: String = partial.drain(..=end).collect();
-                            screen
-                                .borrow_mut()
-                                .print(&indent(&view_lines(&whole), &gutter));
+                        let buffer = &mut partial[usize::from(is_err)];
+                        buffer.push_str(&text);
+                        if let Some(end) = buffer.rfind('\n') {
+                            let whole: String = buffer.drain(..=end).collect();
+                            feed(is_err, &whole, false);
                         }
                     } else {
-                        // A chunk may end mid-line, so only lines it holds whole are shortened.
-                        let shown = if line_start && text.ends_with('\n') {
-                            view_lines(&text)
-                        } else {
-                            text
-                        };
+                        // The run log reads like a shell session: output follows its `$` line
+                        // as it is, with korin's own marks removed.
                         screen.borrow_mut().print_raw(&indent_from(
-                            &shown,
-                            &gutter,
+                            &theme.output(&text),
+                            "",
                             &mut line_start,
                         ));
                     }
                 }
             };
-            let finished = process::execute(&spec, &self.signals, &mut on_output)
+            let mut on_tick = || screen.borrow_mut().flush_window();
+            let finished = process::execute(&spec, &self.signals, &mut on_output, &mut on_tick)
                 .map_err(|e| Stop::failed(format!("cannot start `{}`: {e}", argv[0])))?;
             if stream {
                 if live {
-                    for buffer in &mut buffers {
-                        partial.push_str(&buffer.finish(&redactor));
-                    }
-                    if !partial.is_empty() {
-                        let shown = view_lines(&partial);
-                        self.screen.borrow_mut().print(&indent(&shown, &gutter));
+                    for (index, buffer) in buffers.iter_mut().enumerate() {
+                        let rest = &mut partial[index];
+                        rest.push_str(&buffer.finish(&redactor));
+                        if !rest.is_empty() {
+                            if !rest.ends_with('\n') {
+                                rest.push('\n');
+                            }
+                            let whole = std::mem::take(rest);
+                            feed(index == 1, &whole, true);
+                        }
                     }
                 } else {
                     let mut screen = self.screen.borrow_mut();
                     for buffer in &mut buffers {
                         screen.print_raw(&indent_from(
-                            &buffer.finish(&redactor),
-                            &gutter,
+                            &theme.output(&buffer.finish(&redactor)),
+                            "",
                             &mut line_start,
                         ));
                     }
@@ -2903,6 +2996,14 @@ impl<'p> Runner<'p> {
                         screen.print_raw("\n");
                     }
                 }
+            }
+            if let Some(block) = &mut self.building {
+                block.first = first;
+                block.lines = count;
+                block.spool = spool.map(|mut spool| {
+                    spool.close();
+                    spool.path().to_path_buf()
+                });
             }
             (
                 finished.status,
@@ -3138,12 +3239,47 @@ impl<'p> Runner<'p> {
             }
         }
         if command.secret_producing && published {
-            let theme = self.opts.theme;
-            let out = theme.output(&self.redactor.redact_bytes(&stdout));
-            let err = theme.output(&self.redactor.redact_bytes(&stderr));
-            let mut screen = self.screen.borrow_mut();
-            screen.print(&indent(&out, ""));
-            screen.print(&indent(&err, ""));
+            let out = self.redactor.redact_bytes(&stdout);
+            let err = self.redactor.redact_bytes(&stderr);
+            if self.building.is_some() {
+                // Its output joins the block only now that every secret in it is known:
+                // stdout, then stderr, as they were collected apart.
+                let mut spool = self.spool_for(invocation);
+                let mut first = Vec::new();
+                let mut count = 0;
+                for (kind, text) in [(log::Stream::Out, &out), (log::Stream::Err, &err)] {
+                    if text.is_empty() {
+                        continue;
+                    }
+                    let whole = if text.ends_with('\n') {
+                        text.clone()
+                    } else {
+                        format!("{text}\n")
+                    };
+                    if let Some(spool) = &mut spool {
+                        spool.push(kind, &whole);
+                    }
+                    for line in whole.lines() {
+                        count += 1;
+                        if first.len() < log::FOLD_AT {
+                            first.push(line.to_string());
+                        }
+                    }
+                }
+                if let Some(block) = &mut self.building {
+                    block.first = first;
+                    block.lines = count;
+                    block.spool = spool.map(|mut spool| {
+                        spool.close();
+                        spool.path().to_path_buf()
+                    });
+                }
+            } else {
+                let theme = self.opts.theme;
+                let mut screen = self.screen.borrow_mut();
+                screen.print(&indent(&theme.output(&out), ""));
+                screen.print(&indent(&theme.output(&err), ""));
+            }
         } else if !published {
             self.note(&format!(
                 "output withheld: {}",
@@ -3366,15 +3502,20 @@ impl<'p> Runner<'p> {
 
     /// Prints a command's `$` line, and the notes it needs: each secret variable the first
     /// time a line uses it, and a warning when the line cannot be pasted as it is.
-    fn say_command(&mut self, command: &Command, scratch: &Path) -> Result<(), Stop> {
+    fn say_command(
+        &mut self,
+        command: &Command,
+        scratch: &Path,
+        invocation: &str,
+    ) -> Result<(), Stop> {
         let (env, words) = self.shell_words(command, scratch)?;
-        let width = self.screen.borrow().live().then(|| self.width());
+        let live = self.screen.borrow().live();
+        let width = live.then(|| self.width());
         let scratch_text = scratch.display().to_string();
         let line = render::shell_line(&env, &words, &self.redactor, Some(&scratch_text), width);
+        let theme = self.opts.theme;
         // A safety net: the line names secrets as variables, so redaction changes nothing.
-        let text = self.redact_marked(&line.lines.join("\n"));
-        let shown = self.opts.theme.lines(&text);
-        self.screen.borrow_mut().print(&format!("\n{shown}\n"));
+        let mut head = vec![theme.lines(&self.redact_marked(&line.lines.join("\n")))];
         for found in &line.vars {
             let Some(var) = &found.var else { continue };
             if self.announced_vars.insert(var.clone()) {
@@ -3382,16 +3523,40 @@ impl<'p> Runner<'p> {
                     "secret_var",
                     json!({"name": found.name, "var": var, "value": found.label}),
                 );
-                self.note(&format!("uses ${{{var}}} ({})", found.label));
+                head.push(theme.lines(&format!("  ↳ uses ${{{var}}} ({})", found.label)));
             }
         }
         if !line.partial.is_empty() {
-            self.note(&format!(
-                "not pasteable: holds part of {}",
+            head.push(theme.lines(&format!(
+                "  ↳ not pasteable: holds part of {}",
                 line.partial.join(", ")
-            ));
+            )));
+        }
+        let head = head.join("\n");
+        // A live view builds the command's block while it runs, and shows it in the live
+        // window. An interactive program takes the whole terminal, so its line prints now.
+        if live && command.kind != CommandKind::Interactive {
+            self.building = Some(CommandBlock {
+                head: format!("\n{head}"),
+                journal: format!("{}/out/{invocation}.stdout", self.journal_rel()),
+                ..CommandBlock::default()
+            });
+            let lines = head.split('\n').map(str::to_string).collect();
+            self.screen.borrow_mut().set_window(lines, true);
+        } else {
+            self.screen.borrow_mut().print(&format!("\n{head}\n"));
         }
         Ok(())
+    }
+
+    /// The journal's directory for the run log: relative to the cwd when it is under it,
+    /// in every view, so a path in a note can be pasted.
+    fn journal_rel(&self) -> String {
+        let dir = self.journal.dir();
+        match dir.strip_prefix(&self.opts.cwd) {
+            Ok(rest) => format!("./{}", rest.display()),
+            Err(_) => dir.display().to_string(),
+        }
     }
 
     /// A captured value on one line for a note: redacted, escaped, and cut to fit.
@@ -3414,9 +3579,94 @@ impl<'p> Runner<'p> {
         }
     }
 
-    /// Prints a `↳` note under a command.
-    fn note(&self, text: &str) {
-        self.say(&format!("  ↳ {text}"));
+    /// Adds a `↳` note under the command running now, or prints it.
+    fn note(&mut self, text: &str) {
+        let line = format!("  ↳ {text}");
+        match &mut self.building {
+            Some(block) => block.notes.push(line),
+            None => self.say(&line),
+        }
+    }
+
+    /// The command block that ends now: the live window goes, and the block goes to the run
+    /// log, or to the poll try that holds it.
+    fn finish_command(&mut self, ok: bool) {
+        let Some(mut block) = self.building.take() else {
+            return;
+        };
+        block.ok = ok;
+        self.screen.borrow_mut().set_window(Vec::new(), true);
+        if let Some(block) = self.scopes.emit(Block::Command(block)) {
+            self.render(block, false);
+        }
+    }
+
+    /// Prints a block into the run log. `full` shows every command's output, as for a unit
+    /// that failed or was cancelled.
+    fn render(&mut self, block: Block, full: bool) {
+        match block {
+            Block::Lines(line) => self.say(&line),
+            Block::Command(block) => self.render_command(&block, full),
+        }
+    }
+
+    fn render_command(&mut self, block: &CommandBlock, full: bool) {
+        let theme = self.opts.theme;
+        self.screen.borrow_mut().print(&format!("{}\n", block.head));
+        let mode = log::mode(block.ok, full, block.lines);
+        let mut text = String::new();
+        let mut shown = 0;
+        if let (log::Mode::Full, Some(spool)) = (mode, &block.spool) {
+            let mut screen = self.screen.borrow_mut();
+            let read = log::read_spool(spool, |_, line| {
+                text.push_str(&theme.output(line));
+                text.push('\n');
+                shown += 1;
+                // Print in batches, so a long output does not redraw the pane per line.
+                if shown % 200 == 0 {
+                    screen.print(&std::mem::take(&mut text));
+                }
+            });
+            screen.print(&text);
+            drop(screen);
+            if read.is_err() {
+                self.say(&format!("  ↳ the full output is in {}", block.journal));
+            }
+        } else {
+            let take = if mode == log::Mode::Folded {
+                log::HEAD
+            } else {
+                block.first.len()
+            };
+            for line in block.first.iter().take(take) {
+                text.push_str(&theme.output(line));
+                text.push('\n');
+                shown += 1;
+            }
+            self.screen.borrow_mut().print(&text);
+        }
+        if shown < block.lines {
+            let status = if block.ok { "ok · " } else { "" };
+            self.say(&format!(
+                "  ↳ {status}+{} lines · {}",
+                block.lines - shown,
+                block.journal
+            ));
+        }
+        for note in &block.notes {
+            self.say(note);
+        }
+    }
+
+    /// The spool file for an invocation, in the run's own scratch root, so it lives until
+    /// the run ends. The step's scratch directory is gone once the step ends.
+    fn spool_for(&self, invocation: &str) -> Option<log::Spool> {
+        let dir = self.scratch_root.join("spool");
+        if !dir.is_dir() {
+            create_private_dir(&dir).ok()?;
+        }
+        let name = invocation.replace(['/', '[', ']', '@'], "_");
+        log::Spool::create(dir.join(format!("{name}.out"))).ok()
     }
 
     /// The argv for a command. Withheld values never get here.

@@ -132,12 +132,17 @@ impl Session {
     /// never moves the cursor up past the pty's height, so the replay erases what the real
     /// terminal erased.
     pub fn screen(&self) -> String {
+        // Rows enough for every line korin wrote, so a long run log keeps its start.
+        let bytes = self.bytes();
+        #[allow(clippy::naive_bytecount)] // a test helper; one pass is fast enough
+        let lines = bytes.iter().filter(|b| **b == b'\n').count();
+        let rows = u16::try_from((lines + 100).clamp(4000, 30_000)).unwrap_or(30_000);
         let mut parser = vt100::Parser::new(
-            std::num::NonZero::new(4000).unwrap(),
+            std::num::NonZero::new(rows).unwrap(),
             std::num::NonZero::new(self.cols).unwrap(),
             0,
         );
-        parser.process(&self.bytes());
+        parser.process(&bytes);
         parser
             .screen()
             .contents()
