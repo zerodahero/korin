@@ -2,7 +2,7 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run stdlib.korin --param version=2.4.0
   <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Account</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="k-comment"># ── stage 1/2: Account ── approved</span>
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">aws</span> sts get-caller-identity <span class="k-blue">--output</span> json
 {
@@ -12,9 +12,10 @@
 }
   <span class="k-border">↳</span> <span class="k-fg-dim">me.account = 123456789012</span>
   <span class="k-border">↳</span> <span class="k-fg-dim">me.arn = arn:aws:iam::123456789012:user/ada</span>
-  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command</span>
+<span class="k-comment"># confirmed: Write to account 123456789012 as arn:aws:iam::123456789012:user/ada?</span>
+<span class="k-comment"># ✓ stage 1 done · 1 command</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Release marker</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="k-comment"># ── stage 2/2: Release marker ── approved</span>
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">aws</span> ssm get-parameter <span class="k-blue">--name</span> <span class="k-fg-dim">/shop/</span>release <span class="k-blue">--output</span> json
 {
@@ -30,7 +31,7 @@
     <span class="k-blue">--overwrite</span> <span class="k-border">\</span>
     <span class="k-blue">--output</span> json
 {"Version": 7, "Tier": "Standard"}
-  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 2 commands</span>
+<span class="k-comment"># ✓ stage 2 done · 2 commands</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Record the release in SSM completed</span>
   <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-record-the-release-in-ssm</span></code></pre>

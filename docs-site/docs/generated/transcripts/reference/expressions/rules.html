@@ -2,7 +2,7 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run rules.korin --param env=production
   <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Deployment</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="k-comment"># ── stage 1/1: Deployment ── approved</span>
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment web <span class="k-blue">-n</span> <span class="k-cyan">production</span> <span class="k-blue">-o</span> json
 {
@@ -21,7 +21,7 @@
   <span class="k-border">↳</span> <span class="k-fg-dim">image = registry.example.com/web:latest</span>
 <span class="k-magenta"># warn: Production runs a :latest image: registry.example.com/web:latest.</span>
 <span class="k-comment"># note: web runs 4 replicas in production.</span>
-  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command</span>
+<span class="k-comment"># ✓ stage 1 done · 1 command</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Check a deployment before a change completed</span>
   <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-check-a-deployment-before-a-change</span></code></pre>

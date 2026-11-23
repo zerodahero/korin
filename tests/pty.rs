@@ -3,6 +3,8 @@
 
 mod common;
 
+use std::fmt::Write as _;
+
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -575,9 +577,13 @@ fn live_view_erases_the_preview_and_draws_the_plan_pane() {
     s.answer("y");
     s.wait_for("started");
     let running = s.raw()[before..].to_string();
-    // The preview (a blank line, two step lines and the prompt) is erased back to the stage
-    // header.
-    assert!(running.contains("\x1b[4A\x1b[J"), "{running:?}");
+    // The gate's pane (the rule, a blank line, two step lines) and its prompt are erased,
+    // and the run log keeps one line for the gate.
+    assert!(running.contains("\x1b[5A\x1b[J"), "{running:?}");
+    assert!(
+        strip_ansi(&running).contains("# ── stage 1/1: a ── approved"),
+        "{running:?}"
+    );
     // The pane names the stage running now and marks the step running now.
     let prompt = "\x1b[1;38;2;120;169;255m▶\x1b[0m";
     assert!(running.contains(&format!(" {prompt} ")), "{running:?}");
@@ -601,6 +607,113 @@ fn live_view_erases_the_preview_and_draws_the_plan_pane() {
         "{}",
         s.text()
     );
+}
+
+#[test]
+fn a_gate_leaves_one_line_in_the_run_log() {
+    let dir = setup(
+        "stage \"a\"\n  read echo first\nstage \"b\"\n  read echo second\n",
+        &[],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("Run stage 2?");
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let screen = s.screen();
+    assert!(
+        screen.contains("# ── stage 1/2: a ── approved\n\n$ echo first\nfirst"),
+        "{screen}"
+    );
+    assert!(screen.contains("# ── stage 2/2: b ── approved"), "{screen}");
+    // The gate's content and its prompt are gone from the run log.
+    assert!(!screen.contains("Run stage"), "{screen}");
+    assert!(!screen.contains("read ❯"), "{screen}");
+    assert!(!screen.contains("━━ Stage"), "{screen}");
+}
+
+#[test]
+fn a_gate_taller_than_the_terminal_scrolls() {
+    let body: String = (1..=60).fold(String::new(), |mut body, n| {
+        let _ = writeln!(body, "  read echo line-{n}");
+        body
+    });
+    let dir = setup(&format!("stage \"tall\"\n{body}"), &[]);
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("↑↓ scroll]");
+    let screen = s.screen();
+    assert!(screen.contains("lines below"), "{screen}");
+    assert!(!screen.contains("echo line-60"), "{screen}");
+    std::thread::sleep(Duration::from_millis(400));
+    // A key scrolls half a page.
+    s.send("j");
+    s.wait_for("20 lines above");
+    // The arrow keys scroll too, and down stops at the end, where the last step shows.
+    for _ in 0..3 {
+        std::thread::sleep(Duration::from_millis(400));
+        s.send("\x1b[B");
+    }
+    s.wait_for("(end)");
+    let screen = s.screen();
+    assert!(screen.contains("echo line-60"), "{screen}");
+    assert!(!screen.contains("━━ Stage"), "{screen}");
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let screen = s.screen();
+    assert!(screen.contains("$ echo line-60\nline-60"), "{screen}");
+    assert!(!screen.contains("lines below"), "{screen}");
+}
+
+#[test]
+fn a_confirm_shows_the_rest_in_the_pane_and_leaves_one_line() {
+    let dir = setup(
+        "stage \"a\"\n  confirm \"Go on?\"\n  read echo after\n",
+        &[],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("Go on? [y/N");
+    assert!(s.screen().contains("next:"), "{}", s.screen());
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let screen = s.screen();
+    assert!(screen.contains("# confirmed: Go on?"), "{screen}");
+    assert!(!screen.contains("next:"), "{screen}");
+}
+
+#[test]
+fn without_color_a_gate_prints_its_commands_before_it_asks() {
+    let dir = setup(
+        "stage \"a\"\n  confirm \"Go on?\"\n  read echo plain-run\n",
+        &[],
+    );
+    let env = vec![("NO_COLOR", PathBuf::from("1"))];
+    let mut s = start_with_env(dir.path(), &["run", "w.korin", "--require-enter"], &env);
+    s.wait_for("Run stage 1?");
+    // Nothing is asked about before it shows: the commands are there before any answer.
+    let before = s.text();
+    let asked = before.find("Run stage 1?").unwrap();
+    assert!(
+        before[..asked].contains("read ❯ echo plain-run"),
+        "{before}"
+    );
+    s.send("y\r");
+    s.wait_for("Go on? [y/N");
+    let text = s.text();
+    let confirm = text.rfind("Go on? [").unwrap();
+    let next = text.rfind("next:").unwrap();
+    assert!(next < confirm, "{text}");
+    assert!(
+        text[next..confirm].contains("read ❯ echo plain-run"),
+        "{text}"
+    );
+    s.send("y\r");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let text = s.text();
+    assert!(text.contains("# ── stage 1/1: a ── approved"), "{text}");
+    assert!(!text.contains('\x1b'), "{text:?}");
 }
 
 #[test]
@@ -1321,7 +1434,7 @@ fn s_at_a_gate_skips_the_stage_and_its_dependents() {
     s.wait_for("Run stage 4?");
     let text = s.text();
     assert!(
-        text.contains("↷ skipped: reads `id` from stage 2"),
+        text.contains("── skipped: reads `id` from stage 2"),
         "{text}"
     );
     s.answer("y");
@@ -1394,7 +1507,7 @@ fn s_at_a_pause_and_at_a_confirm() {
     s.wait_for("↵ continue · s skip");
     key(&mut s, "s");
     s.wait_for("Run stage 2?");
-    assert!(s.text().contains("↷ skipped"), "{}", s.text());
+    assert!(s.text().contains("── skipped"), "{}", s.text());
     s.answer("y");
     s.wait_for("Go on? [y/N · s skip");
     key(&mut s, "s");

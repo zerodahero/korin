@@ -2,7 +2,7 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run ../release.korin
   <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tutorial/work</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Check the working tree</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="k-comment"># ── stage 1/2: Check the working tree ── approved</span>
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> branch <span class="k-blue">--show-current</span>
 main
@@ -11,9 +11,9 @@ main
 <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> status <span class="k-blue">--porcelain</span>
   <span class="k-border">↳</span> <span class="k-fg-dim">changes = ""</span>
 <span class="k-comment"># note: On main, with a clean working tree.</span>
-  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 2 commands</span>
+<span class="k-comment"># ✓ stage 1 done · 2 commands</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Choose the version</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="k-comment"># ── stage 2/2: Choose the version ── approved</span>
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> ls-remote <span class="k-border">\</span>
     <span class="k-blue">--tags</span> <span class="k-border">\</span>
@@ -39,7 +39,7 @@ aeb8b5d
   <span class="k-border">↳</span> <span class="k-fg-dim">head = aeb8b5d</span>
   Version to release after v0.1.0?
   <span class="k-magenta">?</span> <span class="k-bold">version:</span> v0.2.0
-  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 4 commands</span>
+<span class="k-comment"># ✓ stage 2 done · 4 commands</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Release the shop completed</span>
   <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-release-the-shop</span></code></pre>

@@ -1422,7 +1422,11 @@ fn the_preflight_runs_first_even_with_from() {
     for args in [&[][..], &["--from", "two"][..]] {
         let out = env.run_yes(args);
         assert_eq!(out.code, 0, "{args:?}: {}", out.text);
-        assert!(out.text.contains("Preflight · Look up IDs"), "{}", out.text);
+        assert!(
+            out.text.contains("── preflight: Look up IDs ──"),
+            "{}",
+            out.text
+        );
         assert!(out.text.contains("using id-42"), "{}", out.text);
         let starts: Vec<serde_json::Value> = env
             .events_of("stage_start")

@@ -14,6 +14,7 @@ pub struct Session {
     writer: Box<dyn Write + Send>,
     pub child: Box<dyn portable_pty::Child + Send + Sync>,
     pub master: Box<dyn portable_pty::MasterPty + Send>,
+    cols: u16,
 }
 
 impl Session {
@@ -46,6 +47,7 @@ impl Session {
             writer,
             child,
             master: pty.master,
+            cols,
         }
     }
 
@@ -121,6 +123,30 @@ impl Session {
     /// The exact bytes korin wrote.
     pub fn bytes(&self) -> Vec<u8> {
         self.output.lock().unwrap().clone()
+    }
+
+    /// What a terminal holds once every erase and redraw is applied, scrollback included:
+    /// the run log, then whatever is on screen under it.
+    ///
+    /// The bytes replay into a screen far taller than the pty, so nothing scrolls away. Korin
+    /// never moves the cursor up past the pty's height, so the replay erases what the real
+    /// terminal erased.
+    pub fn screen(&self) -> String {
+        let mut parser = vt100::Parser::new(
+            std::num::NonZero::new(4000).unwrap(),
+            std::num::NonZero::new(self.cols).unwrap(),
+            0,
+        );
+        parser.process(&self.bytes());
+        parser
+            .screen()
+            .contents()
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim_end()
+            .to_string()
     }
 
     pub fn pid(&self) -> i32 {

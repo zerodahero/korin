@@ -2,7 +2,7 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run on.korin --param pr=42
   <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Checks</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="k-comment"># ── stage 1/1: Checks ── approved</span>
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">gh</span> pr checks <span class="k-cyan">42</span> <span class="k-blue">--json</span> name,state
 [{"name":"build","state":"SUCCESS"},{"name":"test (linux)","state":"PENDING"},{"name":"test (macos)"
@@ -11,7 +11,7 @@
   <span class="k-border">↳</span> <span class="k-fg-dim">waiting = [test (linux), test (macos)]</span>
 <span class="k-comment"># note: test (linux) is still running.</span>
 <span class="k-comment"># note: test (macos) is still running.</span>
-  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command</span>
+<span class="k-comment"># ✓ stage 1 done · 1 command</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Are the checks green? completed</span>
   <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-are-the-checks-green</span></code></pre>

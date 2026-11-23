@@ -2,23 +2,7 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run script.korin
   <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Rotate</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
-
-  <span class="k-fg-dim">1.1</span>  <span class="k-blue">script read</span> <span class="k-blue k-bold">❯</span> <span class="k-fg-dim">./scripts/</span><span class="k-bold">log-size.sh</span> <span class="k-cyan">/var/log/app</span>
-        │ #!/bin/sh
-        │ # Prints the size of each log file in a directory.
-        │ set -eu
-        │ du -sh <span class="k-green">"$1"</span>/*.log
-  <span class="k-fg-dim">1.2</span>  <span class="k-blue">script mutate</span> <span class="k-blue k-bold">❯</span> <span class="k-fg-dim">./scripts/</span><span class="k-bold">rotate-logs.sh</span> <span class="k-cyan">/var/log/app</span>
-        │ #!/bin/sh
-        │ # Compresses each log file in a directory and starts a new, empty one.
-        │ set -eu
-        │ stamp=$(date +%Y%m%d)
-        │ for log in <span class="k-green">"$1"</span>/*.log; do
-        │     gzip -c <span class="k-green">"$log"</span> &gt;<span class="k-green">"$log.$stamp.gz"</span>
-        │     : &gt;<span class="k-green">"$log"</span>
-        │ done
-  <span class="k-magenta">?</span> <span class="k-bold">Run stage 1?</span> <span class="k-fg-dim">[y/N · s skip · v values · f full · l legend · o open script]</span> n
+<span class="k-comment"># ── stage 1/1: Rotate ── not approved</span>
 
 <span class="k-red k-bold">✗</span> <span class="k-bold">stage 1 was not approved; nothing in it ran</span>
   <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-rotate-the-app-logs</span></code></pre>

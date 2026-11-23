@@ -2,7 +2,7 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run ../tidy.korin
   <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project/repo</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Find merged branches</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="k-comment"># ── stage 1/2: Find merged branches ── approved</span>
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> branch <span class="k-blue">--merged</span> <span class="k-cyan">main</span> <span class="k-green">'--format=%(refname:short)'</span>
 add-logo
@@ -11,16 +11,16 @@ main
   <span class="k-border">↳</span> <span class="k-fg-dim">merged = [add-logo, fix-typo, main]</span>
 <span class="k-comment"># note: add-logo is merged into main.</span>
 <span class="k-comment"># note: fix-typo is merged into main.</span>
-  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command</span>
+<span class="k-comment"># ✓ stage 1 done · 1 command</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Delete them</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="k-comment"># ── stage 2/2: Delete them ── approved</span>
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> branch <span class="k-blue">--delete</span> <span class="k-cyan">add-logo</span>
 Deleted branch add-logo (was bbc5b19).
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> branch <span class="k-blue">--delete</span> <span class="k-cyan">fix-typo</span>
 Deleted branch fix-typo (was bbc5b19).
-  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 2 commands</span>
+<span class="k-comment"># ✓ stage 2 done · 2 commands</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Delete merged branches completed</span>
   <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-delete-merged-branches</span></code></pre>

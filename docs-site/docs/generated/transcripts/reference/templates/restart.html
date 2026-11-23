@@ -2,7 +2,7 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run restart.korin
   <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/2</span> <span class="k-border">·</span> <span class="k-bold">Before</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="k-comment"># ── stage 1/2: Before ── approved</span>
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment web <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">-o</span> json
 {
@@ -37,9 +37,9 @@
   <span class="k-border">↳</span> <span class="k-fg-dim">api.image = registry.example.com/api:2.3.1</span>
   <span class="k-border">↳</span> <span class="k-fg-dim">api.ready = 2</span>
   <span class="k-border">↳</span> <span class="k-fg-dim">api.wanted = 2</span>
-  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 2 commands</span>
+<span class="k-comment"># ✓ stage 1 done · 2 commands</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Restart</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="k-comment"># ── stage 2/2: Restart ── approved</span>
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>web <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
 deployment.apps/web restarted
@@ -52,7 +52,7 @@ deployment.apps/api restarted
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">--timeout</span> 5m
 deployment "api" successfully rolled out
-  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 4 commands</span>
+<span class="k-comment"># ✓ stage 2 done · 4 commands</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Restart the shop completed</span>
   <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-restart-the-shop</span></code></pre>

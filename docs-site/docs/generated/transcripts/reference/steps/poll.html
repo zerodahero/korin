@@ -2,7 +2,7 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run poll.korin
   <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Wait</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="k-comment"># ── stage 1/1: Wait ── approved</span>
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment checkout <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
 {
@@ -57,7 +57,7 @@ t:3.1.0"}]}}
   <span class="k-border">↳</span> <span class="k-fg-dim">wanted = 3</span>
   <span class="k-border">↳</span> <span class="k-fg-dim">reason = ReplicaSetUpdated</span>
 <span class="k-comment"># note: checkout has 3 of 3 replicas ready.</span>
-  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 3 commands</span>
+<span class="k-comment"># ✓ stage 1 done · 3 commands</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Wait for the rollout completed</span>
   <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-wait-for-the-rollout</span></code></pre>

@@ -69,7 +69,12 @@ impl Screen {
 
     /// Replaces the plan pane's lines.
     pub fn set_pane(&mut self, lines: Vec<String>) {
-        if !self.live || lines == self.pane {
+        if !self.live {
+            return;
+        }
+        if lines == self.pane {
+            // Draw it again if an erase took it off the screen.
+            self.show();
             return;
         }
         self.hide();
@@ -103,6 +108,24 @@ impl Screen {
     pub fn echoed(&mut self, visible: &str) {
         if let Some(count) = &mut self.since_mark {
             *count += rows(&format!("{visible}\n"), width());
+        }
+    }
+
+    /// Counts a prompt line the terminal showed under the pane, with the answer it echoed,
+    /// so the next erase removes it with the pane. With no pane on screen it counts toward
+    /// [`Screen::mark`] instead.
+    pub fn prompted(&mut self, visible: &str) {
+        if !self.live {
+            return;
+        }
+        let added = rows(&format!("{visible}\n"), width());
+        match &mut self.pane_rows {
+            Some(drawn) => *drawn += added,
+            None => {
+                if let Some(count) = &mut self.since_mark {
+                    *count += added;
+                }
+            }
         }
     }
 

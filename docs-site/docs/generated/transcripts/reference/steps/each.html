@@ -2,7 +2,7 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run each.korin
   <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Restart</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="k-comment"># ── stage 1/1: Restart ── approved</span>
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get pods <span class="k-border">\</span>
     <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-border">\</span>
@@ -23,7 +23,7 @@ deployment "api" successfully rolled out
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span><span class="k-cyan">worker</span> <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
 deployment "worker" successfully rolled out
-  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 5 commands</span>
+<span class="k-comment"># ✓ stage 1 done · 5 commands</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Restart the API pods completed</span>
   <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-restart-the-api-pods</span></code></pre>

@@ -2,13 +2,13 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run optional.korin --param service=checkout
   <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 1/1</span> <span class="k-border">·</span> <span class="k-bold">Owner</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="k-comment"># ── stage 1/1: Owner ── approved</span>
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get service <span class="k-cyan">checkout</span> <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
 {"metadata": {"name": "checkout", "annotations": {}}, "spec": {"type": "ClusterIP"}}
   <span class="k-border">↳</span> <span class="k-fg-dim">owner absent</span>
 <span class="k-magenta"># warn: checkout has no owner annotation.</span>
-  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command</span>
+<span class="k-comment"># ✓ stage 1 done · 1 command</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Find the owner of a service completed</span>
   <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-find-the-owner-of-a-service</span></code></pre>

@@ -265,6 +265,9 @@ enum Key {
     Skip,
     /// Open a script in the pager, then ask again.
     Open,
+    /// Scroll a prompt's content that is taller than the terminal, then ask again.
+    Up,
+    Down,
 }
 
 impl Key {
@@ -279,6 +282,8 @@ impl Key {
             Key::Values => "v",
             Key::Skip => "s",
             Key::Open => "o",
+            Key::Up => "↑",
+            Key::Down => "↓",
         }
     }
 }
@@ -298,6 +303,9 @@ struct Keys {
     /// `o`: open a script in the pager. Set by [`Runner::ask`] when the steps to come hold
     /// a script.
     open: bool,
+    /// `↑`/`↓` or `k`/`j`: scroll content taller than the terminal. Set by
+    /// [`Runner::prompt`] when the content does not fit.
+    scroll: bool,
 }
 
 impl Keys {
@@ -322,6 +330,9 @@ impl Keys {
         if self.open {
             parts.push("o open script".to_string());
         }
+        if self.scroll {
+            parts.push("↑↓ scroll".to_string());
+        }
         if parts.is_empty() {
             "Ctrl-C cancel".to_string()
         } else {
@@ -337,6 +348,8 @@ impl Keys {
             [b'v' | b'V', ..] if self.values => Some(Key::Values),
             [b's' | b'S', ..] if self.skip => Some(Key::Skip),
             [b'o' | b'O', ..] if self.open => Some(Key::Open),
+            [0x1b, b'[' | b'O', b'A', ..] | [b'k' | b'K', ..] if self.scroll => Some(Key::Up),
+            [0x1b, b'[' | b'O', b'B', ..] | [b'j' | b'J', ..] if self.scroll => Some(Key::Down),
             _ => None,
         }
     }
@@ -349,6 +362,8 @@ impl Keys {
             "v" | "V" if self.values => Some(Key::Values),
             "s" | "S" if self.skip => Some(Key::Skip),
             "o" | "O" if self.open => Some(Key::Open),
+            "k" | "K" if self.scroll => Some(Key::Up),
+            "j" | "J" if self.scroll => Some(Key::Down),
             _ => None,
         }
     }
@@ -456,6 +471,11 @@ struct Runner<'p> {
     legend_used: RefCell<Option<Vec<String>>>,
     /// The secret variables a `$` line has already explained, each named once per run.
     announced_vars: HashSet<String>,
+    /// How far a prompt's content is scrolled, in lines, when it is taller than the terminal.
+    pane_scroll: Cell<usize>,
+    /// While a prompt's content is taller than the terminal, how many of its lines are below
+    /// the part on screen; `None` while it fits.
+    pane_below: Cell<Option<usize>>,
     /// The stage running now, or about to run; 0 before stage 1.
     stage_now: usize,
     /// Whether the current stage's steps have started, past its gate or pause.
@@ -590,8 +610,8 @@ impl<'p> Runner<'p> {
                 scratch_root.display()
             ))
         })?;
-        // The live view erases and redraws lines, so it needs a terminal it can measure. Ghost
-        // lines are told apart from real output only by color, so it also needs color.
+        // The live view erases and redraws lines, so it needs a terminal it can measure. The
+        // plan pane is told apart from the run log mostly by color, so it also needs color.
         let theme = opts.theme;
         let view = opts.view;
         let legend = opts.legend;
@@ -619,6 +639,8 @@ impl<'p> Runner<'p> {
             legend: Cell::new(legend),
             legend_used: RefCell::new(None),
             announced_vars: HashSet::new(),
+            pane_scroll: Cell::new(0),
+            pane_below: Cell::new(None),
             stage_now: 0,
             in_stage: false,
             hand_set: false,
@@ -729,10 +751,10 @@ impl<'p> Runner<'p> {
         self.screen.borrow_mut().print(&format!("{shown}\n"));
     }
 
-    /// Prints a block that holds commands, laid out to read well (`broken`), or on one line
-    /// each (`one`) if the broken form would redact differently. Redaction must never depend
-    /// on where a command breaks.
-    fn say_block(&self, one: &str, broken: &str) {
+    /// A block that holds commands, laid out to read well (`broken`), or on one line each
+    /// (`one`) if the broken form would redact differently: redaction must never depend on
+    /// where a command breaks. It comes back redacted, cut in the compact view, and colored.
+    fn block_text(&self, one: &str, broken: &str) -> String {
         let one = self.redact_marked(one);
         let broken = self.redact_marked(broken);
         let chosen =
@@ -747,8 +769,7 @@ impl<'p> Runner<'p> {
             View::Full => chosen,
         };
         self.note_prefixes(&chosen);
-        let shown = self.opts.theme.lines(&chosen);
-        self.screen.borrow_mut().print(&format!("{shown}\n"));
+        self.opts.theme.lines(&chosen)
     }
 
     /// While a preview draws, remembers each prefix label the text shows.
@@ -771,14 +792,26 @@ impl<'p> Runner<'p> {
         }
     }
 
-    /// Prints a preview's steps, then the legend for the prefixes they show.
-    fn say_preview(&self, steps: &[&Step]) {
+    /// A preview's lines, colored: its steps with their commands laid out to read well,
+    /// then the legend for the prefixes they show.
+    fn preview_lines(&self, steps: &[&Step]) -> Vec<String> {
         *self.legend_used.borrow_mut() = Some(Vec::new());
         self.previewing.set(true);
-        self.say_steps(steps);
+        let mut one = Vec::new();
+        let mut broken = Vec::new();
+        for step in steps {
+            render::step_lines(self.p, step, 1, self, None, &mut one);
+            render::step_lines(self.p, step, 1, self, Some(self.width()), &mut broken);
+        }
+        let mut lines = Vec::new();
+        if !one.is_empty() {
+            let text = self.block_text(&one.join("\n"), &broken.join("\n"));
+            lines.extend(text.split('\n').map(str::to_string));
+        }
         self.previewing.set(false);
         let used = self.legend_used.borrow_mut().take().unwrap_or_default();
-        self.say_legend(&used);
+        lines.extend(self.legend_line(&used));
+        lines
     }
 
     /// Whether legend lines show: in the compact view, unless `l` turned them off.
@@ -808,32 +841,25 @@ impl<'p> Runner<'p> {
         Some(render::escape_controls(&home_relative(Path::new(&path))))
     }
 
-    /// Prints the legend for some prefix labels, if legend lines show.
-    fn say_legend(&self, labels: &[String]) {
+    /// The legend line for some prefix labels, if legend lines show.
+    fn legend_line(&self, labels: &[String]) -> Option<String> {
         if !self.legend_on() {
-            return;
+            return None;
         }
         let entries: Vec<(String, String)> = labels
             .iter()
             .filter_map(|label| Some((label.clone(), self.legend_path(label)?)))
             .collect();
         if entries.is_empty() {
-            return;
+            return None;
         }
-        let line = self.opts.theme.legend(&entries, None);
-        self.screen.borrow_mut().print(&format!("{line}\n"));
+        Some(self.opts.theme.legend(&entries, None))
     }
 
-    /// Prints steps, with their commands laid out to read well.
-    fn say_steps(&self, steps: &[&Step]) {
-        let mut one = Vec::new();
-        let mut broken = Vec::new();
-        for step in steps {
-            render::step_lines(self.p, step, 1, self, None, &mut one);
-            render::step_lines(self.p, step, 1, self, Some(self.width()), &mut broken);
-        }
-        if !one.is_empty() {
-            self.say_block(&one.join("\n"), &broken.join("\n"));
+    /// Prints the legend for some prefix labels, if legend lines show.
+    fn say_legend(&self, labels: &[String]) {
+        if let Some(line) = self.legend_line(labels) {
+            self.screen.borrow_mut().print(&format!("{line}\n"));
         }
     }
 
@@ -963,6 +989,93 @@ impl<'p> Runner<'p> {
         let theme = self.opts.theme;
         let lines = pane::fit(&plan, screen::height(), &|text| theme.faint(text));
         self.screen.borrow_mut().set_pane(lines);
+    }
+
+    /// Shows what a prompt asks about, such as a gate's stage. In a live view it takes the
+    /// plan pane, scrolled when it is taller than the terminal, and the prompt sits under it.
+    /// Otherwise it prints once, before the prompt asks.
+    fn show_prompt_pane(&self, lines: Vec<String>) {
+        let mut screen = self.screen.borrow_mut();
+        if !screen.live() {
+            for line in lines {
+                screen.print(&format!("{line}\n"));
+            }
+            return;
+        }
+        // Rows for the content: the terminal, less the prompt line and one to spare.
+        let room = screen::height().saturating_sub(2).max(3) - 1;
+        let cols = screen::width();
+        let rows_of = |line: &String| screen::rows(&format!("{line}\n"), cols);
+        if lines.iter().map(rows_of).sum::<usize>() <= room {
+            self.pane_below.set(None);
+            self.pane_scroll.set(0);
+            screen.set_pane(lines);
+            return;
+        }
+        let theme = self.opts.theme;
+        let offset = self.pane_scroll.get().min(lines.len().saturating_sub(1));
+        self.pane_scroll.set(offset);
+        let mut out = Vec::new();
+        // One row for the line that says what is below.
+        let mut used = 1;
+        if offset > 0 {
+            out.push(theme.faint(&format!("  … {offset} lines above")));
+            used += 1;
+        }
+        let mut shown = 0;
+        for line in &lines[offset..] {
+            let r = rows_of(line);
+            if used + r > room {
+                break;
+            }
+            used += r;
+            out.push(line.clone());
+            shown += 1;
+        }
+        let below = lines.len() - offset - shown;
+        self.pane_below.set(Some(below));
+        out.push(theme.faint(&if below > 0 {
+            format!("  … {below} lines below")
+        } else {
+            "  (end)".to_string()
+        }));
+        screen.set_pane(out);
+    }
+
+    /// A gate's or a pause's content: the stage's rule, then, except in a guide, every step
+    /// with its commands as they will run.
+    fn gate_lines(&self, stage: &ir::Stage) -> Vec<String> {
+        let rule = self.redactor.redact(&self.rule(stage));
+        let mut lines = vec![self.opts.theme.lines(&rule)];
+        if self.p.mode != Mode::Guide && !stage.steps.is_empty() {
+            lines.push(String::new());
+            lines.extend(self.preview_lines(&stage.steps.iter().collect::<Vec<_>>()));
+        }
+        lines
+    }
+
+    /// Erases a gate's pane, its prompt, and anything a dialog printed since the mark.
+    fn close_gate(&self) {
+        let mut screen = self.screen.borrow_mut();
+        screen.erase_to_mark();
+        screen.clear_all();
+        self.pane_below.set(None);
+        self.pane_scroll.set(0);
+    }
+
+    /// The `#` line that records how a stage began or ended in the run log, such as
+    /// `# ── stage 2/4: Snapshot ── approved`.
+    fn stage_comment(&self, stage: &ir::Stage, what: &str) -> String {
+        let title = render::escape_controls(&stage.title);
+        if stage.is_preflight() {
+            format!("# ── preflight: {title} ── {what}")
+        } else {
+            format!(
+                "# ── stage {}/{}: {title} ── {what}",
+                stage.number,
+                self.p.stages.len()
+            )
+        }
     }
 
     /// The plan pane's content, themed, before it is fitted to the terminal.
@@ -1139,6 +1252,7 @@ impl<'p> Runner<'p> {
             values: toggle,
             skip: false,
             open: false,
+            scroll: false,
         };
         self.ask(&Style::Pause(action), keys, &|_| {})?;
         self.screen.borrow_mut().erase_to_mark();
@@ -1160,6 +1274,8 @@ impl<'p> Runner<'p> {
         loop {
             match self.prompt(style, keys, redraw)? {
                 Key::Open => {
+                    // A dialog prints in the run log, under where the pane was.
+                    self.screen.borrow_mut().clear_all();
                     self.open_script()?;
                     {
                         let mut screen = self.screen.borrow_mut();
@@ -1169,6 +1285,7 @@ impl<'p> Runner<'p> {
                     redraw(self);
                 }
                 Key::Values => {
+                    self.screen.borrow_mut().clear_all();
                     self.values_view()?;
                     {
                         let mut screen = self.screen.borrow_mut();
@@ -1364,8 +1481,7 @@ impl<'p> Runner<'p> {
             return Ok(());
         }
         let description = why.describe(self.p);
-        self.say(&format!("\n{}", self.rule(stage)));
-        self.say(&format!("  ↷ {description}"));
+        self.say(&format!("\n{}", self.stage_comment(stage, &description)));
         self.journal.report(&format!(
             "\n## {} · {}\n\n- {description}",
             heading(stage),
@@ -1445,8 +1561,8 @@ impl<'p> Runner<'p> {
         if !self.skip_dialog(&decided, &[], Some(stage.number), &what, false)? {
             return Ok(false);
         }
-        self.screen.borrow_mut().erase_to_mark();
-        self.say("  ↷ skipped");
+        self.close_gate();
+        self.say(&format!("\n{}", self.stage_comment(stage, "skipped")));
         self.journal.event(
             "stage_skip",
             json!({"stage": id, "by": "operator", "needs": []}),
@@ -1928,6 +2044,7 @@ impl<'p> Runner<'p> {
             // The full view has no legend, so `l` is not offered there.
             let keys = Keys {
                 legend: keys.legend && self.view.get() == View::Compact,
+                scroll: self.pane_below.get().is_some(),
                 ..keys
             };
             let hint = keys.hint(style, self.view.get());
@@ -1937,7 +2054,11 @@ impl<'p> Runner<'p> {
             };
             let question = matches!(style, Style::Question(_));
             let key = if self.opts.require_enter || !std::io::stdin().is_terminal() {
-                let line = self.read_line(&prompt)?;
+                // The prompt sits under the pane, which holds what it asks about.
+                let line = read_line_interruptible(&self.signals, &prompt)?;
+                self.screen
+                    .borrow_mut()
+                    .prompted(&format!("{prompt}{line}"));
                 let line = line.trim();
                 match (keys.key_for_line(line), question) {
                     (Some(key), _) => Some(key),
@@ -1947,7 +2068,6 @@ impl<'p> Runner<'p> {
                     (None, false) => None,
                 }
             } else {
-                self.screen.borrow_mut().hide();
                 let (key, echo) = read_key_interruptible(&self.signals, &prompt, |bytes| {
                     if let Some(key) = keys.key_for_bytes(bytes) {
                         return Some((key, key.echo()));
@@ -1960,15 +2080,28 @@ impl<'p> Runner<'p> {
                         _ => None,
                     }
                 })?;
-                self.screen.borrow_mut().echoed(&format!("{prompt}{echo}"));
+                self.screen
+                    .borrow_mut()
+                    .prompted(&format!("{prompt}{echo}"));
                 Some(key)
             };
             match key {
-                Some(toggle @ (Key::ToggleView | Key::ToggleLegend)) => {
-                    if toggle == Key::ToggleView {
-                        self.view.set(self.view.get().toggled());
-                    } else {
-                        self.legend.set(!self.legend.get());
+                Some(toggle @ (Key::ToggleView | Key::ToggleLegend | Key::Up | Key::Down)) => {
+                    match toggle {
+                        Key::ToggleView => self.view.set(self.view.get().toggled()),
+                        Key::ToggleLegend => self.legend.set(!self.legend.get()),
+                        // Half a page a key: each new prompt ignores keys for a moment, so
+                        // a line a key would be slow.
+                        Key::Up => {
+                            let step = scroll_step();
+                            self.pane_scroll
+                                .set(self.pane_scroll.get().saturating_sub(step));
+                        }
+                        _ => {
+                            let below = self.pane_below.get().unwrap_or(0);
+                            let step = scroll_step().min(below);
+                            self.pane_scroll.set(self.pane_scroll.get() + step);
+                        }
                     }
                     {
                         let mut screen = self.screen.borrow_mut();
@@ -1986,27 +2119,17 @@ impl<'p> Runner<'p> {
     // ---- stages ----
 
     fn stage(&mut self, stage: &'p ir::Stage) -> Result<(), Stop> {
-        let total = self.p.stages.len();
         self.stage_now = stage.number;
         self.in_stage = false;
         self.touched.clear();
         self.pin_scripts(stage);
         *self.prompt_scripts.borrow_mut() = self.scripts_in(stage.steps.iter());
-        let rule = if stage.is_preflight() {
-            render::preflight_rule(&stage.title, self.width())
-        } else {
-            render::stage_rule(stage.number, total, &stage.title, self.width())
-        };
-        self.say(&format!("\n{rule}"));
         let id = stage_id(stage);
         let guide = self.p.mode == Mode::Guide;
-        // Everything after the header is the preview; a live view erases it once approved.
-        // A guide shows no preview: its stage just runs, after a pause.
+        // The gate's content sits in the plan pane, so the run log keeps only one line for it.
+        // Anything a dialog prints at the gate is counted from this mark and erased with it.
         self.screen.borrow_mut().mark();
-        if !guide && !stage.steps.is_empty() {
-            self.say("");
-            self.say_preview(&stage.steps.iter().collect::<Vec<_>>());
-        }
+        self.pane_scroll.set(0);
         self.journal.event(
             "stage_start",
             json!({"stage": id, "title": stage.title, "mutating": stage.mutating}),
@@ -2018,30 +2141,28 @@ impl<'p> Runner<'p> {
         });
         self.check_withheld_boundaries(&stage.steps)?;
         let gated = !guide && (self.p.gates == GateMode::All || stage.mutating);
+        let opened;
         if self.opts.yes {
             if gated {
-                self.say("  approved by --yes");
+                opened = "approved by --yes";
                 self.journal.event("gate_auto", json!({"stage": id}));
                 self.journal.report("- gate approved by `--yes`");
             } else {
+                opened = "started";
                 self.journal
                     .event("pause", json!({"stage": id, "auto": true}));
                 self.journal.report("- continued by `--yes`");
             }
         } else {
-            // A guide shows no preview, so it draws nothing again either.
-            let preview = |r: &Self| {
-                if !guide && !stage.steps.is_empty() {
-                    r.say("");
-                    r.say_preview(&stage.steps.iter().collect::<Vec<_>>());
-                }
-            };
+            let preview = |r: &Self| r.show_prompt_pane(r.gate_lines(stage));
+            preview(self);
             let keys = Keys {
                 view: true,
                 legend: true,
                 values: true,
                 skip: stage.skip != SkipRule::Never,
                 open: false,
+                scroll: false,
             };
             let question = |_: &Self| format!("Run {}?", stage.name());
             let style = if gated {
@@ -2052,6 +2173,7 @@ impl<'p> Runner<'p> {
             loop {
                 match self.ask(&style, keys, &preview)? {
                     Key::Skip => {
+                        self.screen.borrow_mut().clear_all();
                         if self.operator_skip(stage)? {
                             return Ok(());
                         }
@@ -2066,16 +2188,20 @@ impl<'p> Runner<'p> {
                         self.journal
                             .event("gate", json!({"stage": id, "approved": true}));
                         self.journal.report("- gate approved");
+                        opened = "approved";
                         break;
                     }
                     Key::Continue => {
                         self.journal.event("pause", json!({"stage": id}));
                         self.journal.report("- continued");
+                        opened = "continued";
                         break;
                     }
                     _ => {
                         self.journal
                             .event("gate", json!({"stage": id, "approved": false}));
+                        self.close_gate();
+                        self.say(&format!("\n{}", self.stage_comment(stage, "not approved")));
                         return Err(Stop::failed(format!(
                             "{} was not approved; nothing in it ran",
                             stage.name()
@@ -2084,7 +2210,8 @@ impl<'p> Runner<'p> {
                 }
             }
         }
-        self.screen.borrow_mut().erase_to_mark();
+        self.close_gate();
+        self.say(&format!("\n{}", self.stage_comment(stage, opened)));
         self.prompt_scripts.borrow_mut().clear();
         self.in_stage = true;
         let prefix = if stage.is_preflight() {
@@ -2112,7 +2239,7 @@ impl<'p> Runner<'p> {
         if let Err(stop) = &result
             && stop.skip_rest
         {
-            self.say(&format!("  ↷ the rest of {} was skipped", stage.name()));
+            self.say(&format!("# ↷ the rest of {} was skipped", stage.name()));
             return Ok(());
         }
         result?;
@@ -2128,7 +2255,7 @@ impl<'p> Runner<'p> {
         } else {
             format!("stage {}", stage.number)
         };
-        self.say(&format!("  ✓ {done} done{tail}"));
+        self.say(&format!("# ✓ {done} done{tail}"));
         Ok(())
     }
 
@@ -2209,48 +2336,51 @@ impl<'p> Runner<'p> {
             StepKind::Command(command) => self.command(command, step, path, suffix, deadline),
             StepKind::Confirm(text) => {
                 let text = self.display_interpolated(text);
-                // Everything left in the stage, shown in full as at a gate. A live view
-                // erases the list once confirmed, and the ghost takes over again.
+                // Everything left in the stage, shown in full in the pane as at a gate. Once
+                // answered, the run log keeps one line and the plan pane takes over again.
                 let _ = rest;
                 let steps = self.remaining();
                 self.screen.borrow_mut().clear_all();
                 self.screen.borrow_mut().mark();
-                if !steps.is_empty() {
-                    self.say("  next:");
-                    self.say_preview(&steps);
-                }
+                self.pane_scroll.set(0);
                 let redraw = |r: &Self| {
+                    let mut lines = Vec::new();
                     if !steps.is_empty() {
-                        r.say("  next:");
-                        r.say_preview(&steps);
+                        lines.push(r.opts.theme.lines("  next:"));
+                        lines.extend(r.preview_lines(&steps));
                     }
+                    r.show_prompt_pane(lines);
                 };
+                redraw(self);
                 let keys = Keys {
                     view: true,
                     legend: true,
                     values: true,
                     skip: self.p.stage(self.stage_now).skip != SkipRule::Never,
                     open: false,
+                    scroll: false,
                 };
                 let question = |r: &Self| r.shorten_text(&text);
                 *self.prompt_scripts.borrow_mut() = self.scripts_in(steps.iter().copied());
                 loop {
                     match self.ask(&Style::Question(&question), keys, &redraw)? {
                         Key::Yes => {
-                            self.screen.borrow_mut().erase_to_mark();
+                            self.close_gate();
+                            self.say(&comment(&format!("confirmed: {text}")));
                             self.update_pane();
                             self.journal
                                 .event("confirm", json!({"step": step.id, "approved": true}));
                             return Ok(());
                         }
                         Key::Skip => {
+                            self.screen.borrow_mut().clear_all();
                             let partial = skip::made_by(steps.iter().copied());
                             let what =
                                 format!("the rest of {}", self.p.stage(self.stage_now).name());
                             let decided = self.skipped.clone();
                             let now = Some(self.stage_now);
                             if self.skip_dialog(&decided, &partial, now, &what, false)? {
-                                self.screen.borrow_mut().erase_to_mark();
+                                self.close_gate();
                                 self.journal.event(
                                     "stage_skip",
                                     json!({
@@ -2274,6 +2404,8 @@ impl<'p> Runner<'p> {
                             redraw(self);
                         }
                         _ => {
+                            self.close_gate();
+                            self.say(&comment(&format!("not confirmed: {text}")));
                             self.journal
                                 .event("confirm", json!({"step": step.id, "approved": false}));
                             return Err(Stop::failed(format!(
@@ -3481,6 +3613,11 @@ impl render::Values for Runner<'_> {
             }),
         ))
     }
+}
+
+/// How many lines one scroll key moves a prompt's content: half the terminal.
+fn scroll_step() -> usize {
+    (screen::height() / 2).max(1)
 }
 
 /// The step id a rendered step line starts with, such as `2.1` in `    2.1  read ❯ ls`.

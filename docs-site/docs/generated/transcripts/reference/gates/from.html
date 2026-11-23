@@ -2,14 +2,14 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run mutating.korin --param image=registry.example.com/api:2.4.0 --from Roll
   <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
 
-<span class="k-border">━━</span> <span class="k-fg-dim">Stage 2/2</span> <span class="k-border">·</span> <span class="k-bold">Roll</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="k-comment"># ── stage 2/2: Roll ── approved</span>
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> set image <span class="k-fg-dim">deployment/</span>api api=<span class="k-cyan">registry.example.com/api:2.4.0</span> <span class="k-blue">-n</span> shop
 deployment.apps/api image updated
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> shop <span class="k-blue">--timeout</span> 5m
 deployment "api" successfully rolled out
-  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 2 commands</span>
+<span class="k-comment"># ✓ stage 2 done · 2 commands</span>
 
 <span class="k-green k-bold">✓</span> <span class="k-bold">Roll the api to a new image completed</span>
   <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-roll-the-api-to-a-new-image</span></code></pre>
