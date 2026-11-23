@@ -596,7 +596,8 @@ fn live_view_erases_the_preview_and_draws_the_plan_pane() {
     assert_eq!(s.wait(), 0, "{}", s.text());
     // By the end the note has run for real, and the pane is gone.
     let raw = s.raw();
-    let last_pane = raw.rfind("1/1 a").unwrap();
+    // The pane's step line, which the run log never prints.
+    let last_pane = raw.rfind("note \"still-to-come\"").unwrap();
     assert!(
         raw[last_pane..].contains("\x1b[J"),
         "the pane was never erased"
@@ -1085,6 +1086,54 @@ fn a_fail_condition_and_a_deadline_leave_their_try() {
     assert!(
         screen.contains("# poll stopped: poll at step 1.1 timed out"),
         "{screen}"
+    );
+}
+
+#[test]
+fn the_run_ends_with_a_summary_of_every_stage() {
+    let dir = setup(
+        "stage \"one\"\n  read true\nstage \"two\"\n  read false\nstage \"three\"\n  read true\n",
+        &[],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("Run stage 2?");
+    s.answer("y");
+    assert_eq!(s.wait(), 1, "{}", s.text());
+    let screen = s.screen();
+    let summary = &screen[screen
+        .find("── failed · ")
+        .unwrap_or_else(|| panic!("{screen}"))..];
+    assert!(summary.contains("· exit 1"), "{summary}");
+    assert!(summary.contains(" ✓ 1/3 one  "), "{summary}");
+    assert!(summary.contains(" ✗ 2/3 two  failed"), "{summary}");
+    assert!(summary.contains("   3/3 three  not run"), "{summary}");
+}
+
+#[test]
+fn an_interactive_step_takes_the_pane_away_and_gives_it_back() {
+    let dir = setup(
+        "stage \"a\"\n  interactive fakeui\n  read echo after\n",
+        &[("fakeui", "echo IN-PROGRAM")],
+    );
+    let env = vec![("COLORTERM", PathBuf::from("truecolor"))];
+    let mut s = start_with_env(dir.path(), &["run", "w.korin"], &env);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let raw = s.raw();
+    let program = raw.find("IN-PROGRAM").unwrap();
+    let before = &raw[..program];
+    let after = &raw[program..];
+    // The pane was erased before the program ran, and drawn again after it.
+    let erase = before.rfind("\x1b[J").unwrap();
+    assert!(!before[erase..].contains("1.2  read"), "{before:?}");
+    assert!(after.contains("1.2  read"), "{after:?}");
+    assert!(
+        s.screen().contains("$ fakeui\nIN-PROGRAM"),
+        "{}",
+        s.screen()
     );
 }
 

@@ -533,13 +533,23 @@ fn relative_path(target: &Path, from: &Path) -> String {
     parts.join("/")
 }
 
-/// Replaces values that change on every run: the run's time stamp, and the temporary home
-/// directory, which becomes `/home/ada`.
+/// Replaces values that change on every run: the run's time stamp, the times in the
+/// summary at the end of a run, which become `1s`, and the temporary home directory, which
+/// becomes `/home/ada`.
 fn normalize(bytes: &[u8], home: &Path) -> Vec<u8> {
     let stamp = regex::bytes::Regex::new(r"\d{8}T\d{6}Z").unwrap();
     let mut out = stamp
         .replace_all(bytes, &b"20260115T100000Z"[..])
         .into_owned();
+    // The summary's header and each stage line it lists end in a time.
+    let header = regex::bytes::Regex::new(r"── (?:done|ended|failed|cancelled) · ").unwrap();
+    if let Some(at) = header.find_iter(&out).last().map(|m| m.start()) {
+        // A time follows a space, or the `m` that ends a color code.
+        let time = regex::bytes::Regex::new(r"([ m])\d+(?:h\d{2}m|m\d{2}s|s)\b").unwrap();
+        let tail = time.replace_all(&out[at..], &b"${1}1s"[..]).into_owned();
+        out.truncate(at);
+        out.extend_from_slice(&tail);
+    }
     let home = home.display().to_string();
     // macOS reports a temporary directory both with and without its `/private` prefix.
     for form in [

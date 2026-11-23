@@ -735,6 +735,7 @@ impl<'p> Runner<'p> {
         );
         self.journal.report(&format!("# {}\n", self.p.title));
         self.intro();
+        let run_started = Instant::now();
         let p = self.p;
         let result = self.params().and_then(|()| {
             // The preflight runs first, even with `--from`.
@@ -748,6 +749,12 @@ impl<'p> Runner<'p> {
             Ok(())
         });
         let _ = std::fs::remove_dir_all(&self.scratch_root);
+        self.screen.borrow_mut().clear_all();
+        let ending = match &result {
+            Ok(()) => Ending::Completed,
+            Err(stop) => stop.ending,
+        };
+        self.say_summary(ending, run_started.elapsed());
         if let Some((count, first)) = self.journal.failures() {
             self.say(&format!(
                 "\n⚠ the journal is incomplete: {count} write(s) failed, first: {first}"
@@ -808,6 +815,69 @@ impl<'p> Runner<'p> {
                 stop.ending
             }
         }
+    }
+
+    /// The plan pane's last state, kept in the run log as the run's summary: each stage with
+    /// how it ended and the time it took. Printed only once a stage has started or been
+    /// skipped.
+    fn say_summary(&self, ending: Ending, took: Duration) {
+        if self.stage_states.is_empty() {
+            return;
+        }
+        let theme = self.opts.theme;
+        let word = match ending {
+            Ending::Completed => "done",
+            Ending::Ended => "ended",
+            Ending::Failed => "failed",
+            Ending::Cancelled => "cancelled",
+        };
+        let head = format!(
+            "── {word} · {} · exit {} ",
+            elapsed(took),
+            ending.exit_code()
+        );
+        let fill = render::RULE_MAX
+            .min(self.width())
+            .saturating_sub(head.chars().count())
+            .max(2);
+        let mut lines = vec![
+            String::new(),
+            theme.faint(&format!("{head}{}", "─".repeat(fill))),
+        ];
+        let total = self.p.stages.len();
+        for stage in self.p.preflight.iter().chain(self.p.stages.iter()) {
+            let label = if stage.is_preflight() {
+                format!("preflight · {}", render::escape_controls(&stage.title))
+            } else {
+                format!(
+                    "{}/{total} {}",
+                    stage.number,
+                    render::escape_controls(&stage.title)
+                )
+            };
+            let label = self.redactor.redact(&label);
+            let line = match self.stage_states.get(&stage.number) {
+                Some(StageState::Done(took)) => {
+                    theme.pane_stage(pane::Mark::Done, &label, &elapsed(*took))
+                }
+                Some(StageState::Skipped) => {
+                    theme.pane_stage(pane::Mark::Skipped, &label, "skipped")
+                }
+                Some(StageState::Failed | StageState::Running(_)) => {
+                    let tail = if ending == Ending::Cancelled {
+                        "stopped"
+                    } else {
+                        "failed"
+                    };
+                    theme.pane_stage(pane::Mark::Failed, &label, tail)
+                }
+                None => theme.pane_stage(pane::Mark::Pending, &label, "not run"),
+            };
+            lines.push(line);
+        }
+        self.screen
+            .borrow_mut()
+            .print(&format!("{}\n", lines.join("\n")));
     }
 
     /// Prints a line to the terminal: redacted first, then colored.
@@ -3092,6 +3162,8 @@ impl<'p> Runner<'p> {
                 "handoff_end",
                 json!({"invocation_id": invocation, "status": status_json(handoff.status), "cancelled": handoff.cancelled.map(Cancel::describe)}),
             );
+            // The terminal is korin's again: the pane comes back under what the program left.
+            self.update_pane();
             (
                 handoff.status,
                 Vec::new(),
