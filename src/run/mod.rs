@@ -171,13 +171,75 @@ impl Stop {
     }
 }
 
-/// An answer at a gate or a `confirm`.
+/// A key that answers a prompt. See [`Runner::prompt`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Answer {
+enum Key {
     Yes,
     No,
+    Continue,
     /// Switch between the compact and the full view, then ask again.
-    Toggle,
+    ToggleView,
+}
+
+impl Key {
+    /// What the prompt line shows once the key answers it.
+    fn echo(self) -> &'static str {
+        match self {
+            Key::Yes => "y",
+            Key::No => "n",
+            Key::Continue => "",
+            Key::ToggleView => "f",
+        }
+    }
+}
+
+/// The keys a prompt allows, beyond its own answers.
+#[derive(Debug, Clone, Copy, Default)]
+struct Keys {
+    /// `f`: switch between the compact and the full view.
+    view: bool,
+}
+
+impl Keys {
+    /// The hint after the question, such as `y/N · f full`, or after a pause.
+    fn hint(self, style: &Style<'_, '_>, view: View) -> String {
+        let mut parts = Vec::new();
+        if matches!(style, Style::Question(_)) {
+            parts.push("y/N".to_string());
+        }
+        if self.view {
+            parts.push(format!("f {}", view.other()));
+        }
+        if parts.is_empty() {
+            "Ctrl-C cancel".to_string()
+        } else {
+            parts.join(" · ")
+        }
+    }
+
+    /// The allowed key that one read of the terminal gives, if any.
+    fn key_for_bytes(self, bytes: &[u8]) -> Option<Key> {
+        match bytes {
+            [b'f' | b'F', ..] if self.view => Some(Key::ToggleView),
+            _ => None,
+        }
+    }
+
+    /// The allowed key that a line gives, with `--require-enter` or without a terminal.
+    fn key_for_line(self, line: &str) -> Option<Key> {
+        match line {
+            "f" | "F" if self.view => Some(Key::ToggleView),
+            _ => None,
+        }
+    }
+}
+
+/// What a prompt asks.
+enum Style<'a, 'p> {
+    /// A y/N question, such as a gate or a `confirm`, built for the current view.
+    Question(&'a dyn Fn(&Runner<'p>) -> String),
+    /// A pause, with the action that Enter takes, such as "continue".
+    Pause(&'a str),
 }
 
 #[derive(Debug, Clone)]
@@ -728,11 +790,9 @@ impl<'p> Runner<'p> {
         Ok(answer)
     }
 
-    /// Asks a yes/no question that sits under a preview. In a terminal, one key answers it:
-    /// `y` approves, and `n`, Enter or Esc declines. `f` switches between the compact and
-    /// the full view: korin erases the preview, draws it again with `redraw`, and asks
-    /// again. With `--require-enter`, or without a terminal, it reads a line instead, and a
-    /// line of `f` switches the view.
+    /// Asks a yes/no question that sits under a preview, such as a gate or a `confirm`. `y`
+    /// approves, and `n`, Enter or Esc declines. Returns `Yes` or `No`, or one of the other
+    /// keys `keys` allows; `f` and `l` are handled here. See [`Runner::prompt`].
     ///
     /// `question` builds the question for the current view, since it may hold a path.
     fn ask_yes(
@@ -740,34 +800,72 @@ impl<'p> Runner<'p> {
         question: &dyn Fn(&Self) -> String,
         redraw: &dyn Fn(&Self),
     ) -> Result<bool, Stop> {
+        let keys = Keys { view: true };
+        Ok(self.prompt(&Style::Question(question), keys, redraw)? == Key::Yes)
+    }
+
+    /// Waits for the operator in a guide: Enter or Space continues, and Ctrl-C cancels. With
+    /// `toggle`, `f` switches between the compact and the full view and waits again. The
+    /// prompt is erased once answered, where the view allows.
+    fn pause(&self, action: &str, toggle: bool) -> Result<(), Stop> {
+        self.screen.borrow_mut().mark();
+        let keys = Keys { view: toggle };
+        self.prompt(&Style::Pause(action), keys, &|_| {})?;
+        self.screen.borrow_mut().erase_to_mark();
+        Ok(())
+    }
+
+    /// Shows a prompt and waits for one of the keys it allows. A question (a gate or a
+    /// `confirm`) answers `Yes` to `y` and `No` to `n`, Enter or Esc. A pause answers
+    /// `Continue` to Enter or Space, and ignores keys it does not allow. `f` switches between
+    /// the compact and the full view: korin erases what was drawn since the mark, draws it
+    /// again with `redraw`, and asks again. Every other allowed key is returned for the
+    /// caller to act on.
+    ///
+    /// In a terminal, one key answers. With `--require-enter`, or without a terminal, korin
+    /// reads a line instead: each key is a line, and a pause continues on an empty line.
+    fn prompt(
+        &self,
+        style: &Style<'_, 'p>,
+        keys: Keys,
+        redraw: &dyn Fn(&Self),
+    ) -> Result<Key, Stop> {
         loop {
-            let hint = format!("y/N · f {}", self.view.get().other());
-            let prompt = self.opts.theme.question(&question(self), &hint);
-            let answer = if self.opts.require_enter || !std::io::stdin().is_terminal() {
+            let hint = keys.hint(style, self.view.get());
+            let prompt = match style {
+                Style::Question(question) => self.opts.theme.question(&question(self), &hint),
+                Style::Pause(action) => self.opts.theme.pause(action, &hint),
+            };
+            let question = matches!(style, Style::Question(_));
+            let key = if self.opts.require_enter || !std::io::stdin().is_terminal() {
                 let line = self.read_line(&prompt)?;
-                match line.trim() {
-                    "y" | "Y" | "yes" | "Yes" => Answer::Yes,
-                    "f" | "F" => Answer::Toggle,
-                    _ => Answer::No,
+                let line = line.trim();
+                match (keys.key_for_line(line), question) {
+                    (Some(key), _) => Some(key),
+                    (None, true) if matches!(line, "y" | "Y" | "yes" | "Yes") => Some(Key::Yes),
+                    (None, true) => Some(Key::No),
+                    (None, false) if line.is_empty() => Some(Key::Continue),
+                    (None, false) => None,
                 }
             } else {
                 self.screen.borrow_mut().hide();
-                let (answer, echo) = read_key_interruptible(&self.signals, &prompt, |key| {
-                    match key {
-                        [b'y' | b'Y', ..] => Some((Answer::Yes, "y")),
-                        [b'f' | b'F', ..] => Some((Answer::Toggle, "f")),
-                        [b'n' | b'N' | b'\r' | b'\n', ..] | [0x1b] => Some((Answer::No, "n")),
+                let (key, echo) = read_key_interruptible(&self.signals, &prompt, |bytes| {
+                    if let Some(key) = keys.key_for_bytes(bytes) {
+                        return Some((key, key.echo()));
+                    }
+                    match (bytes, question) {
+                        ([b'y' | b'Y', ..], true) => Some((Key::Yes, "y")),
+                        ([b'n' | b'N' | b'\r' | b'\n', ..] | [0x1b], true) => Some((Key::No, "n")),
+                        ([b'\r' | b'\n' | b' ', ..], false) => Some((Key::Continue, "")),
                         // Anything else, such as an arrow key's escape sequence, is ignored.
                         _ => None,
                     }
                 })?;
                 self.screen.borrow_mut().echoed(&format!("{prompt}{echo}"));
-                answer
+                Some(key)
             };
-            match answer {
-                Answer::Yes => return Ok(true),
-                Answer::No => return Ok(false),
-                Answer::Toggle => {
+            match key {
+                Some(Key::ToggleView) => {
                     self.view.set(self.view.get().toggled());
                     {
                         let mut screen = self.screen.borrow_mut();
@@ -776,54 +874,10 @@ impl<'p> Runner<'p> {
                     }
                     redraw(self);
                 }
-            }
-        }
-    }
-
-    /// Waits for the operator in a guide: Enter or Space continues, and Ctrl-C cancels. With
-    /// `toggle`, `f` switches between the compact and the full view and waits again. Other
-    /// keys are ignored. With `--require-enter`, it reads a line: an empty line continues, a
-    /// line of `f` switches the view, and any other line waits again. The prompt is erased
-    /// once answered, where the view allows.
-    fn pause(&self, action: &str, toggle: bool) -> Result<(), Stop> {
-        #[derive(Clone, Copy)]
-        enum Key {
-            Go,
-            Toggle,
-        }
-        self.screen.borrow_mut().mark();
-        loop {
-            let hint = if toggle {
-                format!("f {}", self.view.get().other())
-            } else {
-                "Ctrl-C cancel".to_string()
-            };
-            let prompt = self.opts.theme.pause(action, &hint);
-            let key = if self.opts.require_enter || !std::io::stdin().is_terminal() {
-                match self.read_line(&prompt)?.trim() {
-                    "" => Some(Key::Go),
-                    "f" | "F" if toggle => Some(Key::Toggle),
-                    _ => None,
-                }
-            } else {
-                self.screen.borrow_mut().hide();
-                let (key, echo) =
-                    read_key_interruptible(&self.signals, &prompt, |key| match key {
-                        [b'\r' | b'\n' | b' ', ..] => Some((Key::Go, "")),
-                        [b'f' | b'F', ..] if toggle => Some((Key::Toggle, "f")),
-                        _ => None,
-                    })?;
-                self.screen.borrow_mut().echoed(&format!("{prompt}{echo}"));
-                Some(key)
-            };
-            match key {
-                Some(Key::Go) => break,
-                Some(Key::Toggle) => self.view.set(self.view.get().toggled()),
+                Some(key) => return Ok(key),
                 None => {}
             }
         }
-        self.screen.borrow_mut().erase_to_mark();
-        Ok(())
     }
 
     // ---- stages ----
