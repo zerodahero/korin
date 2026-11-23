@@ -1,0 +1,3 @@
+terminal = false
+args = ["--yes", "--skip", "Tag", "--skip", "Announce"]
+setup = "git init -q && git commit -q --allow-empty -m init && touch CHANGELOG.md"

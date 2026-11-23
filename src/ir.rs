@@ -237,9 +237,23 @@ pub struct Stage {
     /// The stage's number (1-based), or 0 for the preflight.
     pub number: usize,
     pub title: String,
+    /// What its `skip` line says, with `skip also` titles resolved to stage numbers.
+    pub skip: SkipRule,
     pub steps: Vec<Step>,
     pub mutating: bool,
     pub loc: Loc,
+}
+
+/// What a stage's `skip` line says. See [`crate::ast::SkipRule`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum SkipRule {
+    /// No `skip` line: the stage can be skipped, and takes only its dependents with it.
+    #[default]
+    Free,
+    Never,
+    Ends,
+    /// The stage numbers that skipping this stage also skips.
+    Also(Vec<usize>),
 }
 
 impl Stage {
@@ -262,6 +276,9 @@ impl Stage {
 pub struct Reference {
     /// The stage that reads the value, or 0 for the preflight.
     pub stage: usize,
+    /// Whether the read works without the value: an `exists` test, or a read inside
+    /// `when exists`. A skip that leaves the value unset does not stop such a stage.
+    pub guarded: bool,
     pub sym: Sym,
     pub loc: Loc,
 }
@@ -297,6 +314,15 @@ impl Program {
                 u.stage >= stage && info.stage.is_some_and(|s| s > 0 && s < stage)
             })
             .collect()
+    }
+
+    /// The stage numbered `number`: 0 for the preflight.
+    pub fn stage(&self, number: usize) -> &Stage {
+        if number == 0 {
+            self.preflight.as_ref().expect("stage 0 is the preflight")
+        } else {
+            &self.stages[number - 1]
+        }
     }
 
     /// The preflight, if any, then every stage, in run order.

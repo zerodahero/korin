@@ -77,15 +77,25 @@ A run without a terminal, such as in CI, always shows the full view.
   `unattended allowed`. See [Run in CI](../guides/ci.md).
 - `--from <stage>` starts at a later stage, by title or number. See
   [Resume after a stop](../guides/resume.md).
+- `--skip <stage>` skips a stage, by title or number. Repeat it for each stage. See
+  [Skipping a stage](gates.md#skipping-a-stage).
+- `--set name=value` gives a capture or an expect of a skipped stage, so the stages that
+  read it can still run. A list is a JSON array of strings, JSON is JSON text, and an expect
+  is `true` or `false`. A secret capture takes `KORIN_SECRET_<NAME>` instead.
+- `--skip-preflight` skips the [preflight](file.md#preflight).
 - `--kill-grace <seconds>` sets how long korin waits between `SIGTERM` and `SIGKILL` when it
   stops a command.
 - `--require-enter` makes gates and `confirm` take `y` or `n` followed by Enter, instead of a
   single key, and `f` followed by Enter switches the view. A guide's pause then continues on
   an empty line. Setting `KORIN_REQUIRE_ENTER=1` does the same.
 
+korin checks `--from`, `--skip`, `--skip-preflight` and `--set` before anything runs, even
+the preflight. Without a terminal, a skip that leaves a later stage without a value it reads
+stops the run there: give the value with `--set`, or skip that stage too.
+
 | Exit code | Meaning |
 |---|---|
-| 0 | The run completed. |
+| 0 | The run completed, or ended early because a `skip ends` stage was skipped. |
 | 1 | The run stopped: a gate was declined, a command failed or timed out, an `assert` was false, a poll ran out of time, or korin could not start the run. |
 | 130 | The run was cancelled: Ctrl-C, or korin received `SIGTERM` or `SIGHUP`. |
 

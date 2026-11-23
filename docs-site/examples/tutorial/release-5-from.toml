@@ -4,5 +4,4 @@ run_as = "release.korin"
 wizard = "release-5.korin"
 command = "check"
 args = ["--from", "Release"]
-exit = 1
 setup = "sh setup.sh"

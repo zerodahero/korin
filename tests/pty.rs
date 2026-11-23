@@ -492,7 +492,7 @@ fn nested_confirm_shows_the_rest_of_the_stage() {
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.answer("y");
-    s.wait_for("Continue? [y/N · v values · f full · l legend]");
+    s.wait_for("Continue? [y/N · s skip · v values · f full · l legend]");
     let text = s.text();
     let next = &text[text.rfind("next:").expect("confirm lists what comes next")..];
     assert!(next.contains("after-the-block"), "{next}");
@@ -519,7 +519,7 @@ fn deeply_nested_confirm_shows_every_remaining_step() {
     let mut s = start(dir.path(), &["run", "w.korin"]);
     s.wait_for("Run stage 1?");
     s.answer("y");
-    s.wait_for("Continue? [y/N · v values · f full · l legend]");
+    s.wait_for("Continue? [y/N · s skip · v values · f full · l legend]");
     let text = s.text();
     let next = &text[text.rfind("next:").expect("confirm lists what comes next")..];
     for expected in ["inner-rest", "middle-rest", "outer-rest"] {
@@ -644,7 +644,7 @@ fn one_key_answers_a_gate_and_keys_while_arming_are_ignored() {
     assert!(marker(dir.path(), "touched").exists());
     assert!(
         s.text()
-            .contains("Run stage 1? [y/N · v values · f full · l legend] y"),
+            .contains("Run stage 1? [y/N · s skip · v values · f full · l legend] y"),
         "{}",
         s.text()
     );
@@ -668,7 +668,7 @@ fn enter_alone_declines_and_the_terminal_modes_come_back() {
     assert_eq!(s.wait(), 1, "{}", s.text());
     assert!(
         s.text()
-            .contains("Run stage 2? [y/N · v values · f full · l legend] n"),
+            .contains("Run stage 2? [y/N · s skip · v values · f full · l legend] n"),
         "{}",
         s.text()
     );
@@ -751,11 +751,11 @@ fn f_at_a_gate_redraws_the_preview_in_full() {
     let (dir, target) = target_setup("  read lister {target}/a.txt\n");
     let param = format!("target={target}");
     let mut s = start(dir.path(), &["run", "w.korin", "--param", &param]);
-    s.wait_for("[y/N · v values · f full · l legend]");
+    s.wait_for("[y/N · s skip · v values · f full · l legend]");
     assert!(s.text().contains("lister <target>/a.txt"), "{}", s.text());
     std::thread::sleep(Duration::from_millis(400));
     s.send("f");
-    s.wait_for("[y/N · v values · f compact]");
+    s.wait_for("[y/N · s skip · v values · f compact]");
     let after = s.text();
     let toggled = after.find("v values · f compact]").unwrap();
     let full = format!("lister {target}/a.txt");
@@ -781,10 +781,10 @@ fn f_and_enter_toggles_with_require_enter() {
         dir.path(),
         &["run", "w.korin", "--require-enter", "--param", &param],
     );
-    s.wait_for("[y/N · v values · f full · l legend]");
+    s.wait_for("[y/N · s skip · v values · f full · l legend]");
     std::thread::sleep(Duration::from_millis(400));
     s.send("f\r");
-    s.wait_for("[y/N · v values · f compact]");
+    s.wait_for("[y/N · s skip · v values · f compact]");
     std::thread::sleep(Duration::from_millis(400));
     s.send("y\r");
     assert_eq!(s.wait(), 0, "{}", s.text());
@@ -893,7 +893,7 @@ fn a_guide_pauses_before_each_stage_and_shows_no_preview() {
         &[],
     );
     let mut s = start(dir.path(), &["run", "w.korin"]);
-    s.wait_for("↵ continue · v values · f full");
+    s.wait_for("↵ continue · s skip · v values · f full");
     // No preview: the step is not on screen before it runs.
     assert!(!s.text().contains("echo first-ran"), "{}", s.text());
     assert!(!s.text().contains("Run stage"), "{}", s.text());
@@ -918,10 +918,10 @@ fn a_guide_pauses_before_each_stage_and_shows_no_preview() {
 fn a_guide_pause_takes_a_line_with_require_enter() {
     let dir = guide_setup("stage \"one\"\n  read echo ran\n", &[]);
     let mut s = start(dir.path(), &["run", "w.korin", "--require-enter"]);
-    s.wait_for("↵ continue · v values · f full");
+    s.wait_for("↵ continue · s skip · v values · f full");
     std::thread::sleep(Duration::from_millis(400));
     s.send("f\r");
-    s.wait_for("↵ continue · v values · f compact");
+    s.wait_for("↵ continue · s skip · v values · f compact");
     std::thread::sleep(Duration::from_millis(400));
     s.send("\r");
     assert_eq!(s.wait(), 0, "{}", s.text());
@@ -1022,7 +1022,7 @@ fn the_legend_explains_each_prefix_and_l_hides_it() {
     let (dir, target) = target_setup("  read lister {target}/a.txt\n");
     let param = format!("target={target}");
     let mut s = start(dir.path(), &["run", "w.korin", "--param", &param]);
-    s.wait_for("[y/N · v values · f full · l legend]");
+    s.wait_for("[y/N · s skip · v values · f full · l legend]");
     let entry = format!("<target> = {target}");
     let before = s.text();
     // Once when the param is set, and once under the preview that shows it.
@@ -1030,7 +1030,7 @@ fn the_legend_explains_each_prefix_and_l_hides_it() {
     assert!(before.contains("<pwd> = "), "{before}");
     std::thread::sleep(Duration::from_millis(400));
     s.send("l");
-    s.wait_for_nth("[y/N · v values · f full · l legend]", 2);
+    s.wait_for_nth("[y/N · s skip · v values · f full · l legend]", 2);
     let after = s.text();
     let redrawn = &after[after.find("legend] l").unwrap()..];
     assert!(redrawn.contains("lister <target>/a.txt"), "{redrawn}");
@@ -1055,7 +1055,7 @@ fn the_config_file_can_start_with_the_legend_hidden() {
         &["run", "w.korin", "--param", &param],
         &[("KORIN_CONFIG", config)],
     );
-    s.wait_for("[y/N · v values · f full · l legend]");
+    s.wait_for("[y/N · s skip · v values · f full · l legend]");
     assert!(!s.text().contains(" = "), "{}", s.text());
     s.answer("y");
     assert_eq!(s.wait(), 0, "{}", s.text());
@@ -1066,7 +1066,7 @@ fn the_footer_lists_each_name_while_a_stage_runs() {
     let (dir, target) = target_setup("  read lister {target}/a.txt\n  read sleep 0.3\n");
     let param = format!("target={target}");
     let mut s = start(dir.path(), &["run", "w.korin", "--param", &param]);
-    s.wait_for("[y/N · v values · f full · l legend]");
+    s.wait_for("[y/N · s skip · v values · f full · l legend]");
     s.answer("y");
     assert_eq!(s.wait(), 0, "{}", s.text());
     let text = s.text();
@@ -1087,7 +1087,7 @@ fn v_at_a_gate_changes_a_value_and_redraws_the_preview() {
         &[("greet", "echo \"hello $1\"")],
     );
     let mut s = start(dir.path(), &["run", "w.korin"]);
-    s.wait_for("[y/N · v values · f full · l legend]");
+    s.wait_for("[y/N · s skip · v values · f full · l legend]");
     std::thread::sleep(Duration::from_millis(400));
     s.send("v");
     s.wait_for("number to change");
@@ -1100,7 +1100,7 @@ fn v_at_a_gate_changes_a_value_and_redraws_the_preview() {
     s.send("mars\r");
     s.wait_for_nth("number to change", 2);
     s.send("\r");
-    s.wait_for_nth("[y/N · v values · f full · l legend]", 2);
+    s.wait_for_nth("[y/N · s skip · v values · f full · l legend]", 2);
     let text = s.text();
     let redrawn = &text[text.rfind("number to change").unwrap()..];
     assert!(redrawn.contains("greet mars"), "{redrawn}");
@@ -1265,4 +1265,273 @@ fn values_made_in_the_stage_can_be_edited_by_type_at_a_confirm() {
     assert!(text.contains("one:a b") && text.contains("one:c"), "{text}");
     assert!(text.contains("1 args: []"), "{text}");
     assert!(!events(dir.path()).contains("tag is x"), "{text}");
+}
+
+// ---- skipping ----
+
+/// Presses one key at a single-key prompt, after its arming delay.
+fn key(s: &mut Session, key: &str) {
+    std::thread::sleep(Duration::from_millis(400));
+    s.send(key);
+}
+
+const SKIP_WIZARD: &str = concat!(
+    "stage \"one\"\n  read true\n",
+    "stage \"make\"\n  read make-id\n    capture id = text\n",
+    "stage \"use\"\n  read use {id}\n",
+    "stage \"last\"\n  read true\n",
+);
+
+fn skip_setup(body: &str) -> tempfile::TempDir {
+    setup(
+        body,
+        &[
+            ("make-id", "echo id-7"),
+            ("use", "echo \"using $*\""),
+            ("mark", "touch \"$PWD/marked-$1\""),
+        ],
+    )
+}
+
+#[test]
+fn s_at_a_gate_skips_the_stage_and_its_dependents() {
+    let dir = skip_setup(SKIP_WIZARD);
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("Run stage 2? [y/N · s skip");
+    key(&mut s, "s");
+    s.wait_for("also skips:");
+    assert!(
+        s.text().contains("stage 3 \"use\"  reads `id` (2.1)"),
+        "{}",
+        s.text()
+    );
+    s.wait_for("a skip all · v set values by hand · Esc back");
+    key(&mut s, "a");
+    s.wait_for("Run stage 4?");
+    let text = s.text();
+    assert!(
+        text.contains("↷ skipped: reads `id` from stage 2"),
+        "{text}"
+    );
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(!s.text().contains("using"), "{}", s.text());
+    let events = events(dir.path());
+    assert!(
+        events.contains(r#""by":"operator","kind":"stage_skip","needs":[],"stage":2"#),
+        "{events}"
+    );
+    assert!(
+        events.contains(r#""by":"dependency","kind":"stage_skip","needs":["id"],"stage":3"#),
+        "{events}"
+    );
+}
+
+#[test]
+fn a_value_set_by_hand_keeps_the_dependent_and_esc_throws_it_away() {
+    let dir = skip_setup(SKIP_WIZARD);
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("Run stage 2?");
+    // First set a value, then go back: nothing changes.
+    key(&mut s, "s");
+    s.wait_for("v set values by hand");
+    key(&mut s, "v");
+    s.wait_for("number to set");
+    s.send("1\r");
+    s.wait_for("? id:");
+    s.send("thrown-away\r");
+    s.wait_for_nth("number to set", 2);
+    s.send("\r");
+    s.wait_for("now skips nothing else");
+    key(&mut s, "\x1b");
+    s.wait_for_nth("Run stage 2?", 2);
+    assert!(!events(dir.path()).contains("value_set"));
+    // Then set it, and skip.
+    key(&mut s, "s");
+    s.wait_for_nth("v set values by hand", 2);
+    key(&mut s, "v");
+    s.wait_for_nth("number to set", 3);
+    s.send("1\r");
+    s.wait_for_nth("? id:", 2);
+    s.send("hand-9\r");
+    s.wait_for_nth("number to set", 4);
+    s.send("\r");
+    s.wait_for_nth("now skips nothing else", 2);
+    key(&mut s, "s");
+    s.wait_for("Run stage 3?");
+    s.answer("y");
+    s.wait_for("Run stage 4?");
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(s.text().contains("using hand-9"), "{}", s.text());
+    assert!(!s.text().contains("using thrown-away"), "{}", s.text());
+    let events = events(dir.path());
+    assert_eq!(events.matches("value_set").count(), 1, "{events}");
+}
+
+#[test]
+fn s_at_a_pause_and_at_a_confirm() {
+    let dir = skip_setup(concat!(
+        "gates mutating\n",
+        "stage \"look\"\n  read mark look\n",
+        "stage \"change\"\n  mutate mark a\n  confirm \"Go on?\"\n  mutate mark b\n",
+        "stage \"after\"\n  read mark after\n",
+    ));
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("↵ continue · s skip");
+    key(&mut s, "s");
+    s.wait_for("Run stage 2?");
+    assert!(s.text().contains("↷ skipped"), "{}", s.text());
+    s.answer("y");
+    s.wait_for("Go on? [y/N · s skip");
+    key(&mut s, "s");
+    s.wait_for("the rest of stage 2 was skipped");
+    s.wait_for_nth("↵ continue", 2);
+    s.answer("");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(!dir.path().join("marked-look").exists());
+    assert!(dir.path().join("marked-a").exists());
+    assert!(!dir.path().join("marked-b").exists());
+    assert!(dir.path().join("marked-after").exists());
+    assert!(events(dir.path()).contains(r#""from_step":"2.2""#));
+}
+
+#[test]
+fn skipping_a_skip_ends_stage_asks_and_ends_the_run() {
+    let dir = skip_setup(concat!(
+        "stage \"cutover\"\n  skip ends\n  mutate mark cutover\n",
+        "stage \"after\"\n  mutate mark after\n",
+    ));
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    key(&mut s, "s");
+    s.wait_for("Skipping stage 1 ends the run. End now?");
+    key(&mut s, "y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(
+        s.text().contains("ended: stage 1 was skipped"),
+        "{}",
+        s.text()
+    );
+    assert!(!dir.path().join("marked-after").exists());
+}
+
+#[test]
+fn a_skip_never_stage_offers_no_skip() {
+    let dir = skip_setup("stage \"a\"\n  skip never\n  read true\n");
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1? [y/N · v values");
+    key(&mut s, "s");
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!s.text().contains("skipped"), "{}", s.text());
+    s.send("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+}
+
+const ASK_WIZARD: &str = concat!(
+    "stage \"make\"\n  read make-id\n    capture id = text\n",
+    "stage \"asks\"\n  ask name \"Name?\"\n  read use {id}\n",
+    "stage \"last\"\n  read use {name}\n",
+);
+
+#[test]
+fn esc_leaves_answers_from_param_unstored() {
+    let dir = skip_setup(ASK_WIZARD);
+    let mut s = start(dir.path(), &["run", "w.korin", "--param", "name=ada"]);
+    s.wait_for("Run stage 1?");
+    key(&mut s, "s");
+    s.wait_for("also skips:");
+    key(&mut s, "\x1b");
+    s.wait_for_nth("Run stage 1?", 2);
+    assert!(!events(dir.path()).contains("value_set"));
+    s.answer("y");
+    s.wait_for("Run stage 2?");
+    s.answer("y");
+    s.wait_for("Run stage 3?");
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(s.text().contains("using ada"), "{}", s.text());
+    assert!(!events(dir.path()).contains("value_set"));
+}
+
+#[test]
+fn a_revived_stage_runs_its_ask_as_usual() {
+    for supplied in [true, false] {
+        let dir = skip_setup(ASK_WIZARD);
+        let mut args = vec!["run", "w.korin"];
+        if supplied {
+            args.extend(["--param", "name=ada"]);
+        }
+        let mut s = start(dir.path(), &args);
+        s.wait_for("Run stage 1?");
+        key(&mut s, "s");
+        s.wait_for("v set values by hand");
+        key(&mut s, "v");
+        s.wait_for("number to set");
+        let text = s.text();
+        let listing = &text[text.rfind("values to set by hand").unwrap()..];
+        let number = listing
+            .lines()
+            .find(|l| l.split_whitespace().nth(1) == Some("id"))
+            .and_then(|l| l.split_whitespace().next())
+            .unwrap_or_else(|| panic!("{listing}"))
+            .to_string();
+        s.send(&format!("{number}\r"));
+        s.wait_for("? id:");
+        s.send("hand-1\r");
+        s.wait_for_nth("number to set", 2);
+        s.send("\r");
+        s.wait_for("now skips nothing else");
+        key(&mut s, "s");
+        s.wait_for("Run stage 2?");
+        s.answer("y");
+        if !supplied {
+            s.wait_for("Name?");
+            s.wait_for("? name:");
+            s.send("bo\r");
+        }
+        s.wait_for("Run stage 3?");
+        s.answer("y");
+        assert_eq!(s.wait(), 0, "{supplied}: {}", s.text());
+        let who = if supplied { "ada" } else { "bo" };
+        assert!(s.text().contains(&format!("using {who}")), "{}", s.text());
+        assert!(s.text().contains("using hand-1"), "{}", s.text());
+        let events = events(dir.path());
+        assert_eq!(
+            events.matches("value_set").count(),
+            1,
+            "{supplied}: {events}"
+        );
+        assert!(!events.contains(r#""by":"--param""#), "{events}");
+    }
+}
+
+#[test]
+fn from_in_a_terminal_asks_for_values_after_the_preflight() {
+    let dir = skip_setup(&format!("preflight\n  read mark preflight\n{SKIP_WIZARD}"));
+    let mut s = start(dir.path(), &["run", "w.korin", "--from", "use"]);
+    s.wait_for("Run the preflight?");
+    s.answer("y");
+    s.wait_for("Skipping the stages before the run also skips:");
+    assert!(dir.path().join("marked-preflight").exists());
+    s.wait_for("v set values by hand · Esc stop");
+    key(&mut s, "v");
+    s.wait_for("number to set");
+    s.send("1\r");
+    s.wait_for("? id:");
+    s.send("old-3\r");
+    s.wait_for_nth("number to set", 2);
+    s.send("\r");
+    s.wait_for("now skips nothing else");
+    key(&mut s, "s");
+    s.wait_for("Run stage 3?");
+    s.answer("y");
+    s.wait_for("Run stage 4?");
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(s.text().contains("using old-3"), "{}", s.text());
 }

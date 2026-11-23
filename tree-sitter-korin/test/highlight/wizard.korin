@@ -9,6 +9,9 @@ param cluster required
 preflight "Look up IDs"
 # <- keyword
 #         ^ string
+  skip never
+# ^ keyword
+#      ^ keyword.modifier
   read aws sts get-caller-identity
 
 stage "Snapshot"

@@ -1,0 +1,3 @@
+fakes = true
+answers = ["s", "v", "1", "123456789012", "", "s", "y"]
+snapshots = [2]

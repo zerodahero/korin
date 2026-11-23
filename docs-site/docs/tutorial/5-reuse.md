@@ -57,9 +57,9 @@ Each stage is marked with whether it changes anything, and whether a run can sta
 
 ## Start at a later stage
 
-`korin run --from <stage>` skips the stages before it. korin allows it only when no later
-step needs a value from a skipped stage. Here, stage 4 needs the expects from stage 3, so it
-can't be a starting point:
+`korin run --from <stage>` starts at a later stage, and takes the stages before it as done.
+When a later step needs a value from one of those stages, korin asks for it. Here, stage 4
+needs the expects from stage 3, so a run that starts there asks for them:
 
 ```sh
 korin check ../release.korin --from Release
@@ -67,8 +67,8 @@ korin check ../release.korin --from Release
 
 --8<-- "docs-site/docs/generated/transcripts/tutorial/release-5-from.html"
 
-Because every step checks the current state first, running the whole wizard again is safe,
-and usually the simplest way to resume.
+Typing those answers by hand is easy to get wrong. Because every step checks the current
+state first, running the whole wizard again is safe, and usually the simplest way to resume.
 
 ## What next
 

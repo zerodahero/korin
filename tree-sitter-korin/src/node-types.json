@@ -1076,7 +1076,7 @@
         "required": true,
         "types": [
           {
-            "type": "block",
+            "type": "stage_body",
             "named": true
           }
         ]
@@ -1205,6 +1205,40 @@
     }
   },
   {
+    "type": "skip",
+    "named": true,
+    "fields": {
+      "rule": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "also",
+            "named": false
+          },
+          {
+            "type": "ends",
+            "named": false
+          },
+          {
+            "type": "never",
+            "named": false
+          }
+        ]
+      },
+      "stage": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "string",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "source_file",
     "named": true,
     "root": true,
@@ -1269,7 +1303,7 @@
         "required": true,
         "types": [
           {
-            "type": "block",
+            "type": "stage_body",
             "named": true
           }
         ]
@@ -1284,6 +1318,25 @@
           }
         ]
       }
+    }
+  },
+  {
+    "type": "stage_body",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "_step",
+          "named": true
+        },
+        {
+          "type": "skip",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -1534,6 +1587,10 @@
     "named": false
   },
   {
+    "type": "also",
+    "named": false
+  },
+  {
     "type": "and",
     "named": false
   },
@@ -1576,6 +1633,10 @@
   },
   {
     "type": "else",
+    "named": false
+  },
+  {
+    "type": "ends",
     "named": false
   },
   {
@@ -1675,6 +1736,10 @@
     "named": false
   },
   {
+    "type": "never",
+    "named": false
+  },
+  {
     "type": "not",
     "named": false
   },
@@ -1736,6 +1801,10 @@
   },
   {
     "type": "signal",
+    "named": false
+  },
+  {
+    "type": "skip",
     "named": false
   },
   {

@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
-use crate::ast::{self, CaptureMode, CommandKind, Span};
+use crate::ast::{self, CaptureMode, CommandKind, Span, Spanned};
 use crate::diag::{Diag, SourceFile};
 use crate::ir::{self, IPart, Loc, Sym, SymInfo, SymKind, Ty};
 use crate::jq::Jq;
@@ -431,6 +431,7 @@ impl Compiler {
             ir::Stage {
                 number: 0,
                 title: preflight.title.value.clone(),
+                skip: ir::SkipRule::Free,
                 mutating: steps_mutating(&steps),
                 steps,
                 loc: ctx.loc(preflight.span),
@@ -460,10 +461,33 @@ impl Compiler {
             stages.push(ir::Stage {
                 number: index + 1,
                 title: stage.title.value.clone(),
+                skip: ir::SkipRule::Free,
                 mutating: steps_mutating(&steps),
                 steps,
                 loc: ctx.loc(stage.span),
             });
+        }
+
+        // `skip` lines name stages by title, so they resolve once every stage is known.
+        let numbered: Vec<(usize, &ast::Stage)> = wizard
+            .preflight
+            .iter()
+            .map(|p| (0, p))
+            .chain(wizard.stages.iter().enumerate().map(|(i, s)| (i + 1, s)))
+            .collect();
+        let rules: Vec<ir::SkipRule> = numbered
+            .iter()
+            .map(|(number, stage)| self.skip_rule(file, *number, stage, wizard))
+            .collect();
+        let mut preflight = preflight;
+        for ((number, _), rule) in numbered.iter().zip(rules) {
+            if *number == 0 {
+                if let Some(p) = preflight.as_mut() {
+                    p.skip = rule;
+                }
+            } else {
+                stages[number - 1].skip = rule;
+            }
         }
 
         ir::Program {
@@ -478,6 +502,92 @@ impl Compiler {
             syms: std::mem::take(&mut self.syms),
             references: std::mem::take(&mut self.references),
             korin_out: self.korin_out,
+        }
+    }
+
+    /// Resolves a stage's `skip` line: each `skip also` title to a later stage that can be
+    /// skipped.
+    fn skip_rule(
+        &mut self,
+        file: &Arc<SourceFile>,
+        number: usize,
+        stage: &ast::Stage,
+        wizard: &ast::Wizard,
+    ) -> ir::SkipRule {
+        let Some(rule) = &stage.skip else {
+            return ir::SkipRule::Free;
+        };
+        match &rule.value {
+            ast::SkipRule::Never => ir::SkipRule::Never,
+            ast::SkipRule::Ends => ir::SkipRule::Ends,
+            ast::SkipRule::Also(titles) => {
+                let mut targets = Vec::new();
+                for title in titles {
+                    let found = wizard
+                        .stages
+                        .iter()
+                        .enumerate()
+                        .find(|(_, s)| s.title.value == title.value);
+                    let Some((index, target)) = found else {
+                        let names: Vec<String> = wizard
+                            .stages
+                            .iter()
+                            .map(|s| format!("\"{}\"", s.title.value))
+                            .collect();
+                        self.push(
+                            Diag::error(
+                                file,
+                                "skip",
+                                title.span,
+                                format!("no stage is titled \"{}\"", title.value),
+                            )
+                            .help(format!("stages are: {}", names.join(", "))),
+                        );
+                        continue;
+                    };
+                    let target_number = index + 1;
+                    if target_number <= number {
+                        let what = if target_number == number {
+                            "this stage itself".to_string()
+                        } else {
+                            format!("stage {target_number}, which runs before this one")
+                        };
+                        self.push(
+                            Diag::error(
+                                file,
+                                "skip",
+                                title.span,
+                                format!("`skip also` names {what}"),
+                            )
+                            .help(
+                                "`skip also` names later stages; earlier stages have already run",
+                            ),
+                        );
+                        continue;
+                    }
+                    if let Some(Spanned {
+                        value: ast::SkipRule::Never,
+                        span,
+                    }) = &target.skip
+                    {
+                        self.push(
+                            Diag::error(
+                                file,
+                                "skip",
+                                title.span,
+                                format!(
+                                    "stage {target_number} \"{}\" is `skip never`, so `skip also` cannot skip it",
+                                    title.value
+                                ),
+                            )
+                            .related(*span, "declared here"),
+                        );
+                        continue;
+                    }
+                    targets.push(target_number);
+                }
+                ir::SkipRule::Also(targets)
+            }
         }
     }
 
@@ -575,13 +685,16 @@ impl Compiler {
         }
     }
 
-    fn record_reference(&mut self, ctx: &Ctx, sym: Sym, span: Span) {
+    /// Records a read of a runtime value. `exists` says the read is an `exists` test, which
+    /// works whether or not the value is there.
+    fn record_reference(&mut self, ctx: &Ctx, sym: Sym, span: Span, exists: bool) {
         let info = &self.syms[sym];
         if matches!(info.kind, SymKind::Param | SymKind::KorinOut) || info.stage.is_none() {
             return;
         }
         self.references.push(ir::Reference {
             stage: ctx.stage.unwrap_or(0),
+            guarded: exists || ctx.guards.contains(&Guard::Exists(sym)),
             sym,
             loc: ctx.loc(span),
         });
@@ -706,7 +819,7 @@ impl Compiler {
             Some(Binding::Sym(sym)) => {
                 self.check_interpolation(ctx, sym, r, kind, whole);
                 self.require_available(ctx, sym, r.span);
-                self.record_reference(ctx, sym, r.span);
+                self.record_reference(ctx, sym, r.span, false);
                 vec![IPart::Sym {
                     sym,
                     splat: r.splat,
@@ -973,7 +1086,7 @@ impl Compiler {
                         if ty != Ty::Bool {
                             self.require_available(ctx, sym, r.span);
                         }
-                        self.record_reference(ctx, sym, r.span);
+                        self.record_reference(ctx, sym, r.span, false);
                         let ety = match ty {
                             Ty::Bool => ETy::Bool,
                             Ty::List => ETy::List,
@@ -987,7 +1100,7 @@ impl Compiler {
                 let dotted = r.dotted();
                 match ctx.lookup(&dotted).cloned() {
                     Some(Binding::Sym(sym)) if self.syms[sym].optional => {
-                        self.record_reference(ctx, sym, r.span);
+                        self.record_reference(ctx, sym, r.span, true);
                         (ir::Expr::Exists(sym), ETy::Bool)
                     }
                     Some(_) => {

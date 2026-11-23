@@ -20,7 +20,7 @@ stage "a"
     (integer))
   (stage
     (string)
-    (block
+    (stage_body
       (command
         (word)
         (options
@@ -81,7 +81,7 @@ stage "a"
     (integer))
   (stage
     (string)
-    (block
+    (stage_body
       (command
         (word)
         (options
@@ -125,7 +125,7 @@ stage "a"
     (integer))
   (stage
     (string)
-    (block
+    (stage_body
       (command
         (word)
         (options

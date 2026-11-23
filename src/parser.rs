@@ -9,7 +9,7 @@ use std::sync::Arc;
 use crate::ast::{
     Call, Capture, CaptureMode, CmpOp, Command, CommandKind, Define, Duration, Expect, Expr,
     GateMode, Header, Ident, Interpolated, Match, Mode, Module, Param, ParamKind, Part, Poll, Ref,
-    SayKind, Span, Spanned, Stage, Step, Use, UseTarget, Wizard,
+    SayKind, SkipRule, Span, Spanned, Stage, Step, Use, UseTarget, Wizard,
 };
 use crate::diag::{Diag, SourceFile};
 
@@ -468,17 +468,72 @@ impl<'a> Parser<'a> {
             cur.expect_end()?;
             Ok(title)
         })?;
-        if node.children.is_empty() {
-            self.errors
-                .push(self.err("syntax", node.span(), "the stage has no steps"));
-            return None;
-        }
-        let steps = self.steps(&node.children);
+        let (skip, steps) = self.stage_body(node, "the stage has no steps")?;
         Some(Stage {
             title,
+            skip,
             steps,
             span: node.span(),
         })
+    }
+
+    /// A stage's or the preflight's body: an optional `skip` line first, then the steps.
+    fn stage_body(
+        &mut self,
+        node: &Node,
+        empty: &str,
+    ) -> Option<(Option<Spanned<SkipRule>>, Vec<Step>)> {
+        let mut children = node.children.as_slice();
+        let mut skip = None;
+        if let Some(first) = children.first()
+            && self.cur(first).peek_ident().as_deref() == Some("skip")
+        {
+            skip = self.recover(|p| p.skip_line(first));
+            children = &children[1..];
+            if let Some(second) = children.first()
+                && self.cur(second).peek_ident().as_deref() == Some("skip")
+            {
+                self.errors.push(
+                    self.err("skip", second.span(), "a stage has at most one `skip` line")
+                        .help("`never`, `ends` and `also` do not combine; list every stage on one `skip also`"),
+                );
+                children = &children[1..];
+            }
+        }
+        if children.is_empty() {
+            self.errors.push(self.err("syntax", node.span(), empty));
+            return None;
+        }
+        Some((skip, self.steps(children)))
+    }
+
+    /// `skip never`, `skip ends` or `skip also "A", "B"`.
+    fn skip_line(&mut self, node: &Node) -> PResult<Spanned<SkipRule>> {
+        self.no_children(node)?;
+        let mut cur = self.cur(node);
+        cur.expect_keyword("skip")?;
+        let rule = match cur.expect_ident("`never`, `ends` or `also`")? {
+            Spanned { value, .. } if value == "never" => SkipRule::Never,
+            Spanned { value, .. } if value == "ends" => SkipRule::Ends,
+            Spanned { value, .. } if value == "also" => {
+                let mut titles = vec![cur.plain_string()?];
+                while cur.eat_char(',') {
+                    titles.push(cur.plain_string()?);
+                }
+                SkipRule::Also(titles)
+            }
+            other => {
+                return Err(self
+                    .err(
+                        "skip",
+                        other.span,
+                        format!("unknown skip rule `{}`", other.value),
+                    )
+                    .help("use `skip never`, `skip ends` or `skip also \"<stage>\", ...`"));
+            }
+        };
+        cur.expect_end()?;
+        Ok(Spanned::new(rule, node.span()))
     }
 
     /// `preflight` or `preflight "Title"`, then its steps.
@@ -494,14 +549,10 @@ impl<'a> Parser<'a> {
             cur.expect_end()?;
             Ok(title)
         })?;
-        if node.children.is_empty() {
-            self.errors
-                .push(self.err("syntax", node.span(), "the preflight has no steps"));
-            return None;
-        }
-        let steps = self.steps(&node.children);
+        let (skip, steps) = self.stage_body(node, "the preflight has no steps")?;
         Some(Stage {
             title,
+            skip,
             steps,
             span: node.span(),
         })
@@ -699,6 +750,11 @@ impl<'a> Parser<'a> {
                 "misplaced",
                 span,
                 "`exports` must be the first line of a `define` body",
+            )),
+            "skip" => Err(self.err(
+                "misplaced",
+                span,
+                "`skip` must be the first line of a stage or the preflight",
             )),
             _ => {
                 if cur.is_call() {

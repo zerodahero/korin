@@ -110,10 +110,22 @@ module.exports = grammar({
       'preflight',
       optional(field('title', $.string)),
       $._newline,
-      field('body', $.block),
+      field('body', $.stage_body),
     ),
 
-    stage: $ => seq('stage', field('title', $.string), $._newline, field('body', $.block)),
+    stage: $ => seq('stage', field('title', $.string), $._newline, field('body', $.stage_body)),
+
+    stage_body: $ => seq($._indent, optional($.skip), repeat1($._step), $._dedent),
+
+    skip: $ => seq(
+      'skip',
+      choice(
+        field('rule', 'never'),
+        field('rule', 'ends'),
+        seq(field('rule', 'also'), commaSep1(field('stage', $.string))),
+      ),
+      $._newline,
+    ),
 
     define: $ => seq(
       'define',

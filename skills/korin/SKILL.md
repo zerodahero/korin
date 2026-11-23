@@ -50,14 +50,18 @@ safe to approve and safe to run again:
 - **Put the lookups every run needs in a `preflight`.** It runs first, even with `--from`,
   so later stages can read its values on any start. Keep it to `read` and `script read`: no
   `ask` or `confirm`.
+- **Say what skipping a stage means.** An operator can skip any stage with `s` or `--skip`,
+  and the stages that read its values are skipped with it. Add `skip never` to a stage that
+  must run, `skip also "<stage>"` when a later stage makes no sense without it, and
+  `skip ends` when nothing after it may run without it.
 - **Use `mode guide` for a tour that changes nothing**, such as onboarding or a status
   check. A guide has no gates and pauses before each stage; `korin check` rejects any
   `mutate` in it, and any `gates` line.
 - **`confirm` right before the irreversible step**, quoting the values the person should
   check.
 - **`record` each change**, with its values, so the run's report says what changed.
-- **Prefer `param` for inputs known at the start.** An `ask` answer blocks `--from` for
-  every later stage that uses it.
+- **Prefer `param` for inputs known at the start.** A run that starts with `--from` past an
+  `ask` must be given its answer again.
 
 ## 3. Check
 

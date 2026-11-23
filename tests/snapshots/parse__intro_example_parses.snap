@@ -78,6 +78,7 @@ Wizard {
     stages: [
         Stage {
             title: "Identity" @ 364..374,
+            skip: None,
             steps: [
                 Call(
                     Call {
@@ -132,6 +133,7 @@ Wizard {
         },
         Stage {
             title: "Source cluster" @ 463..479,
+            skip: None,
             steps: [
                 Call(
                     Call {
@@ -220,6 +222,7 @@ Wizard {
         },
         Stage {
             title: "Snapshot" @ 603..613,
+            skip: None,
             steps: [
                 Command(
                     Command {
@@ -362,6 +365,7 @@ Wizard {
         },
         Stage {
             title: "Scratch cluster" @ 864..881,
+            skip: None,
             steps: [
                 Command(
                     Command {

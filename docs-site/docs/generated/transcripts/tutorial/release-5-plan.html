@@ -36,7 +36,7 @@ params: remote = <span class="k-green">"origin"</span>, branch = <span class="k-
 <span class="k-green">.3."</span>
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 3/4</span> <span class="k-border">·</span> <span class="k-bold">Is it released?</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
-  <span class="k-fg-dim">read-only, no gate; not a --from start: uses `version` (line 35)</span>
+  <span class="k-fg-dim">read-only, no gate; a --from start asks for `version`, `head`</span>
   <span class="k-fg-dim">3.1</span>  git.tag_state({remote}, {version}) as tag
     <span class="k-fg-dim">3.1.1</span>  <span class="k-blue">read</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">git</span> rev-parse <span class="k-blue">--quiet --verify</span> <span class="k-fg-dim">refs/tags/</span><span class="k-cyan">&lt;version ← 2.7&gt;</span>
           <span class="k-fg-dim">?</span> <span class="k-teal">tag.untagged</span>
@@ -50,7 +50,7 @@ params: remote = <span class="k-green">"origin"</span>, branch = <span class="k-
     <span class="k-fg-dim">3.4.1</span>  <span class="k-blue">note</span> <span class="k-green">"&lt;version ← 2.7&gt; is already tagged and pushed. Nothing to do."</span>
 
 <span class="k-border">━━</span> <span class="k-fg-dim">Stage 4/4</span> <span class="k-border">·</span> <span class="k-bold">Release</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
-  <span class="k-fg-dim">mutating, gate; not a --from start: uses `tag.untagged` (line 44)</span>
+  <span class="k-fg-dim">mutating, gate; a --from start asks for `tag.untagged`, `version`, `head`, `tag.unpushed`</span>
   <span class="k-fg-dim">4.1</span>  <span class="k-blue">when</span> tag.untagged
     <span class="k-fg-dim">4.1.1</span>  <span class="k-blue">mutate</span> <span class="k-blue k-bold">❯</span> <span class="k-bold">git</span> tag <span class="k-blue">--annotate</span> <span class="k-cyan">&lt;version ← 2.7&gt;</span> <span class="k-blue">--message</span> Release <span class="k-cyan">&lt;version ← 2.7&gt;</span>
     <span class="k-fg-dim">4.1.2</span>  <span class="k-blue">record</span> <span class="k-green">"tagged &lt;version ← 2.7&gt; at &lt;head ← 2.6&gt;"</span>

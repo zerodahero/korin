@@ -47,11 +47,12 @@ Every event has `kind` and `ts`. The kinds:
 
 | Kind | When |
 |---|---|
-| `run_start`, `run_end` | The run starts, and ends: `completed`, `failed` or `cancelled`. |
+| `run_start`, `run_end` | The run starts, and ends: `completed`, `failed`, `cancelled`, or `ended` when a `skip ends` stage was skipped. |
+| `stage_skip` | A stage was skipped. `by` is `operator`, `--skip`, `--skip-preflight`, `--from`, `skip also` or `dependency`; `needs` lists the values a dependent read. |
 | `stage_start` | A stage starts. `mutating` says whether it changes anything. |
 | `gate`, `gate_auto`, `confirm` | A gate or `confirm` is answered. `gate_auto` is an approval by `--yes`. |
 | `pause` | A pause is answered. `auto` is a pause continued by `--yes`. |
-| `value_set` | A value was set or cleared by hand, in the [values view](gates.md#the-values-view). `by` says who: `operator`. |
+| `value_set` | A value was set or cleared by hand, in the [values view](gates.md#the-values-view). `by` says who: `operator`, `--set`, `--param` or `env`. |
 | `command_start`, `command_end` | A command starts, and ends with its exit code or signal. |
 | `expect` | An expect matched. |
 | `capture` | A capture got a value. |

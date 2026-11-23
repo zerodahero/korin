@@ -850,10 +850,11 @@ fn from_is_rejected_before_any_command() {
     let out = env.run_yes(&["--from", "fix"]);
     assert_eq!(out.code, 1, "{}", out.text);
     assert!(
-        out.text.contains("comes from skipped stage"),
+        out.text.contains("skipped stages leave values unset"),
         "{}",
         out.text
     );
+    assert!(out.text.contains("--set missing=..."), "{}", out.text);
     assert!(env.calls().is_empty());
 }
 
@@ -1106,7 +1107,7 @@ fn non_executable_path_stops_before_stage_one() {
 }
 
 #[test]
-fn plan_names_the_binding_that_blocks_from() {
+fn plan_names_what_a_from_start_asks_for() {
     let env = Env::new();
     env.wizard(concat!(
         "stage \"probe\"\n",
@@ -1119,7 +1120,7 @@ fn plan_names_the_binding_that_blocks_from() {
     let out = env.run(&["plan", "w.korin"]);
     assert_eq!(out.code, 0, "{}", out.text);
     assert!(
-        out.text.contains("not a --from start: uses `missing`"),
+        out.text.contains("a --from start asks for `missing`"),
         "{}",
         out.text
     );
@@ -1433,4 +1434,299 @@ fn the_preflight_runs_first_even_with_from() {
         assert_eq!(first["step"], "p.1");
         std::fs::remove_dir_all(env.path(".korin")).unwrap();
     }
+}
+
+// ---- skipping ----
+
+/// A wizard where stage 2 makes `id`, stage 3 reads it, and a preflight leaves a mark.
+fn skipping_env() -> Env {
+    let env = Env::new();
+    env.script(
+        "bin/mark",
+        "#!/bin/sh\ntouch \"$(dirname \"$0\")/../marked-$1\"\n",
+    );
+    env.script("bin/make-id", "#!/bin/sh\necho id-7\n");
+    env.script("bin/use", "#!/bin/sh\necho \"using $*\"\n");
+    env
+}
+
+const SKIPPING: &str = concat!(
+    "preflight\n",
+    "  read mark preflight\n",
+    "stage \"one\"\n",
+    "  read mark one\n",
+    "stage \"make\"\n",
+    "  read make-id\n",
+    "    capture id = text\n",
+    "stage \"use\"\n",
+    "  read use {id}\n",
+    "stage \"last\"\n",
+    "  read mark last\n",
+);
+
+#[test]
+fn skip_without_a_value_for_a_dependent_refuses_before_anything_runs() {
+    let env = skipping_env();
+    env.wizard(SKIPPING);
+    let out = env.run_yes(&["--skip", "make"]);
+    assert_eq!(out.code, 1, "{}", out.text);
+    assert!(
+        out.text.contains("skipped stages leave values unset"),
+        "{}",
+        out.text
+    );
+    assert!(
+        out.text.contains("stage 3 \"use\" reads `id`"),
+        "{}",
+        out.text
+    );
+    assert!(out.text.contains("--set id=..."), "{}", out.text);
+    assert!(out.text.contains("--skip 3"), "{}", out.text);
+    assert!(!env.path("marked-preflight").exists(), "the preflight ran");
+}
+
+#[test]
+fn skip_with_set_runs_the_dependent_on_the_value_given() {
+    let env = skipping_env();
+    env.wizard(SKIPPING);
+    let out = env.run_yes(&["--skip", "make", "--set", "id=given-1"]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    assert!(out.text.contains("using given-1"), "{}", out.text);
+    assert!(out.text.contains("skipped by --skip"), "{}", out.text);
+    let skips = env.events_of("stage_skip");
+    assert_eq!(skips.len(), 1, "{skips:?}");
+    assert_eq!(skips[0]["stage"], 2);
+    assert_eq!(skips[0]["by"], "--skip");
+    let set = env.events_of("value_set");
+    assert_eq!(set[0]["name"], "id");
+    assert_eq!(set[0]["value"], "given-1");
+    assert_eq!(set[0]["by"], "--set");
+}
+
+#[test]
+fn skipping_the_dependent_too_runs_the_rest() {
+    let env = skipping_env();
+    env.wizard(SKIPPING);
+    let out = env.run_yes(&["--skip", "make", "--skip", "use"]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    assert!(env.path("marked-last").exists());
+    assert!(!out.text.contains("using"), "{}", out.text);
+}
+
+#[test]
+fn set_is_only_for_skipped_stages_and_checks_its_type() {
+    let env = skipping_env();
+    env.wizard(SKIPPING);
+    let out = env.run_yes(&["--set", "id=x"]);
+    assert_eq!(out.code, 1, "{}", out.text);
+    assert!(
+        out.text
+            .contains("stage 2 runs, and makes this value itself"),
+        "{}",
+        out.text
+    );
+    env.wizard(concat!(
+        "stage \"probe\"\n",
+        "  read make-id\n",
+        "    expect gone = exit 1\n",
+        "  read make-id\n",
+        "    capture items = lines\n",
+        "    capture doc = jq json .\n",
+        "stage \"use\"\n",
+        "  read use {items...}\n",
+        "  when gone\n",
+        "    read use gone\n",
+        "  read use {doc}\n",
+    ));
+    for (set, wrong) in [
+        ("items=a", "not a JSON array of strings"),
+        ("gone=yes", "an expect is `true` or `false`"),
+        ("doc={nope", "not JSON"),
+    ] {
+        let out = env.run_yes(&["--skip", "probe", "--set", set]);
+        assert_eq!(out.code, 1, "{set}: {}", out.text);
+        assert!(out.text.contains(wrong), "{set}: {}", out.text);
+    }
+    let out = env.run_yes(&[
+        "--skip",
+        "probe",
+        "--set",
+        r#"items=["a b","c"]"#,
+        "--set",
+        "gone=true",
+        "--set",
+        r#"doc={"k": 1}"#,
+    ]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    assert!(out.text.contains("using a b c"), "{}", out.text);
+    assert!(out.text.contains("using gone"), "{}", out.text);
+    assert!(out.text.contains(r#"using {"k":1}"#), "{}", out.text);
+}
+
+#[test]
+fn skip_never_refuses_skip_and_skip_preflight_before_anything_runs() {
+    let env = skipping_env();
+    env.wizard(concat!(
+        "preflight\n  skip never\n  read mark preflight\n",
+        "stage \"a\"\n  skip never\n  read mark a\n",
+    ));
+    let out = env.run_yes(&["--skip", "a"]);
+    assert_eq!(out.code, 1, "{}", out.text);
+    assert!(out.text.contains("is `skip never`"), "{}", out.text);
+    let out = env.run_yes(&["--skip-preflight"]);
+    assert_eq!(out.code, 1, "{}", out.text);
+    assert!(
+        out.text.contains("the preflight is `skip never`"),
+        "{}",
+        out.text
+    );
+    assert!(!env.path("marked-preflight").exists(), "the preflight ran");
+}
+
+#[test]
+fn skip_preflight_skips_it() {
+    let env = skipping_env();
+    env.wizard("preflight\n  read mark preflight\nstage \"a\"\n  read mark a\n");
+    let out = env.run_yes(&["--skip-preflight"]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    assert!(!env.path("marked-preflight").exists());
+    assert!(env.path("marked-a").exists());
+    assert_eq!(env.events_of("stage_skip")[0]["stage"], "preflight");
+}
+
+#[test]
+fn skipping_a_skip_ends_stage_ends_the_run_with_success() {
+    let env = skipping_env();
+    env.wizard(concat!(
+        "stage \"a\"\n  read mark a\n",
+        "stage \"cutover\"\n  skip ends\n  read mark cutover\n",
+        "stage \"after\"\n  read mark after\n",
+    ));
+    let out = env.run_yes(&["--skip", "cutover"]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    assert!(
+        out.text.contains("ended: stage 2 was skipped"),
+        "{}",
+        out.text
+    );
+    assert!(env.path("marked-a").exists());
+    assert!(!env.path("marked-after").exists());
+    assert_eq!(env.events_of("run_end")[0]["ending"], "ended");
+    let report = std::fs::read_to_string(env.run_dir().join("report.md")).unwrap();
+    assert!(report.contains("**Ended:**"), "{report}");
+}
+
+#[test]
+fn skip_also_takes_its_targets() {
+    let env = skipping_env();
+    env.wizard(concat!(
+        "stage \"tag\"\n  skip also \"push\"\n  read mark tag\n",
+        "stage \"other\"\n  read mark other\n",
+        "stage \"push\"\n  read mark push\n",
+    ));
+    let out = env.run_yes(&["--skip", "tag"]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    assert!(env.path("marked-other").exists());
+    assert!(!env.path("marked-push").exists());
+    let skips = env.events_of("stage_skip");
+    assert_eq!(skips[1]["stage"], 3);
+    assert_eq!(skips[1]["by"], "skip also");
+}
+
+#[test]
+fn from_takes_earlier_stages_as_done_and_ignores_their_skip_rules() {
+    let env = skipping_env();
+    env.wizard(concat!(
+        "stage \"a\"\n  skip never\n  read mark a\n",
+        "stage \"b\"\n  skip ends\n  read mark b\n",
+        "stage \"c\"\n  skip also \"e\"\n  read mark c\n",
+        "stage \"d\"\n  read mark d\n",
+        "stage \"e\"\n  read mark e\n",
+    ));
+    let out = env.run_yes(&["--from", "d"]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    for (stage, ran) in [
+        ("a", false),
+        ("b", false),
+        ("c", false),
+        ("d", true),
+        ("e", true),
+    ] {
+        assert_eq!(
+            env.path(&format!("marked-{stage}")).exists(),
+            ran,
+            "{stage}"
+        );
+    }
+    let by: Vec<String> = env
+        .events_of("stage_skip")
+        .iter()
+        .map(|e| e["by"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(by, ["--from", "--from", "--from"]);
+    let plan = env.run(&["plan", "w.korin"]);
+    assert!(plan.text.contains("skip never"), "{}", plan.text);
+    let check = env.run(&["check", "w.korin", "--from", "d"]);
+    assert_eq!(check.code, 0, "{}", check.text);
+}
+
+#[test]
+fn a_skipped_ask_takes_its_answer_from_param() {
+    let env = skipping_env();
+    env.wizard(concat!(
+        "stage \"ask\"\n  ask name \"Name?\"\n",
+        "stage \"use\"\n  read use {name}\n",
+    ));
+    for args in [&["--skip", "ask"][..], &["--from", "use"][..]] {
+        let mut args = args.to_vec();
+        args.extend(["--param", "name=ada"]);
+        let out = env.run_yes(&args);
+        assert_eq!(out.code, 0, "{args:?}: {}", out.text);
+        assert!(out.text.contains("using ada"), "{}", out.text);
+        let set = env.events_of("value_set");
+        assert_eq!(set[0]["name"], "name");
+        assert_eq!(set[0]["by"], "--param");
+        std::fs::remove_dir_all(env.path(".korin")).unwrap();
+    }
+}
+
+#[test]
+fn a_skipped_secret_capture_comes_from_the_environment() {
+    let env = skipping_env();
+    env.script(
+        "bin/issue",
+        "#!/bin/sh\necho '{\"token\":\"from-the-tool\"}'\n",
+    );
+    env.script("bin/use-token", "#!/bin/sh\necho \"token length ${#T}\"\n");
+    env.wizard(concat!(
+        "stage \"issue\"\n  read issue\n    capture secret token = jq .token\n",
+        "stage \"use\"\n  read use-token\n    env T={token}\n",
+    ));
+    for args in [&["--skip", "issue"][..], &["--from", "use"][..]] {
+        let out = env.run_yes_env(args, &[("KORIN_SECRET_TOKEN", SECRET)]);
+        assert_eq!(out.code, 0, "{args:?}: {}", out.text);
+        assert!(
+            out.text.contains(&format!("token length {}", SECRET.len())),
+            "{}",
+            out.text
+        );
+        assert!(
+            env.leaks(SECRET, &out).is_empty(),
+            "{:?}",
+            env.leaks(SECRET, &out)
+        );
+        std::fs::remove_dir_all(env.path(".korin")).unwrap();
+    }
+}
+
+#[test]
+fn a_guarded_read_does_not_make_a_dependent() {
+    let env = skipping_env();
+    env.wizard(concat!(
+        "stage \"probe\"\n  read make-id\n    capture tag? = regex /tag=(\\w+)/\n",
+        "stage \"use\"\n  when exists tag\n    read use {tag}\n  read mark use\n",
+    ));
+    let out = env.run_yes(&["--skip", "probe"]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    assert!(env.path("marked-use").exists());
 }

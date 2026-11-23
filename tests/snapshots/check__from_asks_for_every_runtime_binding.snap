@@ -1,0 +1,12 @@
+---
+source: tests/check.rs
+expression: "[from(expect_only, \"fix\"), from(ask_only, \"2\"), from(exported_expect, \"use\"),\nfrom(params_only, \"two\"), from(params_only, \"nope\"),].join(\"\\n\")"
+---
+ok 2
+  warning main.korin:7:8: from: starting at stage 2 asks for `missing`, made in skipped stage 1 "probe"
+ok 2
+  warning main.korin:6:15: from: starting at stage 2 asks for `name`, made in skipped stage 1 "ask"
+ok 2
+  warning main.korin:7:8: from: starting at stage 2 asks for `prev.missing`, made in skipped stage 1 "probe"
+ok 2
+main.korin:1:1: from: no stage matches `nope`

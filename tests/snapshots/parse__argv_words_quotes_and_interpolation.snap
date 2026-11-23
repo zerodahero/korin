@@ -18,6 +18,7 @@ Wizard {
     stages: [
         Stage {
             title: "s" @ 24..27,
+            skip: None,
             steps: [
                 Command(
                     Command {

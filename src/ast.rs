@@ -142,8 +142,21 @@ pub enum ParamKind {
 #[derive(Debug, Clone)]
 pub struct Stage {
     pub title: Spanned<String>,
+    /// The stage's `skip` line, if any.
+    pub skip: Option<Spanned<SkipRule>>,
     pub steps: Vec<Step>,
     pub span: Span,
+}
+
+/// What a stage's `skip` line says about skipping it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkipRule {
+    /// `skip never`: the stage cannot be skipped.
+    Never,
+    /// `skip ends`: skipping the stage ends the run, with success.
+    Ends,
+    /// `skip also "A", "B"`: skipping the stage also skips the named stages.
+    Also(Vec<Spanned<String>>),
 }
 
 #[derive(Debug, Clone)]

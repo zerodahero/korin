@@ -12,6 +12,7 @@ pub mod redact;
 pub mod render;
 pub mod run;
 pub mod signals;
+pub mod skip;
 pub mod stdlib;
 pub mod theme;
 pub mod view;

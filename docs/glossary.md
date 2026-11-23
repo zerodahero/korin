@@ -304,7 +304,8 @@ the operator can change. Code: `Runner::values_view`.
 
 ### Set by hand
 
-A value the operator gave in the values view. Event: `value_set`.
+A value the operator gave in the values view or the skip dialog, or that `--set` gave.
+Event: `value_set`.
 
 - UI label: set by hand
 
@@ -315,3 +316,25 @@ The read-only block before stage 1, for lookups every run needs. It runs first, 
 `Stage` numbered 0.
 
 - UI label: preflight
+
+### Skip
+
+An operator's choice not to run a stage, and to go on with the run: `s` at a prompt, or
+`--skip`. Not a declined gate, which stops the run. Events: `stage_skip`.
+
+- UI label: skip
+- Avoid: bypass
+
+### Skip rule
+
+A stage's `skip never`, `skip ends` or `skip also` line. Code: `SkipRule`.
+
+- UI label: `skip` line
+
+### Dependent
+
+A stage that cannot run because a skip leaves a value it reads unset, or because a skipped
+stage names it in `skip also`. Code: `skip::Closure`.
+
+- UI label: dependent
+- Avoid: downstream

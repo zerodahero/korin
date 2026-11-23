@@ -11,7 +11,7 @@ mod screen;
 use screen::Screen;
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::{IsTerminal, Write};
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
@@ -24,11 +24,12 @@ use unicode_width::UnicodeWidthStr as _;
 use crate::ast::{CmpOp, CommandKind, GateMode, Mode, SayKind, Span};
 use crate::diag::Diag;
 use crate::ir::{
-    self, Command, Expr, IPart, Interpolated, Match, Program, Step, StepKind, Sym, SymInfo,
-    SymKind, Ty,
+    self, Command, Expr, IPart, Interpolated, Match, Program, SkipRule, Step, StepKind, Sym,
+    SymInfo, SymKind, Ty,
 };
 use crate::redact::{Redactor, StreamRedactor};
 use crate::render::{self, Values as _};
+use crate::skip::{self, Why};
 use crate::theme::Theme;
 use crate::view::{Prefixes, View};
 use capture::{Data, Extract, Fingerprint, extract};
@@ -39,22 +40,25 @@ use zeroize::Zeroizing;
 /// The default timeout for `read`, `mutate` and `script` steps.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_mins(15);
 
-/// Resolves `--from` to a 1-based stage number and checks that the run can start there.
+/// Resolves `--from` to a 1-based stage number.
 ///
 /// # Errors
 ///
-/// Returns a diagnostic if no stage matches, or if a later step uses a value produced in a
-/// skipped stage.
+/// Returns a diagnostic if no stage matches.
 pub fn resolve_from(program: &Program, from: &str) -> Result<usize, Box<Diag>> {
-    let stage = from
-        .parse::<usize>()
+    resolve_stage(program, from, "from")
+}
+
+/// Resolves a stage given by title or number, as `--from` and `--skip` take it.
+fn resolve_stage(program: &Program, name: &str, flag: &'static str) -> Result<usize, Box<Diag>> {
+    name.parse::<usize>()
         .ok()
         .filter(|n| (1..=program.stages.len()).contains(n))
         .or_else(|| {
             program
                 .stages
                 .iter()
-                .find(|s| s.title == from)
+                .find(|s| s.title == name)
                 .map(|s| s.number)
         })
         .ok_or_else(|| {
@@ -66,38 +70,66 @@ pub fn resolve_from(program: &Program, from: &str) -> Result<usize, Box<Diag>> {
             Box::new(
                 Diag::error(
                     &program.file,
-                    "from",
+                    flag,
                     Span::default(),
-                    format!("no stage matches `{from}`"),
+                    format!("no stage matches `{name}`"),
                 )
                 .help(format!("stages are: {}", titles.join(", "))),
             )
-        })?;
-    if let Some(first) = program.from_blockers(stage).first() {
-        let info = program.sym(first.sym);
+        })
+}
+
+/// What a run that starts at `stage` will ask for: each value a later stage reads that a
+/// stage before it makes. A run with a terminal asks for them by hand; without one, they
+/// come from `--set`, `--param` or `KORIN_SECRET_<NAME>`.
+pub fn from_warnings(program: &Program, stage: usize) -> Vec<Diag> {
+    let mut seen = Vec::new();
+    let mut out = Vec::new();
+    for r in program.from_blockers(stage) {
+        if r.guarded || seen.contains(&r.sym) {
+            continue;
+        }
+        seen.push(r.sym);
+        let info = program.sym(r.sym);
         let number = info.stage.unwrap_or(0);
-        let defined = &program.stages[number - 1];
-        return Err(Box::new(
-            Diag::error(
-                &first.loc.file,
+        let how = match info.kind {
+            SymKind::Ask if info.secret => format!("set {}", secret_env(&info.name)),
+            SymKind::Ask => format!("pass --param {}=...", info.name),
+            _ if info.secret => format!("set {}", secret_env(&info.name)),
+            _ => format!("pass --set {}=...", info.name),
+        };
+        out.push(
+            Diag::warning(
+                &r.loc.file,
                 "from",
-                first.loc.span,
+                r.loc.span,
                 format!(
-                    "cannot start at stage {stage}: `{}` comes from skipped stage {} \"{}\"",
-                    info.name, defined.number, defined.title
+                    "starting at stage {stage} asks for `{}`, made in skipped {} \"{}\"",
+                    info.name,
+                    program.stage(number).name(),
+                    program.stage(number).title
                 ),
             )
             .label("used here")
-            .help(format!("start at stage {number} or earlier")),
-        ));
+            .help(format!(
+                "a run in a terminal asks for it; without one, {how}, or start at stage {number}"
+            )),
+        );
     }
-    Ok(stage)
+    out
 }
 
+#[allow(clippy::struct_excessive_bools)] // independent command-line switches
 pub struct Options {
     pub params: Vec<(String, String)>,
     pub yes: bool,
     pub from: Option<String>,
+    /// `--skip`: stages, by title or number, not to run.
+    pub skip: Vec<String>,
+    /// `--skip-preflight`.
+    pub skip_preflight: bool,
+    /// `--set name=value`: values for captures and expects of skipped stages.
+    pub set: Vec<(String, String)>,
     pub grace: Duration,
     /// Gates and `confirm` read a whole line, ending with Enter, instead of a single key.
     pub require_enter: bool,
@@ -121,12 +153,14 @@ pub enum Ending {
     Completed,
     Failed,
     Cancelled,
+    /// The operator skipped a `skip ends` stage: the run stopped early, by choice.
+    Ended,
 }
 
 impl Ending {
     pub fn exit_code(self) -> u8 {
         match self {
-            Ending::Completed => 0,
+            Ending::Completed | Ending::Ended => 0,
             Ending::Failed => 1,
             Ending::Cancelled => 130,
         }
@@ -141,6 +175,9 @@ struct Stop {
     /// Set when the enclosing poll's deadline ended the step; the poll reports it as its own
     /// timeout, with the last values.
     poll_deadline: bool,
+    /// Set when the operator skipped the rest of the stage at a `confirm`; the stage ends
+    /// there, and the run goes on.
+    skip_rest: bool,
 }
 
 impl Stop {
@@ -150,6 +187,7 @@ impl Stop {
             message: message.into(),
             details: Vec::new(),
             poll_deadline: false,
+            skip_rest: false,
         }
     }
 
@@ -166,6 +204,21 @@ impl Stop {
             message: message.into(),
             details: Vec::new(),
             poll_deadline: false,
+            skip_rest: false,
+        }
+    }
+
+    fn ended(message: impl Into<String>) -> Self {
+        Self {
+            ending: Ending::Ended,
+            ..Self::cancelled(message)
+        }
+    }
+
+    fn skip_rest() -> Self {
+        Self {
+            skip_rest: true,
+            ..Self::failed("the rest of the stage was skipped")
         }
     }
 
@@ -187,6 +240,8 @@ enum Key {
     ToggleLegend,
     /// Open the values view, then ask again.
     Values,
+    /// Skip the stage, or the rest of it at a `confirm`.
+    Skip,
 }
 
 impl Key {
@@ -199,13 +254,17 @@ impl Key {
             Key::ToggleView => "f",
             Key::ToggleLegend => "l",
             Key::Values => "v",
+            Key::Skip => "s",
         }
     }
 }
 
 /// The keys a prompt allows, beyond its own answers.
 #[derive(Debug, Clone, Copy, Default)]
+#[allow(clippy::struct_excessive_bools)] // one switch per key
 struct Keys {
+    /// `s`: skip the stage, or the rest of it.
+    skip: bool,
     /// `f`: switch between the compact and the full view.
     view: bool,
     /// `l`: show or hide the legend. Offered only in the compact view, which has one.
@@ -220,6 +279,9 @@ impl Keys {
         let mut parts = Vec::new();
         if matches!(style, Style::Question(_)) {
             parts.push("y/N".to_string());
+        }
+        if self.skip {
+            parts.push("s skip".to_string());
         }
         if self.values {
             parts.push("v values".to_string());
@@ -243,6 +305,7 @@ impl Keys {
             [b'f' | b'F', ..] if self.view => Some(Key::ToggleView),
             [b'l' | b'L', ..] if self.legend => Some(Key::ToggleLegend),
             [b'v' | b'V', ..] if self.values => Some(Key::Values),
+            [b's' | b'S', ..] if self.skip => Some(Key::Skip),
             _ => None,
         }
     }
@@ -253,6 +316,7 @@ impl Keys {
             "f" | "F" if self.view => Some(Key::ToggleView),
             "l" | "L" if self.legend => Some(Key::ToggleLegend),
             "v" | "V" if self.values => Some(Key::Values),
+            "s" | "S" if self.skip => Some(Key::Skip),
             _ => None,
         }
     }
@@ -366,6 +430,15 @@ struct Runner<'p> {
     hand_set: bool,
     /// The names the current stage has set or cleared so far, for the values view.
     touched: std::collections::HashSet<Sym>,
+    /// Every stage that will not run, with why: from the command line, the operator, and
+    /// their dependents.
+    skipped: BTreeMap<usize, Why>,
+    /// Values given for skipped stages on the command line or in the environment, stored
+    /// once the skips are settled, with who gave them.
+    given: Vec<(Sym, Data, &'static str)>,
+    /// The command line's skips, when they leave values unset that a later stage reads: the
+    /// operator settles them after the preflight.
+    start_decided: Option<BTreeMap<usize, Why>>,
     /// `$PWD`, when it names the cwd by another path, such as through a symlink. Paths the
     /// operator types often start with it, so it shortens to `<pwd>` too.
     pwd_alias: Option<String>,
@@ -449,6 +522,9 @@ impl<'p> Runner<'p> {
                 redactor.add_value(name, value).map_err(Stop::failed)?;
             }
         }
+        // Everything `--from`, `--skip`, `--skip-preflight` and `--set` decide is checked now,
+        // before anything runs, even the preflight.
+        let start = skip_start(p, &opts, from, &provided, &redactor, tty)?;
         let slug = slug(&p.title);
         let journal = Journal::create(&opts.runs_dir, &slug, redactor.clone())
             .map_err(|e| Stop::failed(format!("cannot create the run directory: {e}")))?;
@@ -504,6 +580,9 @@ impl<'p> Runner<'p> {
             in_stage: false,
             hand_set: false,
             touched: std::collections::HashSet::new(),
+            skipped: start.skipped,
+            given: start.given,
+            start_decided: start.decided,
             pwd_alias: pwd_alias(&cwd_for_alias),
         })
     }
@@ -521,13 +600,11 @@ impl<'p> Runner<'p> {
             self.flush_legend();
             // The preflight runs first, even with `--from`.
             if let Some(preflight) = &p.preflight {
-                self.stage(preflight)?;
+                self.run_or_skip(preflight)?;
             }
+            self.begin_skips()?;
             for stage in &p.stages {
-                if stage.number < from {
-                    continue;
-                }
-                self.stage(stage)?;
+                self.run_or_skip(stage)?;
             }
             Ok(())
         });
@@ -546,6 +623,22 @@ impl<'p> Runner<'p> {
                 self.say(&format!("  journal: {}", self.journal_shown()));
                 Ending::Completed
             }
+            Err(stop) if stop.ending == Ending::Ended => {
+                self.journal.event(
+                    "run_end",
+                    json!({"ending": "ended", "message": stop.message}),
+                );
+                self.journal
+                    .report(&format!("\n**Ended:** {}", stop.message));
+                self.screen.borrow_mut().clear_all();
+                self.say(&format!(
+                    "\n✓ {} ended: {}",
+                    self.p.title,
+                    self.redactor.redact(&stop.message)
+                ));
+                self.say(&format!("  journal: {}", self.journal_shown()));
+                Ending::Ended
+            }
             Err(stop) => {
                 let ending = match stop.ending {
                     Ending::Cancelled => "cancelled",
@@ -562,6 +655,7 @@ impl<'p> Runner<'p> {
                 }
                 let redacted = Stop {
                     poll_deadline: false,
+                    skip_rest: false,
                     ending: stop.ending,
                     message: self.redactor.redact(&stop.message),
                     details: stop
@@ -951,24 +1045,6 @@ impl<'p> Runner<'p> {
         Ok(answer)
     }
 
-    /// Asks a yes/no question that sits under a preview, such as a gate or a `confirm`. `y`
-    /// approves, and `n`, Enter or Esc declines. `f`, `l` and `v` are handled here, and ask
-    /// again. See [`Runner::prompt`].
-    ///
-    /// `question` builds the question for the current view, since it may hold a path.
-    fn ask_yes(
-        &mut self,
-        question: &dyn Fn(&Self) -> String,
-        redraw: &dyn Fn(&Self),
-    ) -> Result<bool, Stop> {
-        let keys = Keys {
-            view: true,
-            legend: true,
-            values: true,
-        };
-        Ok(self.ask(&Style::Question(question), keys, redraw)? == Key::Yes)
-    }
-
     /// Waits for the operator in a guide: Enter or Space continues, and Ctrl-C cancels. With
     /// `toggle`, `f`, `l` and `v` work too, and wait again. The prompt is erased once
     /// answered, where the view allows.
@@ -978,6 +1054,7 @@ impl<'p> Runner<'p> {
             view: toggle,
             legend: toggle,
             values: toggle,
+            skip: false,
         };
         self.ask(&Style::Pause(action), keys, &|_| {})?;
         self.screen.borrow_mut().erase_to_mark();
@@ -1006,6 +1083,325 @@ impl<'p> Runner<'p> {
                 key => return Ok(key),
             }
         }
+    }
+
+    // ---- skipping ----
+
+    /// Runs a stage, or, if it is skipped, says so. A skipped `skip ends` stage ends the run.
+    fn run_or_skip(&mut self, stage: &'p ir::Stage) -> Result<(), Stop> {
+        let Some(why) = self.skipped.get(&stage.number).cloned() else {
+            return self.stage(stage);
+        };
+        let id = stage_id(stage);
+        let needs: Vec<String> = match &why {
+            Why::Reads(syms) => syms.iter().map(|s| self.p.sym(*s).name.clone()).collect(),
+            _ => Vec::new(),
+        };
+        self.journal.event(
+            "stage_skip",
+            json!({"stage": id, "by": why.by(), "needs": needs}),
+        );
+        if why == Why::From {
+            // Taken as done in an earlier run; the terminal says nothing, as before.
+            return Ok(());
+        }
+        let description = why.describe(self.p);
+        self.say(&format!("\n{}", self.rule(stage)));
+        self.say(&format!("  ↷ {description}"));
+        self.journal.report(&format!(
+            "\n## {} · {}\n\n- {description}",
+            heading(stage),
+            stage.title
+        ));
+        if why.rules_apply() && stage.skip == SkipRule::Ends {
+            return Err(Stop::ended(format!(
+                "{} was skipped, and skipping it ends the run",
+                stage.name()
+            )));
+        }
+        Ok(())
+    }
+
+    /// The header line that starts a stage or the preflight.
+    fn rule(&self, stage: &ir::Stage) -> String {
+        if stage.is_preflight() {
+            render::preflight_rule(&stage.title, self.width())
+        } else {
+            render::stage_rule(
+                stage.number,
+                self.p.stages.len(),
+                &stage.title,
+                self.width(),
+            )
+        }
+    }
+
+    /// After the preflight: settles the skips the command line asked for, then stores the
+    /// values given for skipped stages.
+    fn begin_skips(&mut self) -> Result<(), Stop> {
+        if let Some(decided) = self.start_decided.take() {
+            let what = "the stages before the run".to_string();
+            if !self.skip_dialog(&decided, &[], None, &what, true)? {
+                return Err(Stop::cancelled(
+                    "the run did not start: skipped stages leave values unset",
+                ));
+            }
+        }
+        for (sym, data, by) in std::mem::take(&mut self.given) {
+            let skipped = self
+                .p
+                .sym(sym)
+                .stage
+                .is_some_and(|s| self.skipped.contains_key(&s));
+            if skipped && !self.values.contains_key(&sym) {
+                self.set_by(sym, data, by);
+            }
+        }
+        self.store_skipped_asks(&[]);
+        Ok(())
+    }
+
+    /// The operator pressed `s` at a stage's gate or pause. Returns whether the stage is
+    /// skipped; a skipped `skip ends` stage ends the run.
+    fn operator_skip(&mut self, stage: &'p ir::Stage) -> Result<bool, Stop> {
+        let id = stage_id(stage);
+        if stage.skip == SkipRule::Ends {
+            let question = format!("Skipping {} ends the run. End now?", stage.name());
+            let prompt = self.opts.theme.question(&question, "y/N");
+            if self.read_choice(&prompt, &['y'])? != Some('y') {
+                return Ok(false);
+            }
+            self.journal.event(
+                "stage_skip",
+                json!({"stage": id, "by": "operator", "needs": []}),
+            );
+            self.journal.report("- skipped by the operator");
+            return Err(Stop::ended(format!(
+                "{} was skipped, and skipping it ends the run",
+                stage.name()
+            )));
+        }
+        let mut decided = self.skipped.clone();
+        decided.insert(stage.number, Why::Operator);
+        let what = format!("{} \"{}\"", stage.name(), stage.title);
+        if !self.skip_dialog(&decided, &[], Some(stage.number), &what, false)? {
+            return Ok(false);
+        }
+        self.screen.borrow_mut().erase_to_mark();
+        self.say("  ↷ skipped");
+        self.journal.event(
+            "stage_skip",
+            json!({"stage": id, "by": "operator", "needs": []}),
+        );
+        self.journal.report("- skipped by the operator");
+        Ok(true)
+    }
+
+    /// Shows what a skip takes with it, and lets the operator skip it all, set the missing
+    /// values by hand, or go back. Nothing changes until the skip is committed: values set
+    /// by hand, and answers given on the command line for skipped asks, wait in a pending
+    /// overlay that going back throws away. Returns whether the skip was committed.
+    fn skip_dialog(
+        &mut self,
+        decided: &BTreeMap<usize, Why>,
+        partial: &[Sym],
+        after: Option<usize>,
+        what: &str,
+        start: bool,
+    ) -> Result<bool, Stop> {
+        let p = self.p;
+        let mut pending: Vec<(Sym, Data)> = Vec::new();
+        let mut first = true;
+        let back = if start { "Esc stop" } else { "Esc back" };
+        loop {
+            let closure = {
+                let have = |s: Sym| {
+                    pending.iter().any(|(q, _)| *q == s)
+                        || self.given.iter().any(|(g, _, _)| *g == s)
+                        || self.ask_answered(s)
+                };
+                skip::closure(p, decided, partial, after, &have)
+            };
+            let dependents: Vec<(usize, Why)> = closure
+                .dependents()
+                .map(|(n, why)| (n, why.clone()))
+                .collect();
+            if dependents.is_empty() {
+                if first && pending.is_empty() {
+                    self.commit_skip(closure, pending, partial);
+                    return Ok(true);
+                }
+                self.say("");
+                self.say(&format!("  Skipping {what} now skips nothing else."));
+                let prompt = self
+                    .opts
+                    .theme
+                    .question("Skip?", &format!("s skip · {back}"));
+                if self.read_choice(&prompt, &['s'])? == Some('s') {
+                    self.commit_skip(closure, pending, partial);
+                    return Ok(true);
+                }
+                return Ok(false);
+            }
+            self.say("");
+            self.say(&format!("  Skipping {what} also skips:"));
+            let width = dependents
+                .iter()
+                .map(|(n, _)| stage_label(p, *n).chars().count())
+                .max()
+                .unwrap_or(0);
+            for (n, why) in &dependents {
+                let reason = match why {
+                    Why::Reads(syms) => {
+                        let names: Vec<String> = syms
+                            .iter()
+                            .map(|s| {
+                                let info = p.sym(*s);
+                                match &info.producer {
+                                    Some(step) => format!("`{}` ({step})", info.name),
+                                    None => format!("`{}`", info.name),
+                                }
+                            })
+                            .collect();
+                        format!("reads {}", names.join(", "))
+                    }
+                    Why::Also(from) => format!("skip also, in {}", p.stage(*from).name()),
+                    other => other.describe(p),
+                };
+                self.say(&format!("    {:<width$}  {reason}", stage_label(p, *n)));
+            }
+            for n in &closure.blocked {
+                self.say(&format!(
+                    "  {} is `skip never`: set the values it reads by hand to skip",
+                    p.stage(*n).name()
+                ));
+            }
+            let can = closure.blocked.is_empty();
+            let (hint, choices): (String, &[char]) = if can {
+                (
+                    format!("a skip all · v set values by hand · {back}"),
+                    &['a', 'v'],
+                )
+            } else {
+                (format!("v set values by hand · {back}"), &['v'])
+            };
+            let prompt = self.opts.theme.question("Skip?", &hint);
+            match self.read_choice(&prompt, choices)? {
+                Some('a') => {
+                    self.commit_skip(closure, pending, partial);
+                    return Ok(true);
+                }
+                Some('v') => self.repair_view(&closure.missing, &mut pending)?,
+                _ => return Ok(false),
+            }
+            first = false;
+        }
+    }
+
+    /// Lists the values the dependents of a skip need, and lets the operator set them. The
+    /// values only wait in `pending` until the skip is committed.
+    fn repair_view(&mut self, missing: &[Sym], pending: &mut Vec<(Sym, Data)>) -> Result<(), Stop> {
+        loop {
+            self.say("");
+            self.say("  values to set by hand");
+            let width = missing
+                .iter()
+                .map(|s| self.p.sym(*s).name.chars().count())
+                .max()
+                .unwrap_or(0);
+            for (index, sym) in missing.iter().enumerate() {
+                let info = self.p.sym(*sym);
+                let shown = pending
+                    .iter()
+                    .find(|(q, _)| q == sym)
+                    .map_or_else(|| "unset".to_string(), |(_, d)| self.show_data(info, d));
+                self.say(&format!(
+                    "  {:>4}  {:<width$}  {}  {}",
+                    index + 1,
+                    info.name,
+                    self.shorten_text(&shown),
+                    self.value_origin(*sym),
+                ));
+            }
+            let answer =
+                self.read_line(&self.opts.theme.ask("number to set, Enter to go back:"))?;
+            let answer = answer.trim();
+            if answer.is_empty() {
+                return Ok(());
+            }
+            let Some(&sym) = answer
+                .parse::<usize>()
+                .ok()
+                .and_then(|n| missing.get(n.wrapping_sub(1)))
+            else {
+                self.say(&format!("  no value numbered {answer}"));
+                continue;
+            };
+            let info = self.p.sym(sym).clone();
+            let data = self.read_typed(&info)?;
+            if info.secret
+                && let Data::Str(text) = &data
+                && let Err(e) = self.redactor.add_value(&info.name, text)
+            {
+                self.say(&format!("  not set: {e}"));
+                continue;
+            }
+            pending.retain(|(q, _)| *q != sym);
+            pending.push((sym, data));
+        }
+    }
+
+    /// Commits a skip: the values set by hand, the stages it skips, and the answers given on
+    /// the command line for the asks it skips.
+    fn commit_skip(&mut self, closure: skip::Closure, pending: Vec<(Sym, Data)>, partial: &[Sym]) {
+        for (sym, data) in pending {
+            self.set_by(sym, data, "operator");
+        }
+        for (n, why) in closure.stages {
+            self.skipped.entry(n).or_insert(why);
+        }
+        self.store_skipped_asks(partial);
+    }
+
+    /// Whether an `ask` already has its answer from `--param` or `KORIN_SECRET_<NAME>`.
+    fn ask_answered(&self, sym: Sym) -> bool {
+        let info = self.p.sym(sym);
+        info.kind == SymKind::Ask && self.provided.contains_key(&info.name)
+    }
+
+    /// Gives each skipped `ask` the answer from the command line, if it has one: the step
+    /// will not run to take it.
+    fn store_skipped_asks(&mut self, partial: &[Sym]) {
+        for sym in 0..self.p.syms.len() {
+            let info = self.p.sym(sym);
+            let skipped =
+                info.stage.is_some_and(|s| self.skipped.contains_key(&s)) || partial.contains(&sym);
+            if info.kind != SymKind::Ask || !skipped || self.values.contains_key(&sym) {
+                continue;
+            }
+            if let Some(answer) = self.provided.get(&info.name).cloned() {
+                self.set_by(sym, Data::Str(answer), "--param");
+            }
+        }
+    }
+
+    /// Sets a value that did not come from its step, and records who gave it.
+    fn set_by(&mut self, sym: Sym, data: Data, by: &str) {
+        let name = self.p.sym(sym).name.clone();
+        self.journal.event(
+            "value_set",
+            json!({"name": name, "value": data.to_json(), "by": by}),
+        );
+        let who = if by == "operator" { "by hand" } else { by };
+        self.journal.report(&format!("- `{name}` set {who}"));
+        self.set_value(
+            sym,
+            Some(Value {
+                data,
+                withheld: None,
+            }),
+        );
+        self.hand_set = true;
     }
 
     // ---- the values view ----
@@ -1042,7 +1438,15 @@ impl<'p> Runner<'p> {
         if value.withheld.is_some() {
             return format!("«withheld:{}»", info.name);
         }
-        let text = match &value.data {
+        self.show_data(info, &value.data)
+    }
+
+    /// A value's data as the values view shows it: a secret as its placeholder only.
+    fn show_data(&self, info: &SymInfo, data: &Data) -> String {
+        if info.secret {
+            return format!("«secret:{}»", info.name);
+        }
+        let text = match data {
             Data::Str(s) => self.redactor.redact(s),
             Data::List(items) => {
                 let items: Vec<String> = items.iter().map(|i| self.redactor.redact(i)).collect();
@@ -1072,6 +1476,11 @@ impl<'p> Runner<'p> {
         }
         if info.optional {
             parts.push("optional".into());
+        }
+        if let Some(stage) = info.stage
+            && self.skipped.contains_key(&stage)
+        {
+            parts.push(format!("{} skipped", self.p.stage(stage).name()));
         }
         parts.join(", ")
     }
@@ -1171,20 +1580,7 @@ impl<'p> Runner<'p> {
                     self.say(&format!("  not changed: {e}"));
                     return Ok(());
                 }
-                self.journal.event(
-                    "value_set",
-                    json!({"name": info.name, "value": data.to_json(), "by": "operator"}),
-                );
-                self.journal
-                    .report(&format!("- `{}` set by hand", info.name));
-                self.set_value(
-                    sym,
-                    Some(Value {
-                        data,
-                        withheld: None,
-                    }),
-                );
-                self.hand_set = true;
+                self.set_by(sym, data, "operator");
             }
             Some('c') => {
                 self.journal.event(
@@ -1362,59 +1758,69 @@ impl<'p> Runner<'p> {
         });
         self.check_withheld_boundaries(&stage.steps)?;
         let gated = !guide && (self.p.gates == GateMode::All || stage.mutating);
-        if guide {
-            if self.opts.yes {
-                self.journal
-                    .event("pause", json!({"stage": id, "auto": true}));
-                self.journal.report("- continued by `--yes`");
-            } else {
-                self.pause("continue", true)?;
-                self.journal.event("pause", json!({"stage": id}));
-                self.journal.report("- continued");
-            }
-        } else if !gated {
-            // `gates mutating` and a stage that only reads: the preview stays, and the stage
-            // runs when the operator continues.
-            if self.opts.yes {
-                self.journal
-                    .event("pause", json!({"stage": id, "auto": true}));
-                self.journal.report("- continued by `--yes`");
-            } else {
-                let keys = Keys {
-                    view: true,
-                    legend: true,
-                    values: true,
-                };
-                self.ask(&Style::Pause("continue"), keys, &|r| {
-                    if !stage.steps.is_empty() {
-                        r.say("");
-                        r.say_preview(&stage.steps.iter().collect::<Vec<_>>());
-                    }
-                })?;
-                self.journal.event("pause", json!({"stage": id}));
-                self.journal.report("- continued");
-            }
-        } else {
-            if self.opts.yes {
+        if self.opts.yes {
+            if gated {
                 self.say("  approved by --yes");
                 self.journal.event("gate_auto", json!({"stage": id}));
                 self.journal.report("- gate approved by `--yes`");
-            } else if self.ask_yes(&|_| format!("Run {}?", stage.name()), &|r| {
-                if !stage.steps.is_empty() {
+            } else {
+                self.journal
+                    .event("pause", json!({"stage": id, "auto": true}));
+                self.journal.report("- continued by `--yes`");
+            }
+        } else {
+            // A guide shows no preview, so it draws nothing again either.
+            let preview = |r: &Self| {
+                if !guide && !stage.steps.is_empty() {
                     r.say("");
                     r.say_preview(&stage.steps.iter().collect::<Vec<_>>());
                 }
-            })? {
-                self.journal
-                    .event("gate", json!({"stage": id, "approved": true}));
-                self.journal.report("- gate approved");
+            };
+            let keys = Keys {
+                view: true,
+                legend: true,
+                values: true,
+                skip: stage.skip != SkipRule::Never,
+            };
+            let question = |_: &Self| format!("Run {}?", stage.name());
+            let style = if gated {
+                Style::Question(&question)
             } else {
-                self.journal
-                    .event("gate", json!({"stage": id, "approved": false}));
-                return Err(Stop::failed(format!(
-                    "{} was not approved; nothing in it ran",
-                    stage.name()
-                )));
+                Style::Pause("continue")
+            };
+            loop {
+                match self.ask(&style, keys, &preview)? {
+                    Key::Skip => {
+                        if self.operator_skip(stage)? {
+                            return Ok(());
+                        }
+                        {
+                            let mut screen = self.screen.borrow_mut();
+                            screen.erase_to_mark();
+                            screen.mark();
+                        }
+                        preview(self);
+                    }
+                    Key::Yes => {
+                        self.journal
+                            .event("gate", json!({"stage": id, "approved": true}));
+                        self.journal.report("- gate approved");
+                        break;
+                    }
+                    Key::Continue => {
+                        self.journal.event("pause", json!({"stage": id}));
+                        self.journal.report("- continued");
+                        break;
+                    }
+                    _ => {
+                        self.journal
+                            .event("gate", json!({"stage": id, "approved": false}));
+                        return Err(Stop::failed(format!(
+                            "{} was not approved; nothing in it ran",
+                            stage.name()
+                        )));
+                    }
+                }
             }
         }
         self.screen.borrow_mut().erase_to_mark();
@@ -1440,6 +1846,12 @@ impl<'p> Runner<'p> {
         let result = self.steps(&stage.steps, &prefix, "", None);
         self.footer = None;
         self.screen.borrow_mut().clear_all();
+        if let Err(stop) = &result
+            && stop.skip_rest
+        {
+            self.say(&format!("  ↷ the rest of {} was skipped", stage.name()));
+            return Ok(());
+        }
         result?;
         // The stage-end line.
         let commands = self.seq - before;
@@ -1549,19 +1961,61 @@ impl<'p> Runner<'p> {
                         r.say_preview(&steps);
                     }
                 };
-                if self.ask_yes(&|r| r.shorten_text(&text), &redraw)? {
-                    self.screen.borrow_mut().erase_to_mark();
-                    self.update_ghost();
-                    self.journal
-                        .event("confirm", json!({"step": step.id, "approved": true}));
-                    Ok(())
-                } else {
-                    self.journal
-                        .event("confirm", json!({"step": step.id, "approved": false}));
-                    Err(Stop::failed(format!(
-                        "not confirmed at step {}: {text}",
-                        step.id
-                    )))
+                let keys = Keys {
+                    view: true,
+                    legend: true,
+                    values: true,
+                    skip: self.p.stage(self.stage_now).skip != SkipRule::Never,
+                };
+                let question = |r: &Self| r.shorten_text(&text);
+                loop {
+                    match self.ask(&Style::Question(&question), keys, &redraw)? {
+                        Key::Yes => {
+                            self.screen.borrow_mut().erase_to_mark();
+                            self.update_ghost();
+                            self.journal
+                                .event("confirm", json!({"step": step.id, "approved": true}));
+                            return Ok(());
+                        }
+                        Key::Skip => {
+                            let partial = skip::made_by(steps.iter().copied());
+                            let what =
+                                format!("the rest of {}", self.p.stage(self.stage_now).name());
+                            let decided = self.skipped.clone();
+                            let now = Some(self.stage_now);
+                            if self.skip_dialog(&decided, &partial, now, &what, false)? {
+                                self.screen.borrow_mut().erase_to_mark();
+                                self.journal.event(
+                                    "stage_skip",
+                                    json!({
+                                        "stage": stage_id(self.p.stage(self.stage_now)),
+                                        "by": "operator",
+                                        "from_step": step.id,
+                                        "needs": [],
+                                    }),
+                                );
+                                self.journal.report(&format!(
+                                    "- the rest skipped by the operator at step {}",
+                                    step.id
+                                ));
+                                return Err(Stop::skip_rest());
+                            }
+                            {
+                                let mut screen = self.screen.borrow_mut();
+                                screen.erase_to_mark();
+                                screen.mark();
+                            }
+                            redraw(self);
+                        }
+                        _ => {
+                            self.journal
+                                .event("confirm", json!({"step": step.id, "approved": false}));
+                            return Err(Stop::failed(format!(
+                                "not confirmed at step {}: {text}",
+                                step.id
+                            )));
+                        }
+                    }
                 }
             }
             StepKind::Ask {
@@ -2832,6 +3286,198 @@ impl Drop for RestoreModes {
     }
 }
 
+/// A stage as the skip dialog lists it: `stage 3 "Archive"`, or `preflight "Title"`.
+fn stage_label(p: &Program, number: usize) -> String {
+    let stage = p.stage(number);
+    if stage.is_preflight() {
+        format!("preflight \"{}\"", stage.title)
+    } else {
+        format!("stage {number} \"{}\"", stage.title)
+    }
+}
+
+/// How the report names a stage in a heading: `Stage 3`, or `Preflight`.
+fn heading(stage: &ir::Stage) -> String {
+    if stage.is_preflight() {
+        "Preflight".to_string()
+    } else {
+        format!("Stage {}", stage.number)
+    }
+}
+
+/// Parses a value given on the command line, by the kind of value it replaces.
+fn parse_typed(ty: Ty, text: &str) -> Result<Data, String> {
+    match ty {
+        Ty::Scalar => Ok(Data::Str(text.to_string())),
+        Ty::Json => parse_json(text).map(Data::Str),
+        Ty::List => parse_list(text).map(Data::List),
+        Ty::Bool => match text {
+            "true" => Ok(Data::Bool(true)),
+            "false" => Ok(Data::Bool(false)),
+            _ => Err(format!("an expect is `true` or `false`, not `{text}`")),
+        },
+    }
+}
+
+/// What the command line's skips settle before anything runs.
+struct SkipStart {
+    /// The stages that will not run, as far as the command line decides.
+    skipped: BTreeMap<usize, Why>,
+    /// Values given for skipped stages, with who gave them.
+    given: Vec<(Sym, Data, &'static str)>,
+    /// Set when a later stage reads a value the skips leave unset: the operator settles it
+    /// after the preflight.
+    decided: Option<BTreeMap<usize, Why>>,
+}
+
+/// The static pass for skips. It checks every `--skip`, `--skip-preflight` and `--set`, reads
+/// `KORIN_SECRET_<NAME>` for secret captures of skipped stages, and works out what the skips
+/// take with them. Without a terminal, a value a later stage needs and nobody gave stops the
+/// run here, before anything runs.
+fn skip_start(
+    p: &Program,
+    opts: &Options,
+    from: usize,
+    provided: &HashMap<String, String>,
+    redactor: &Redactor,
+    tty: bool,
+) -> Result<SkipStart, Stop> {
+    let mut decided = BTreeMap::new();
+    for n in 1..from {
+        decided.insert(n, Why::From);
+    }
+    for name in &opts.skip {
+        let n = resolve_stage(p, name, "skip").map_err(|d| Stop::failed(d.message.clone()))?;
+        let stage = p.stage(n);
+        if stage.skip == SkipRule::Never {
+            return Err(Stop::failed(format!(
+                "stage {n} \"{}\" is `skip never`, so `--skip` cannot skip it",
+                stage.title
+            )));
+        }
+        if n >= from {
+            decided.insert(n, Why::Cli);
+        }
+    }
+    if opts.skip_preflight {
+        let Some(preflight) = &p.preflight else {
+            return Err(Stop::failed(
+                "`--skip-preflight` was given, but the wizard has no preflight",
+            ));
+        };
+        if preflight.skip == SkipRule::Never {
+            return Err(Stop::failed(
+                "the preflight is `skip never`, so `--skip-preflight` cannot skip it",
+            ));
+        }
+        decided.insert(0, Why::SkipPreflight);
+    }
+    let mut given: Vec<(Sym, Data, &'static str)> = Vec::new();
+    for (name, text) in &opts.set {
+        let found = p
+            .syms
+            .iter()
+            .position(|s| s.name == *name && matches!(s.kind, SymKind::Capture | SymKind::Expect));
+        let Some(sym) = found else {
+            let mut stop = Stop::failed(format!(
+                "`--set {name}`: no capture or expect is named `{name}`"
+            ));
+            if p.syms
+                .iter()
+                .any(|s| s.name == *name && s.kind == SymKind::Ask)
+            {
+                stop = stop.detail(format!("give an `ask` its answer with --param {name}=..."));
+            }
+            return Err(stop);
+        };
+        let info = p.sym(sym);
+        if info.secret {
+            return Err(Stop::failed(format!(
+                "secret `{name}` cannot be passed on the command line"
+            ))
+            .detail(format!(
+                "set the environment variable {} instead",
+                secret_env(name)
+            )));
+        }
+        let data =
+            parse_typed(info.ty, text).map_err(|e| Stop::failed(format!("`--set {name}`: {e}")))?;
+        given.push((sym, data, "--set"));
+    }
+    for (sym, info) in p.syms.iter().enumerate() {
+        if info.kind == SymKind::Capture
+            && info.secret
+            && let Ok(value) = std::env::var(secret_env(&info.name))
+        {
+            redactor
+                .add_value(&info.name, &value)
+                .map_err(Stop::failed)?;
+            given.push((sym, Data::Str(value), "env"));
+        }
+    }
+    let have = |sym: Sym| {
+        let info = p.sym(sym);
+        given.iter().any(|(g, _, _)| *g == sym)
+            || (info.kind == SymKind::Ask && provided.contains_key(&info.name))
+    };
+    let closure = skip::closure(p, &decided, &[], None, &have);
+    for (sym, _, by) in &given {
+        let info = p.sym(*sym);
+        let stage = info.stage.unwrap_or(0);
+        if *by == "--set" && !closure.stages.contains_key(&stage) {
+            return Err(Stop::failed(format!(
+                "`--set {}`: {} runs, and makes this value itself",
+                info.name,
+                p.stage(stage).name()
+            ))
+            .detail("--set gives only values of stages that are skipped"));
+        }
+    }
+    given.retain(|(sym, _, _)| {
+        p.sym(*sym)
+            .stage
+            .is_some_and(|s| closure.stages.contains_key(&s))
+    });
+    let readers: Vec<(usize, Vec<Sym>)> = closure
+        .readers()
+        .map(|(n, syms)| (n, syms.to_vec()))
+        .collect();
+    if readers.is_empty() {
+        return Ok(SkipStart {
+            skipped: closure.stages,
+            given,
+            decided: None,
+        });
+    }
+    if !tty {
+        let mut stop = Stop::failed("skipped stages leave values unset that later stages read");
+        for (n, syms) in &readers {
+            let names: Vec<String> = syms
+                .iter()
+                .map(|s| format!("`{}`", p.sym(*s).name))
+                .collect();
+            stop = stop.detail(format!("{} reads {}", stage_label(p, *n), names.join(", ")));
+        }
+        for sym in &closure.missing {
+            let info = p.sym(*sym);
+            let how = match info.kind {
+                SymKind::Ask if !info.secret => format!("--param {}=...", info.name),
+                _ if info.secret => secret_env(&info.name),
+                _ => format!("--set {}=...", info.name),
+            };
+            stop = stop.detail(format!("give `{}` with {how}", info.name));
+        }
+        let skip: Vec<String> = readers.iter().map(|(n, _)| format!("--skip {n}")).collect();
+        stop = stop.detail(format!("or skip those stages too: {}", skip.join(" ")));
+        return Err(stop);
+    }
+    Ok(SkipStart {
+        skipped: decided.clone(),
+        given,
+        decided: Some(decided),
+    })
+}
+
 /// How the journal names a stage: its number, or `"preflight"`.
 fn stage_id(stage: &ir::Stage) -> serde_json::Value {
     if stage.is_preflight() {
@@ -2846,6 +3492,9 @@ fn choice_echo(c: char) -> &'static str {
     match c {
         'r' => "r",
         'c' => "c",
+        'a' => "a",
+        's' => "s",
+        'v' => "v",
         'y' => "y",
         'n' => "n",
         _ => "",

@@ -15,7 +15,7 @@ stage "a"
     (integer))
   (stage
     (string)
-    (block
+    (stage_body
       (command
         (word)
         (word)
@@ -74,7 +74,7 @@ stage "a"
     (identifier))
   (stage
     (string)
-    (block
+    (stage_body
       (call
         (identifier)
         (identifier)

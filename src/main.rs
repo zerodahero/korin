@@ -45,7 +45,7 @@ enum Cmd {
         /// Output format for diagnostics.
         #[arg(long, value_enum, default_value_t = Format::Human)]
         format: Format,
-        /// Also check that the run can start at this stage (title or number).
+        /// Also list what a run that starts at this stage (title or number) asks for.
         #[arg(long)]
         from: Option<String>,
     },
@@ -64,9 +64,19 @@ enum Cmd {
         /// Approve every gate. Allowed only without a terminal, for wizards that declare `unattended allowed`.
         #[arg(long)]
         yes: bool,
-        /// Start at this stage (title or number), skipping earlier ones.
+        /// Start at this stage (title or number). Earlier stages count as done in an earlier
+        /// run; a later stage that reads their values asks for them.
         #[arg(long)]
         from: Option<String>,
+        /// Skip this stage (title or number), and the stages that need its values. Repeatable.
+        #[arg(long = "skip", value_name = "STAGE")]
+        skip: Vec<String>,
+        /// Skip the preflight.
+        #[arg(long)]
+        skip_preflight: bool,
+        /// A value for a capture or expect of a skipped stage, as `name=value`. Repeatable.
+        #[arg(long = "set", value_name = "NAME=VALUE", value_parser = parse_param)]
+        set: Vec<(String, String)>,
         /// Seconds between SIGTERM and SIGKILL when korin ends a command (at most 3600).
         #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(0..=3600))]
         kill_grace: u64,
@@ -146,6 +156,9 @@ fn main() -> ExitCode {
             params,
             yes,
             from,
+            skip,
+            skip_preflight,
+            set,
             kill_grace,
             require_enter: _,
         } => run(
@@ -153,6 +166,7 @@ fn main() -> ExitCode {
             params,
             yes,
             from,
+            (skip, skip_preflight, set),
             kill_grace,
             effective,
             Theme::stdout(choice),
@@ -195,7 +209,7 @@ fn check(file: &std::path::Path, format: Format, from: Option<&str>, theme: Them
         Ok((program, mut diags)) => {
             if let Some(from) = from {
                 match korin::run::resolve_from(&program, from) {
-                    Ok(_) => {}
+                    Ok(stage) => diags.extend(korin::run::from_warnings(&program, stage)),
                     Err(diag) => diags.push(*diag),
                 }
             }
@@ -249,6 +263,7 @@ fn run(
     params: Vec<(String, String)>,
     yes: bool,
     from: Option<String>,
+    (skip, skip_preflight, set): (Vec<String>, bool, Vec<(String, String)>),
     kill_grace: u64,
     effective: korin::config::Effective,
     theme: Theme,
@@ -268,6 +283,9 @@ fn run(
         params,
         yes,
         from,
+        skip,
+        skip_preflight,
+        set,
         grace: std::time::Duration::from_secs(kill_grace),
         require_enter: effective.require_enter.0,
         view: effective.view.0,

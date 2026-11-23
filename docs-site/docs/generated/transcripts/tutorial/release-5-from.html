@@ -1,6 +1,6 @@
-<pre class="k-term"><code><span class="k-red k-bold">korin::from</span>
+<pre class="k-term"><code><span class="k-magenta k-bold">korin::from</span>
 
-  <span class="k-red k-bold">×</span> cannot start at stage 4: `tag.untagged` comes from skipped stage 3 "Is it released?"
+  <span class="k-magenta k-bold">⚠</span> starting at stage 4 asks for `tag.untagged`, made in skipped stage 3 "Is it released?"
     ╭─[<span class="k-blue k-bold">../release.korin:44:8</span>]
  <span class="k-fg-dim">43</span> │ stage "Release"
  <span class="k-fg-dim">44</span> │   when tag.untagged
@@ -8,4 +8,45 @@
     ·              <span class="k-red k-bold">╰── used here</span>
  <span class="k-fg-dim">45</span> │     mutate git tag --annotate {version} --message "Release {version}"
     ╰────
-  <span class="k-fg-dim">help:</span> start at stage 3 or earlier</code></pre>
+  <span class="k-fg-dim">help:</span> a run in a terminal asks for it; without one, pass --set tag.untagged=..., or start at
+        stage 3
+
+<span class="k-magenta k-bold">korin::from</span>
+
+  <span class="k-magenta k-bold">⚠</span> starting at stage 4 asks for `version`, made in skipped stage 2 "Choose the version"
+    ╭─[<span class="k-blue k-bold">../release.korin:45:31</span>]
+ <span class="k-fg-dim">44</span> │   when tag.untagged
+ <span class="k-fg-dim">45</span> │     mutate git tag --annotate {version} --message "Release {version}"
+    ·                               <span class="k-red k-bold">────┬────</span>
+    ·                                   <span class="k-red k-bold">╰── used here</span>
+ <span class="k-fg-dim">46</span> │     record "tagged {version} at {head}"
+    ╰────
+  <span class="k-fg-dim">help:</span> a run in a terminal asks for it; without one, pass --param version=..., or start at stage
+        2
+
+<span class="k-magenta k-bold">korin::from</span>
+
+  <span class="k-magenta k-bold">⚠</span> starting at stage 4 asks for `head`, made in skipped stage 2 "Choose the version"
+    ╭─[<span class="k-blue k-bold">../release.korin:46:33</span>]
+ <span class="k-fg-dim">45</span> │     mutate git tag --annotate {version} --message "Release {version}"
+ <span class="k-fg-dim">46</span> │     record "tagged {version} at {head}"
+    ·                                 <span class="k-red k-bold">───┬──</span>
+    ·                                    <span class="k-red k-bold">╰── used here</span>
+ <span class="k-fg-dim">47</span> │   when tag.unpushed
+    ╰────
+  <span class="k-fg-dim">help:</span> a run in a terminal asks for it; without one, pass --set head=..., or start at stage 2
+
+<span class="k-magenta k-bold">korin::from</span>
+
+  <span class="k-magenta k-bold">⚠</span> starting at stage 4 asks for `tag.unpushed`, made in skipped stage 3 "Is it released?"
+    ╭─[<span class="k-blue k-bold">../release.korin:47:8</span>]
+ <span class="k-fg-dim">46</span> │     record "tagged {version} at {head}"
+ <span class="k-fg-dim">47</span> │   when tag.unpushed
+    ·        <span class="k-red k-bold">──────┬─────</span>
+    ·              <span class="k-red k-bold">╰── used here</span>
+ <span class="k-fg-dim">48</span> │     confirm "Push {version} to {remote}? Anyone who fetches will see it."
+    ╰────
+  <span class="k-fg-dim">help:</span> a run in a terminal asks for it; without one, pass --set tag.unpushed=..., or start at
+        stage 3
+
+<span class="k-green k-bold">✓</span> <span class="k-bold">../release.korin is valid</span></code></pre>

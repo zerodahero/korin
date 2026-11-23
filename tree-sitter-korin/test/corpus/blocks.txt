@@ -51,7 +51,7 @@ stage "two"
         (identifier))))
   (stage
     (string)
-    (block
+    (stage_body
       (when
         (and
           (not
@@ -78,7 +78,7 @@ stage "two"
         (string))))
   (stage
     (string)
-    (block
+    (stage_body
       (poll
         (duration)
         (duration)
@@ -185,14 +185,14 @@ stage "one"
     (string))
   (preflight
     (string)
-    (block
+    (stage_body
       (command
         (word)
         (word)
         (word))))
   (stage
     (string)
-    (block
+    (stage_body
       (command
         (word)))))
 
@@ -215,11 +215,61 @@ stage "one"
   (title
     (string))
   (preflight
-    (block
+    (stage_body
       (command
         (word))))
   (stage
     (string)
-    (block
+    (stage_body
+      (command
+        (word)))))
+
+========================================
+skip lines
+========================================
+
+korin 1
+title "t"
+preflight
+  skip never
+  read true
+stage "one"
+  skip also "two", "three"
+  read true
+stage "two"
+  skip ends
+  read true
+stage "three"
+  read true
+
+----------------------------------------
+
+(source_file
+  (version
+    (integer))
+  (title
+    (string))
+  (preflight
+    (stage_body
+      (skip)
+      (command
+        (word))))
+  (stage
+    (string)
+    (stage_body
+      (skip
+        (string)
+        (string))
+      (command
+        (word))))
+  (stage
+    (string)
+    (stage_body
+      (skip)
+      (command
+        (word))))
+  (stage
+    (string)
+    (stage_body
       (command
         (word)))))

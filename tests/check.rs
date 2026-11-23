@@ -42,11 +42,17 @@ fn from(body: &str, stage: &str) -> String {
     let path = dir.path().join("main.korin");
     std::fs::write(&path, format!("korin 1\ntitle \"t\"\n{body}")).unwrap();
     let (program, _) = compile_path(&path).unwrap();
+    let prefix = format!("{}/", dir.path().display());
     match korin::run::resolve_from(&program, stage) {
-        Ok(n) => format!("ok {n}"),
-        Err(diag) => diag
-            .short()
-            .replace(&format!("{}/", dir.path().display()), ""),
+        Ok(n) => std::iter::once(format!("ok {n}"))
+            .chain(
+                korin::run::from_warnings(&program, n)
+                    .iter()
+                    .map(|d| format!("  warning {}", d.short().replace(&prefix, ""))),
+            )
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Err(diag) => diag.short().replace(&prefix, ""),
     }
 }
 
@@ -248,7 +254,7 @@ fn two_calls_do_not_collide() {
 }
 
 #[test]
-fn from_rejects_every_runtime_binding() {
+fn from_asks_for_every_runtime_binding() {
     let expect_only = concat!(
         "stage \"probe\"\n",
         "  read tool\n",
@@ -497,4 +503,25 @@ fn preflight_values_never_block_from() {
         "  note \"{account}\"\n",
     );
     assert_eq!(from(body, "b"), "ok 2");
+}
+
+#[test]
+fn skip_lines_name_later_stages_that_can_be_skipped() {
+    let out = wizard(concat!(
+        "stage \"a\"\n  skip also \"nope\", \"a\", \"c\"\n  read true\n",
+        "stage \"b\"\n  skip also \"a\"\n  read true\n",
+        "stage \"c\"\n  skip never\n  read true\n",
+        "stage \"d\"\n  skip ends\n  read true\n",
+    ));
+    assert!(out.contains("no stage is titled \"nope\""), "{out}");
+    assert!(out.contains("`skip also` names this stage itself"), "{out}");
+    assert!(
+        out.contains("`skip also` names stage 1, which runs before this one"),
+        "{out}"
+    );
+    assert!(
+        out.contains("stage 3 \"c\" is `skip never`, so `skip also` cannot skip it"),
+        "{out}"
+    );
+    assert_eq!(out.lines().count(), 4, "{out}");
 }

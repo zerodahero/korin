@@ -23,6 +23,7 @@ preflight ["<title>"]          # optional, once, before stage 1; read-only; runs
   <steps>
 
 stage "<title>"
+  skip never | ends | also "<later stage>", ...   # optional, first line only
   <steps>
 ```
 

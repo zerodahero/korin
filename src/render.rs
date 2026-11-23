@@ -724,20 +724,30 @@ pub fn plan(program: &Program, width: usize) -> String {
     for stage in &program.stages {
         out.push(String::new());
         let gated = program.gates == GateMode::All || stage.mutating;
-        let blockers = program.from_blockers(stage.number);
-        let from = match blockers.first() {
-            None => "valid --from start".to_string(),
-            Some(u) => {
-                let (line, _) = u.loc.file.line_col(u.loc.span.start);
-                format!(
-                    "not a --from start: uses `{}` (line {line})",
-                    program.sym(u.sym).name
-                )
+        let mut needs: Vec<String> = Vec::new();
+        for u in program.from_blockers(stage.number) {
+            let name = format!("`{}`", program.sym(u.sym).name);
+            if !u.guarded && !needs.contains(&name) {
+                needs.push(name);
+            }
+        }
+        let from = if needs.is_empty() {
+            "valid --from start".to_string()
+        } else {
+            format!("a --from start asks for {}", needs.join(", "))
+        };
+        let skip = match &stage.skip {
+            crate::ir::SkipRule::Free => String::new(),
+            crate::ir::SkipRule::Never => "; skip never".to_string(),
+            crate::ir::SkipRule::Ends => "; skip ends the run".to_string(),
+            crate::ir::SkipRule::Also(targets) => {
+                let targets: Vec<String> = targets.iter().map(ToString::to_string).collect();
+                format!("; skip also skips stage {}", targets.join(", "))
             }
         };
         out.push(stage_rule(stage.number, total, &stage.title, width));
         out.push(format!(
-            "  {}, {}; {from}",
+            "  {}, {}; {from}{skip}",
             if stage.mutating {
                 "mutating"
             } else {

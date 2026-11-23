@@ -1,0 +1,16 @@
+---
+source: tests/run.rs
+expression: json
+---
+[
+  {
+    "code": "from",
+    "column": 8,
+    "file": "w.korin",
+    "help": "a run in a terminal asks for it; without one, pass --set missing=..., or start at stage 1",
+    "label": "used here",
+    "line": 8,
+    "message": "starting at stage 2 asks for `missing`, made in skipped stage 1 \"probe\"",
+    "severity": "warning"
+  }
+]

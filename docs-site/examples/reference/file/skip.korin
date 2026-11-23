@@ -1,0 +1,19 @@
+korin 1
+title "Release the shop"
+unattended allowed
+
+stage "Tag"
+  # A push without its tag makes no sense: skipping the tag skips the push.
+  skip also "Push"
+  mutate git tag v1.4.0
+
+stage "Changelog"
+  mutate git add CHANGELOG.md
+
+stage "Push"
+  mutate git push origin v1.4.0
+
+stage "Announce"
+  # Nothing after the announcement may run without it.
+  skip ends
+  mutate gh release create v1.4.0

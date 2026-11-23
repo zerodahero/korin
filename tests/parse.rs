@@ -253,3 +253,28 @@ fn preflight_comes_once_and_before_the_first_stage() {
     ));
     assert!(header.contains("before the preflight"), "{header}");
 }
+
+#[test]
+fn skip_lines_come_first_and_once() {
+    let ok = wizard(&with_header(concat!(
+        "preflight\n  skip never\n  read true\n",
+        "stage \"a\"\n  skip also \"b\", \"c\"\n  read true\n",
+        "stage \"b\"\n  skip ends\n  read true\n",
+        "stage \"c\"\n  read true\n",
+    )));
+    assert!(
+        ok.contains("Never") && ok.contains("Ends") && ok.contains("Also("),
+        "{ok}"
+    );
+    let twice = errors(&with_header(
+        "stage \"a\"\n  skip never\n  skip ends\n  read true\n",
+    ));
+    assert!(twice.contains("at most one `skip` line"), "{twice}");
+    let late = errors(&with_header("stage \"a\"\n  read true\n  skip never\n"));
+    assert!(late.contains("`skip` must be the first line"), "{late}");
+    let unknown = errors(&with_header("stage \"a\"\n  skip sometimes\n  read true\n"));
+    assert!(
+        unknown.contains("unknown skip rule `sometimes`"),
+        "{unknown}"
+    );
+}

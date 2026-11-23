@@ -1,0 +1,22 @@
+<pre class="k-term"><code>╭─ korin ─ Release the shop ─ ~/project ─ 4 stages
+╰─❯ korin run skip.korin --yes --skip Tag --skip Announce
+
+━━ Stage 1/4 · Tag ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ↷ skipped by --skip
+
+━━ Stage 2/4 · Changelog ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  2.1  mutate ❯ git add CHANGELOG.md
+  approved by --yes
+
+  2.1 ❯ git add CHANGELOG.md
+  ✓ stage 2 done · 1 command
+
+━━ Stage 3/4 · Push ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ↷ skipped: `skip also` in stage 1
+
+━━ Stage 4/4 · Announce ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ↷ skipped by --skip
+
+✓ Release the shop ended: stage 4 was skipped, and skipping it ends the run
+  journal: /home/ada/project/.korin/runs/20260115T100000Z-release-the-shop</code></pre>

@@ -75,6 +75,27 @@ step. Every stage is shown in full before it runs, and asks for approval at its
 Stages are numbered from 1. Steps are numbered within their stage: `2.3` is the third step of
 stage 2, and `2.3.1` is the first step inside it.
 
+## Skip rules
+
+An operator can [skip a stage](gates.md#skipping-a-stage) with `s` at its gate, or with
+`--skip`. A `skip` line, the first line of a stage, says what skipping it means:
+
+- **`skip also "<stage>", ...`** skips the named stages too. They must come later.
+- **`skip never`**: the stage cannot be skipped. korin does not offer `s`, and refuses
+  `--skip` for it.
+- **`skip ends`**: skipping the stage ends the run, with success (exit 0).
+
+A stage has at most one `skip` line. The preflight may have one too.
+
+```korin title="skip.korin"
+--8<-- "docs-site/examples/reference/file/skip.korin"
+```
+
+--8<-- "docs-site/docs/generated/transcripts/reference/file/skip.html"
+
+A run that starts with `--from` takes the stages before it as done in an earlier run, so their
+`skip` lines have no effect.
+
 ## Preflight
 
 `preflight` starts a block of lookups that every run needs: account IDs, the current state,

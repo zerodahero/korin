@@ -33,6 +33,7 @@ One key answers a gate or a `confirm`; there is no need to press Enter.
 
 - `y` approves.
 - `n`, Enter or Esc declines. The default is no.
+- `s` skips the stage and goes on. See [Skipping a stage](#skipping-a-stage).
 - `v` opens the [values view](#the-values-view), where you can see and change values.
 - `l` hides or shows the legend of path prefixes, in the compact view. See
   [The legend](cli.md#the-legend).
@@ -88,6 +89,39 @@ At a `confirm`, the view also lists what the stage has found so far:
 --8<-- "docs-site/docs/generated/transcripts/reference/gates/values-confirm.prompt-3.html"
 
 Each change is a `value_set` event in the [journal](journal.md), and a line in the report.
+
+## Skipping a stage
+
+Press `s` at a gate or a pause to skip the stage: nothing in it runs, and the run goes on with
+the next stage. This is not the same as answering `n`, which stops the run.
+
+A skipped stage makes no values. A later stage that reads one of them cannot run either: it
+is a *dependent*, and korin lists it before anything changes:
+
+```korin title="skip.korin"
+--8<-- "docs-site/examples/reference/gates/skip.korin"
+```
+
+--8<-- "docs-site/docs/generated/transcripts/reference/gates/skip.prompt-2.html"
+
+- `a` skips the stage and every dependent.
+- `v` lists the values the dependents need, so you can set them by hand. A dependent whose
+  values you set runs after all. Nothing is stored until you skip.
+- Esc goes back to the gate, and forgets any value you set.
+
+Here, the account was set by hand, so stage 2 still ran:
+
+--8<-- "docs-site/docs/generated/transcripts/reference/gates/skip.html"
+
+A read inside `when exists x` works without the value, so it does not make a dependent. An
+`ask` answered in advance with `--param` keeps its answer when its stage is skipped.
+
+Press `s` at a `confirm` to skip the rest of its stage. The steps before the `confirm` have
+already run.
+
+A stage's [`skip` line](file.md#skip-rules) can forbid skipping it, end the run when it is
+skipped, or skip more stages with it. Without a terminal, skip stages with
+[`--skip`](cli.md#korin-run).
 
 ## `gates all`
 

@@ -20,7 +20,7 @@ params: cluster (required), scratch = "<cluster>-rehearsal", db_password (secret
   2.2  assert src.status == "available" else "<cluster> is <src.status ← 2.1.1>, not available."
 
 ━━ Stage 3/4 · Snapshot ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  mutating, gate; not a --from start: uses `src.security_groups` (line 32)
+  mutating, gate; a --from start asks for `src.security_groups`
   3.1  mutate ❯ aws rds create-db-cluster-snapshot \
                   --db-cluster-identifier <cluster> \
                   --db-cluster-snapshot-identifier <scratch>-snap \
@@ -36,7 +36,7 @@ params: cluster (required), scratch = "<cluster>-rehearsal", db_password (secret
           fail $call3$status ~ /^(failed|deleted|deleting)$/
 
 ━━ Stage 4/4 · Scratch cluster ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  mutating, gate; not a --from start: uses `snap_arn` (line 31)
+  mutating, gate; a --from start asks for `snap_arn`, `src.security_groups`
   4.1  read ❯ aws rds describe-db-clusters --db-cluster-identifier <scratch> --output json
         ? missing
   4.2  when missing
