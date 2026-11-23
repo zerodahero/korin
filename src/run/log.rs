@@ -34,7 +34,6 @@ impl<B> Default for Scopes<B> {
 
 impl<B> Scopes<B> {
     /// Opens a scope: blocks emitted until [`Scopes::take`] collect in it.
-    #[allow(dead_code)] // polls hold their tries; see the next commit
     pub fn hold(&mut self) {
         self.stack.push(Vec::new());
     }
@@ -58,7 +57,6 @@ impl<B> Scopes<B> {
 
     /// Closes the innermost scope and hands back its blocks, in order. The caller emits them
     /// again to commit them, or emits something else in their place.
-    #[allow(dead_code)] // polls hold their tries; see the next commit
     pub fn take(&mut self) -> Vec<B> {
         self.stack.pop().unwrap_or_default()
     }

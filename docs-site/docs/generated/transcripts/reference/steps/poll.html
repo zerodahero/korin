@@ -3,42 +3,9 @@
   <span class="k-teal">&lt;pwd&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/project</span> <span class="k-border">·</span> <span class="k-teal">&lt;tmp&gt;</span> <span class="k-fg-dim">=</span> <span class="k-cyan">~/tmp</span>
 
 <span class="k-comment"># ── stage 1/1: Wait ── approved</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment checkout <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
-{
-  "metadata": {"name": "checkout", "namespace": "shop"},
-  "spec": {
-    "replicas": 3,
-    "template": {"spec": {"containers": [{"name": "checkout", "image": "registry.example.com/checkou
-t:3.1.0"}]}}
-  },
-  "status": {
-    "readyReplicas": 1,
-    "conditions": [{"type": "Progressing", "reason": "ReplicaSetUpdated"}]
-  }
-}
-  <span class="k-border">↳</span> <span class="k-fg-dim">ready = 1</span>
-  <span class="k-border">↳</span> <span class="k-fg-dim">wanted = 3</span>
-  <span class="k-border">↳</span> <span class="k-fg-dim">reason = ReplicaSetUpdated</span>
-  <span class="k-fg-dim">… waiting 2s (attempt 1)</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment checkout <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
-{
-  "metadata": {"name": "checkout", "namespace": "shop"},
-  "spec": {
-    "replicas": 3,
-    "template": {"spec": {"containers": [{"name": "checkout", "image": "registry.example.com/checkou
-t:3.1.0"}]}}
-  },
-  "status": {
-    "readyReplicas": 2,
-    "conditions": [{"type": "Progressing", "reason": "ReplicaSetUpdated"}]
-  }
-}
-  <span class="k-border">↳</span> <span class="k-fg-dim">ready = 2</span>
-  <span class="k-border">↳</span> <span class="k-fg-dim">wanted = 3</span>
-  <span class="k-border">↳</span> <span class="k-fg-dim">reason = ReplicaSetUpdated</span>
-  <span class="k-fg-dim">… waiting 2s (attempt 2)</span>
+<span class="k-comment"># poll every 2s, up to 5m: until ready == wanted</span>
+  ↻ try 1 · 0s  ready = 1, wanted = 3, reason = ReplicaSetUpdated
+  ↻ try 2 · 2s  ready = 2, wanted = 3, reason = ReplicaSetUpdated
 
 <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment checkout <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
 {
@@ -56,6 +23,7 @@ t:3.1.0"}]}}
   <span class="k-border">↳</span> <span class="k-fg-dim">ready = 3</span>
   <span class="k-border">↳</span> <span class="k-fg-dim">wanted = 3</span>
   <span class="k-border">↳</span> <span class="k-fg-dim">reason = ReplicaSetUpdated</span>
+<span class="k-comment"># until matched after 3 tries · 4s</span>
 <span class="k-comment"># note: checkout has 3 of 3 replicas ready.</span>
 <span class="k-comment"># ✓ stage 1 done · 3 commands</span>
 

@@ -317,6 +317,22 @@ impl Theme {
         out
     }
 
+    /// A poll's state in the plan pane, such as `running  try 3 · 1.2s`: the first word in
+    /// the prompt color while a try runs, in the warning color while it waits.
+    pub fn poll_state(self, state: &str) -> String {
+        let mut out = String::from("        ");
+        let (word, rest) = state.split_once(' ').unwrap_or((state, ""));
+        let role = if word == "running" {
+            Role::Prompt
+        } else {
+            Role::Warn
+        };
+        self.paint(role, word, &mut out);
+        out.push(' ');
+        self.paint(Role::Dim, &strip_marks(rest), &mut out);
+        out
+    }
+
     /// The prefix for each line of a command's output.
     pub fn gutter(self) -> String {
         let mut out = String::from("      ");

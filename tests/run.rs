@@ -1740,3 +1740,43 @@ fn a_guarded_read_does_not_make_a_dependent() {
     assert_eq!(out.code, 0, "{}", out.text);
     assert!(env.path("marked-use").exists());
 }
+
+// ---- polls without a live view ----
+
+#[test]
+fn a_piped_poll_prints_every_try_once_and_replays_nothing() {
+    let env = Env::new();
+    env.script(
+        "bin/tick",
+        "#!/bin/sh\nf=\"$PWD/tick.count\"; n=$(( $(cat \"$f\" 2>/dev/null || echo 0) + 1 )); echo $n > \"$f\"; echo \"n=$n\"\n",
+    );
+    env.wizard(concat!(
+        "stage \"p\"\n",
+        "  poll every 1s for 60s\n",
+        "    read tick\n",
+        "      capture n = regex /n=(\\d+)/\n",
+        "    until n == \"3\"\n",
+    ));
+    let out = env.run_yes(&[]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    let text = &out.text;
+    for n in 1..=3 {
+        assert_eq!(
+            text.matches(&format!("\nn={n}\n")).count(),
+            1,
+            "try {n}: {text}"
+        );
+        assert_eq!(
+            text.matches(&format!("# try {n} · ")).count(),
+            1,
+            "try {n}: {text}"
+        );
+    }
+    assert_eq!(text.matches("$ tick").count(), 3, "{text}");
+    assert!(!text.contains("↻"), "{text}");
+    assert!(text.contains("# until matched after 3 tries"), "{text}");
+    // Each try's lines come under its own header.
+    let first = text.find("# try 1 · ").unwrap();
+    let second = text.find("# try 2 · ").unwrap();
+    assert!(text[first..second].contains("n=1"), "{text}");
+}

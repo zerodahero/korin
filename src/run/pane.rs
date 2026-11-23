@@ -52,6 +52,73 @@ pub struct Plan {
     pub legend: Option<String>,
 }
 
+/// What a poll is doing, for its lines in the pane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PollView {
+    pub attempt: usize,
+    /// Time since the poll started.
+    pub elapsed: std::time::Duration,
+    /// The time the poll may take in all.
+    pub limit: std::time::Duration,
+    pub phase: Phase,
+    /// The last try's short result, such as `status = "creating"`.
+    pub last: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    /// A try runs, and has run this long.
+    Running(std::time::Duration),
+    /// Waiting this long for the next try.
+    Waiting(std::time::Duration),
+}
+
+/// Bar cells for the time a poll used against its deadline.
+const BAR: usize = 20;
+
+/// A poll's two pane lines, as plain text: its state, then a bar of the time used.
+pub fn poll_lines(view: &PollView) -> (String, String) {
+    let state = match view.phase {
+        Phase::Running(took) => {
+            format!("running  try {} · {:.1}s", view.attempt, took.as_secs_f64())
+        }
+        Phase::Waiting(left) => {
+            format!("waiting  next try in {}s", left.as_millis().div_ceil(1000))
+        }
+    };
+    let state = match &view.last {
+        Some(last) => format!("{state}  ·  last: {last}"),
+        None => state,
+    };
+    let used = view.elapsed.as_millis();
+    let limit = view.limit.as_millis().max(1);
+    // Rounded to the nearest cell, and never past the end.
+    let filled = usize::try_from((used * BAR as u128 * 2 + limit) / (limit * 2))
+        .unwrap_or(BAR)
+        .min(BAR);
+    let bar = format!(
+        "{}{}  {} of {}",
+        "█".repeat(filled),
+        "░".repeat(BAR - filled),
+        short_duration(view.elapsed),
+        short_duration(view.limit)
+    );
+    (state, bar)
+}
+
+/// A duration as a poll line shows it: `7s`, `2m10s`, `15m`, `1h`.
+pub fn short_duration(d: std::time::Duration) -> String {
+    let secs = d.as_secs();
+    let (h, m, s) = (secs / 3600, secs % 3600 / 60, secs % 60);
+    match (h, m, s) {
+        (0, 0, s) => format!("{s}s"),
+        (0, m, 0) => format!("{m}m"),
+        (0, m, s) => format!("{m}m{s:02}s"),
+        (h, 0, _) => format!("{h}h"),
+        (h, m, _) => format!("{h}h{m:02}m"),
+    }
+}
+
 /// Fits a plan into `height` terminal rows. `more` themes a `… N more` line.
 pub fn fit(plan: &Plan, height: usize, more: &dyn Fn(&str) -> String) -> Vec<String> {
     if height < TINY {
@@ -237,6 +304,30 @@ mod tests {
     #[test]
     fn a_tiny_terminal_shows_no_pane() {
         assert_eq!(fit(&plan(4, 2), 5, &more), Vec::<String>::new());
+    }
+
+    #[test]
+    fn poll_lines_say_running_or_waiting_with_the_time_used() {
+        use std::time::Duration;
+        let mut view = PollView {
+            attempt: 3,
+            elapsed: Duration::from_secs(130),
+            limit: Duration::from_mins(15),
+            phase: Phase::Running(Duration::from_millis(1200)),
+            last: Some("status = \"creating\"".into()),
+        };
+        let (state, bar) = poll_lines(&view);
+        assert_eq!(
+            state,
+            "running  try 3 · 1.2s  ·  last: status = \"creating\""
+        );
+        assert_eq!(
+            bar,
+            format!("{}{}  2m10s of 15m", "█".repeat(3), "░".repeat(17))
+        );
+        view.phase = Phase::Waiting(Duration::from_millis(6200));
+        view.last = None;
+        assert_eq!(poll_lines(&view).0, "waiting  next try in 7s");
     }
 
     #[test]

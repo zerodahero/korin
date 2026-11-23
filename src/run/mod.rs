@@ -204,6 +204,21 @@ struct CommandBlock {
     /// The step's id and its `$` line as plain text, for the `o` picker.
     step: String,
     label: String,
+    /// Shows in full wherever it lands: it belongs to a poll try that failed or was stopped.
+    full: bool,
+}
+
+/// A poll that runs now, as its pane lines show it.
+#[derive(Debug, Clone)]
+struct PollTrack {
+    started: Instant,
+    deadline: Instant,
+    attempt: usize,
+    /// When the current try started, or `None` while waiting.
+    try_started: Option<Instant>,
+    /// When the next try starts, while waiting.
+    wake: Option<Instant>,
+    last: Option<String>,
 }
 
 /// A folded output that `o` can open in full.
@@ -521,6 +536,8 @@ struct Runner<'p> {
     scopes: log::Scopes<Block>,
     /// The outputs folded so far, oldest first, for the `o` picker.
     folded: RefCell<Vec<Folded>>,
+    /// The polls running now, innermost last, for the pane's poll lines.
+    polls: RefCell<Vec<PollTrack>>,
     /// How far a prompt's content is scrolled, in lines, when it is taller than the terminal.
     pane_scroll: Cell<usize>,
     /// While a prompt's content is taller than the terminal, how many of its lines are below
@@ -693,6 +710,7 @@ impl<'p> Runner<'p> {
             building: None,
             scopes: log::Scopes::default(),
             folded: RefCell::new(Vec::new()),
+            polls: RefCell::new(Vec::new()),
             pane_scroll: Cell::new(0),
             pane_below: Cell::new(None),
             stage_now: 0,
@@ -1219,6 +1237,27 @@ impl<'p> Runner<'p> {
                 plan.steps.push(theme.pane_step(mark, &line));
             }
             plan.at = at;
+            if let Some(track) = self.polls.borrow().last() {
+                let now = Instant::now();
+                let view = pane::PollView {
+                    attempt: track.attempt,
+                    elapsed: now.saturating_duration_since(track.started),
+                    limit: track.deadline.saturating_duration_since(track.started),
+                    phase: match (track.try_started, track.wake) {
+                        (Some(at), _) => pane::Phase::Running(now.saturating_duration_since(at)),
+                        (None, wake) => pane::Phase::Waiting(
+                            wake.map_or(Duration::ZERO, |w| w.saturating_duration_since(now)),
+                        ),
+                    },
+                    last: track.last.clone(),
+                };
+                let (state, bar) = pane::poll_lines(&view);
+                let state = pane::clip(&self.redactor.redact(&state), width.saturating_sub(8));
+                plan.status = vec![
+                    theme.poll_state(&state),
+                    theme.faint(&format!("        {bar}")),
+                ];
+            }
         }
         if self.legend_on() {
             let entries: Vec<(String, String)> = self
@@ -2670,6 +2709,7 @@ impl<'p> Runner<'p> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_lines)] // one exit path each: match, fail, error, deadline, stop
     fn poll(
         &mut self,
         step: &'p Step,
@@ -2681,42 +2721,176 @@ impl<'p> Runner<'p> {
         fail: Option<&Expr>,
         outer: Option<Instant>,
     ) -> Result<(), Stop> {
-        let mut deadline = Instant::now() + Duration::from_secs(limit);
+        let started = Instant::now();
+        let mut deadline = started + Duration::from_secs(limit);
         if let Some(outer) = outer {
             deadline = deadline.min(outer);
         }
+        // A live view holds each try until it knows its fate; otherwise tries print as they run.
+        let live = self.screen.borrow().live();
+        self.log_line(&format!(
+            "# poll every {every}s, up to {}: until {}",
+            pane::short_duration(Duration::from_secs(limit)),
+            render::expr(self.p, until, self)
+        ));
+        self.polls.borrow_mut().push(PollTrack {
+            started,
+            deadline,
+            attempt: 0,
+            try_started: None,
+            wake: None,
+            last: None,
+        });
         let mut attempts = Vec::new();
-        for attempt in 1.. {
-            let before = self.seq;
-            let ran = self.steps(body, path, &format!("@{attempt}"), Some(deadline));
-            attempts.extend((before + 1..=self.seq).map(|n| n.to_string()));
-            match ran {
-                Ok(()) => {}
-                Err(stop) if stop.poll_deadline => {
-                    return Err(self.poll_timeout(step, limit, until, body, attempt, &attempts));
+        // The last try that did not match, kept to show in full if the poll stops waiting.
+        let mut last_try: Vec<Block> = Vec::new();
+        let result = 'poll: {
+            for attempt in 1.. {
+                let try_started = Instant::now();
+                if let Some(track) = self.polls.borrow_mut().last_mut() {
+                    track.attempt = attempt;
+                    track.try_started = Some(try_started);
+                    track.wake = None;
                 }
-                Err(stop) => return Err(stop),
+                self.update_pane();
+                if live {
+                    self.scopes.hold();
+                } else {
+                    let at = pane::short_duration(started.elapsed());
+                    self.log_line(&format!("# try {attempt} · {at}"));
+                }
+                let before = self.seq;
+                let ran = self.steps(body, path, &format!("@{attempt}"), Some(deadline));
+                let invocations: Vec<String> =
+                    (before + 1..=self.seq).map(|n| n.to_string()).collect();
+                attempts.extend(invocations.iter().cloned());
+                let result = self.poll_result(body);
+                if let Some(track) = self.polls.borrow_mut().last_mut() {
+                    track.last.clone_from(&result);
+                }
+                // The try's fate: matched, not yet, or stopped with the reason.
+                let fate: Result<bool, Stop> = match ran {
+                    Err(stop) if stop.poll_deadline => {
+                        Err(self.poll_timeout(step, limit, until, body, attempt, &attempts))
+                    }
+                    Err(stop) => Err(stop),
+                    Ok(()) => match fail.map(|f| self.eval_bool(f)).transpose() {
+                        Err(stop) => Err(stop),
+                        Ok(Some(true)) => Err(Stop::failed(format!(
+                            "poll at step {} hit its failure condition",
+                            step.id
+                        ))
+                        .detail(format!(
+                            "fail {}",
+                            render::expr(self.p, fail.unwrap_or(until), self)
+                        ))),
+                        Ok(_) => self.eval_bool(until),
+                    },
+                };
+                let outcome = match &fate {
+                    Ok(true) => "matched",
+                    Ok(false) => "waiting",
+                    Err(_) => "stopped",
+                };
+                self.journal.event(
+                    "poll_try",
+                    json!({
+                        "step": step.id,
+                        "try": attempt,
+                        "elapsed_ms": u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                        "result": outcome,
+                        "invocations": invocations,
+                    }),
+                );
+                match fate {
+                    Ok(true) => {
+                        // The matching try lands under the `↻` lines, folded as usual.
+                        if live {
+                            for block in self.scopes.take() {
+                                self.emit(block, false);
+                            }
+                        }
+                        let took = pane::short_duration(started.elapsed());
+                        let tries = if attempt == 1 { "try" } else { "tries" };
+                        self.log_line(&format!("# until matched after {attempt} {tries} · {took}"));
+                        break 'poll Ok(());
+                    }
+                    Ok(false) => {
+                        if live {
+                            last_try = self.scopes.take();
+                            let took = pane::short_duration(started.elapsed());
+                            let shown = result.map_or_else(String::new, |r| format!("  {r}"));
+                            self.log_line(&format!("  ↻ try {attempt} · {took}{shown}"));
+                        }
+                    }
+                    Err(stop) => {
+                        // The evidence first: the try that stopped, in full.
+                        if live {
+                            for block in self.scopes.take() {
+                                self.emit(block, true);
+                            }
+                        }
+                        self.log_line(&format!("# try {attempt} stopped: {}", stop.message));
+                        break 'poll Err(stop);
+                    }
+                }
+                let wake = Instant::now() + Duration::from_secs(every);
+                let stopped = if wake >= deadline {
+                    Err(self.poll_timeout(step, limit, until, body, attempt, &attempts))
+                } else {
+                    if let Some(track) = self.polls.borrow_mut().last_mut() {
+                        track.try_started = None;
+                        track.wake = Some(wake);
+                    }
+                    self.sleep_until(wake)
+                };
+                if let Err(stop) = stopped {
+                    // Stopped while waiting: the last try, which only left a `↻` line, shows
+                    // in full.
+                    if live && !last_try.is_empty() {
+                        self.log_line(&format!("# last try (try {attempt}):"));
+                        for block in std::mem::take(&mut last_try) {
+                            self.emit(block, true);
+                        }
+                    }
+                    self.log_line(&format!("# poll stopped: {}", stop.message));
+                    break 'poll Err(stop);
+                }
             }
-            if let Some(fail) = fail
-                && self.eval_bool(fail)?
-            {
-                return Err(Stop::failed(format!(
-                    "poll at step {} hit its failure condition",
-                    step.id
-                ))
-                .detail(format!("fail {}", render::expr(self.p, fail, self))));
-            }
-            if self.eval_bool(until)? {
-                return Ok(());
-            }
-            let wake = Instant::now() + Duration::from_secs(every);
-            if wake >= deadline {
-                return Err(self.poll_timeout(step, limit, until, body, attempt, &attempts));
-            }
-            self.say(&format!("  … waiting {every}s (attempt {attempt})"));
-            self.sleep_until(wake)?;
+            Ok(())
+        };
+        self.polls.borrow_mut().pop();
+        result
+    }
+
+    /// A try's short result for its `↻` line: the captures it made, such as
+    /// `status = "creating"`.
+    fn poll_result(&self, body: &[Step]) -> Option<String> {
+        let parts: Vec<String> = body_captures(body)
+            .into_iter()
+            .map(|sym| {
+                let info = self.p.sym(sym);
+                let shown = match self.values.get(&sym) {
+                    None => "absent".to_string(),
+                    Some(_) if info.secret => format!("«secret:{}»", info.name),
+                    Some(value) if value.withheld.is_some() => format!("«withheld:{}»", info.name),
+                    Some(value) => self.capture_shown(&value.data),
+                };
+                format!("{} = {shown}", info.name)
+            })
+            .collect();
+        (!parts.is_empty()).then(|| parts.join(", "))
+    }
+
+    /// Hands a block on: to the enclosing poll try that holds it, or to the run log. `full`
+    /// marks a command to show in full wherever it lands.
+    fn emit(&mut self, mut block: Block, full: bool) {
+        if let Block::Command(command) = &mut block {
+            command.full |= full;
         }
-        Ok(())
+        if let Some(block) = self.scopes.emit(block) {
+            self.render(block, false);
+        }
     }
 
     fn poll_timeout(
@@ -2742,7 +2916,13 @@ impl<'p> Runner<'p> {
     }
 
     fn sleep_until(&self, wake: Instant) -> Result<(), Stop> {
+        let mut drawn = Instant::now();
         while Instant::now() < wake {
+            // The pane's countdown moves while the poll waits.
+            if drawn.elapsed() >= Duration::from_millis(250) {
+                self.update_pane();
+                drawn = Instant::now();
+            }
             if self.signals.take_interrupt() {
                 return Err(Stop::cancelled("interrupted with Ctrl-C"));
             }
@@ -3013,7 +3193,19 @@ impl<'p> Runner<'p> {
                     }
                 }
             };
-            let mut on_tick = || screen.borrow_mut().flush_window();
+            // While a poll runs a try, its pane line counts the try's time.
+            let this: &Self = self;
+            let mut pane_drawn = Instant::now();
+            let mut on_tick = || {
+                if live
+                    && !this.polls.borrow().is_empty()
+                    && pane_drawn.elapsed() >= Duration::from_millis(500)
+                {
+                    this.update_pane();
+                    pane_drawn = Instant::now();
+                }
+                screen.borrow_mut().flush_window();
+            };
             let finished = process::execute(&spec, &self.signals, &mut on_output, &mut on_tick)
                 .map_err(|e| Stop::failed(format!("cannot start `{}`: {e}", argv[0])))?;
             if stream {
@@ -3646,9 +3838,7 @@ impl<'p> Runner<'p> {
         };
         block.ok = ok;
         self.screen.borrow_mut().set_window(Vec::new(), true);
-        if let Some(block) = self.scopes.emit(Block::Command(block)) {
-            self.render(block, false);
-        }
+        self.emit(Block::Command(block), false);
     }
 
     /// Prints a block into the run log. `full` shows every command's output, as for a unit
@@ -3656,7 +3846,10 @@ impl<'p> Runner<'p> {
     fn render(&mut self, block: Block, full: bool) {
         match block {
             Block::Lines(line) => self.say(&line),
-            Block::Command(block) => self.render_command(&block, full),
+            Block::Command(block) => {
+                let full = full || block.full;
+                self.render_command(&block, full);
+            }
         }
     }
 

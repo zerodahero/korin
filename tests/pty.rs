@@ -886,6 +886,208 @@ fn a_secret_producing_output_shows_stdout_then_stderr_redacted() {
     assert!(last_out < first_err, "{screen}");
 }
 
+/// A script that counts its runs in `$PWD/<name>.count` and prints `n=<count>`.
+fn counter(name: &str) -> String {
+    format!(
+        "f=\"$PWD/{name}.count\"; n=$(( $(cat \"$f\" 2>/dev/null || echo 0) + 1 )); echo $n > \"$f\"; echo \"n=$n\""
+    )
+}
+
+fn poll_wizard(body: &str) -> String {
+    format!("stage \"p\"\n  poll every 1s for 60s\n{body}")
+}
+
+#[test]
+fn a_poll_shows_one_line_per_try_and_the_matching_try_in_full() {
+    let dir = setup(
+        &poll_wizard(concat!(
+            "    read tick\n",
+            "      capture n = regex /n=(\\d+)/\n",
+            "    read echo second\n",
+            "    until n == \"3\"\n",
+        )),
+        &[("tick", &counter("tick"))],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("next try in");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let screen = s.screen();
+    assert!(screen.contains("↻ try 1 · 0s  n = 1"), "{screen}");
+    assert!(screen.contains("↻ try 2 · 1s  n = 2"), "{screen}");
+    // Only the matching try prints its commands, both of them, in order.
+    assert_eq!(screen.matches("$ tick").count(), 1, "{screen}");
+    let tick = screen
+        .find("$ tick\nn=3")
+        .unwrap_or_else(|| panic!("{screen}"));
+    let second = screen
+        .find("$ echo second")
+        .unwrap_or_else(|| panic!("{screen}"));
+    assert!(tick < second, "{screen}");
+    assert!(screen.contains("# until matched after 3 tries"), "{screen}");
+    // The pane's poll lines are gone with the pane.
+    assert!(!screen.contains("next try in"), "{screen}");
+    let events = events(dir.path());
+    assert_eq!(events.matches("\"poll_try\"").count(), 3, "{events}");
+}
+
+#[test]
+fn a_nested_poll_lands_inside_the_outer_try() {
+    let dir = setup(
+        &poll_wizard(concat!(
+            "    read outer\n",
+            "      capture o = regex /n=(\\d+)/\n",
+            "    poll every 1s for 30s\n",
+            "      read inner\n",
+            "        capture i = regex /n=(\\d+)/\n",
+            "      until i == \"2\" or i == \"4\"\n",
+            "    until o == \"2\"\n",
+        )),
+        &[("outer", &counter("outer")), ("inner", &counter("inner"))],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    let screen = s.screen();
+    // The outer try 1 left only its `↻` line; the inner poll's lines are in try 2's block.
+    // The inner poll waited a second inside it, so the outer try ended at 1s.
+    let outer_line = screen
+        .find("↻ try 1 · 1s  o = 1")
+        .unwrap_or_else(|| panic!("{screen}"));
+    let inner_line = screen
+        .rfind("↻ try 1 ")
+        .unwrap_or_else(|| panic!("{screen}"));
+    assert!(outer_line < inner_line, "{screen}");
+    assert_eq!(screen.matches("$ inner").count(), 1, "{screen}");
+    assert!(screen.contains("$ outer\nn=2"), "{screen}");
+}
+
+#[test]
+fn ctrl_c_during_a_try_keeps_that_try_in_full() {
+    let dir = setup(
+        &poll_wizard(concat!(
+            "    read long\n",
+            "    read slow\n",
+            "      capture n = text\n",
+            "    until n == \"never\"\n",
+        )),
+        &[("long", "seq 1 40"), ("slow", "echo waiting-now; sleep 30")],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("waiting-now");
+    std::thread::sleep(Duration::from_millis(300));
+    s.send("\x03");
+    let _ = s.wait();
+    let screen = s.screen();
+    // The successful long command of the stopped try shows in full, not folded.
+    assert!(screen.contains("$ long\n1\n2\n"), "{screen}");
+    assert!(screen.contains("\n40\n"), "{screen}");
+    assert!(screen.contains("$ slow\nwaiting-now"), "{screen}");
+    assert!(screen.contains("# try 1 stopped:"), "{screen}");
+}
+
+#[test]
+fn ctrl_c_while_waiting_shows_the_last_try_in_full() {
+    let dir = setup(
+        "stage \"p\"\n  poll every 30s for 5m\n    read long\n      capture n = text\n    until n == \"never\"\n",
+        &[("long", "seq 1 40")],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("next try in");
+    std::thread::sleep(Duration::from_millis(300));
+    s.send("\x03");
+    let _ = s.wait();
+    let screen = s.screen();
+    let replay = screen
+        .find("# last try (try 1):")
+        .unwrap_or_else(|| panic!("{screen}"));
+    let rest = &screen[replay..];
+    assert!(rest.contains("$ long\n1\n2\n"), "{screen}");
+    assert!(rest.contains("\n40\n"), "{screen}");
+    assert!(
+        rest.contains("# poll stopped: interrupted with Ctrl-C"),
+        "{screen}"
+    );
+}
+
+#[test]
+fn a_huge_try_replays_once_in_full_after_the_scratch_directory_is_gone() {
+    // The command also writes into its scratch directory, which is gone once it ends; the
+    // replay reads the run's own spool.
+    let script = concat!(
+        "echo kept > \"$KORIN_OUT/f\"; ",
+        "i=1; while [ $i -le 5000 ]; do ",
+        "if [ $i -eq 2500 ]; then echo MARKER-2500; ",
+        "elif [ $((i % 3)) -eq 0 ]; then echo \"err $i\" >&2; ",
+        "else echo \"out $i\"; fi; i=$((i + 1)); done",
+    );
+    let dir = setup(
+        "stage \"p\"\n  poll every 30s for 5m\n    read noisy\n    read tick\n      capture n = text\n    until n == \"never\"\n",
+        &[("noisy", script), ("tick", "echo not-yet")],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("next try in");
+    std::thread::sleep(Duration::from_millis(300));
+    s.send("\x03");
+    let _ = s.wait();
+    let screen = s.screen();
+    assert_eq!(screen.matches("MARKER-2500").count(), 1, "the marker");
+    let out: Vec<u32> = screen
+        .lines()
+        .filter_map(|l| l.strip_prefix("out ")?.parse().ok())
+        .collect();
+    assert!(out.windows(2).all(|w| w[0] < w[1]), "stdout out of order");
+    assert_eq!(out.len(), 3333, "stdout lines lost");
+}
+
+#[test]
+fn a_fail_condition_and_a_deadline_leave_their_try() {
+    let dir = setup(
+        &poll_wizard(concat!(
+            "    read tick\n",
+            "      capture n = regex /n=(\\d+)/\n",
+            "    until n == \"never\"\n",
+            "    fail n == \"2\"\n",
+        )),
+        &[("tick", &counter("tick"))],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    assert_eq!(s.wait(), 1, "{}", s.text());
+    let screen = s.screen();
+    assert!(screen.contains("↻ try 1 · 0s  n = 1"), "{screen}");
+    assert!(screen.contains("$ tick\nn=2"), "{screen}");
+    assert!(
+        screen.contains("# try 2 stopped: poll at step 1.1 hit its failure condition"),
+        "{screen}"
+    );
+
+    let dir = setup(
+        "stage \"p\"\n  poll every 1s for 2s\n    read tick\n      capture n = regex /n=(\\d+)/\n    until n == \"never\"\n",
+        &[("tick", &counter("tick"))],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    assert_eq!(s.wait(), 1, "{}", s.text());
+    let screen = s.screen();
+    assert!(screen.contains("# last try (try 2):"), "{screen}");
+    assert!(screen.contains("$ tick\nn=2"), "{screen}");
+    assert!(
+        screen.contains("# poll stopped: poll at step 1.1 timed out"),
+        "{screen}"
+    );
+}
+
 #[test]
 fn check_shows_graphical_diagnostics_in_a_terminal() {
     let dir = setup("stage \"a\"\n  note \"{nope}\"\n", &[]);
