@@ -249,8 +249,8 @@ rejects `mutate` and `script mutate` in it, even inside templates.
 
 ### Pause
 
-The prompt a guide shows before each stage, and before an `interactive` step. Enter or Space
-continues. Events: `pause`.
+The prompt a guide shows before each stage, and before an `interactive` step, and that a
+read-only stage shows under `gates mutating`. Enter or Space continues. Events: `pause`.
 
 - UI label: pause
 - Avoid: Gate (a gate asks y/N; a pause only waits)

@@ -3,4 +3,4 @@ cwd = "tutorial/work"
 run_as = "release.korin"
 wizard = "release-4.korin"
 setup = "sh setup.sh && git -C work tag --annotate v0.2.0 --message 'Release v0.2.0'"
-answers = ["v0.2.0", "y", "y"]
+answers = ["", "", "v0.2.0", "", "y", "y"]

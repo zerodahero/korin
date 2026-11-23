@@ -3,12 +3,15 @@
 
 ## Stage 1 · Check the working tree
 
+- continued
 
 ## Stage 2 · Choose the version
 
+- continued
 
 ## Stage 3 · Is it released?
 
+- continued
 
 ## Stage 4 · Release
 

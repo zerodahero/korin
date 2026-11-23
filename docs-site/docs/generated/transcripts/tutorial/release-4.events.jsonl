@@ -1,5 +1,6 @@
 {"from":1,"kind":"run_start","title":"Release the shop","ts":"2026-01-15T10:00:00.000000Z","wizard":"../release.korin"}
 {"kind":"stage_start","mutating":false,"stage":1,"title":"Check the working tree","ts":"2026-01-15T10:00:00.000000Z"}
+{"kind":"pause","stage":1,"ts":"2026-01-15T10:00:00.000000Z"}
 {"argv":"git branch --show-current","command_kind":"read","exe":"/usr/bin/git","invocation_id":"0001-s1.1","kind":"command_start","step":"1.1","ts":"2026-01-15T10:00:00.000000Z"}
 {"invocation_id":"0001-s1.1","kind":"command_end","published":true,"status":{"exit":0},"stderr_bytes":0,"stdout_bytes":5,"ts":"2026-01-15T10:00:00.000000Z"}
 {"invocation_id":"0001-s1.1","kind":"capture","name":"branch","ts":"2026-01-15T10:00:00.000000Z","value":"main"}
@@ -10,6 +11,7 @@
 {"kind":"assert","passed":true,"step":"1.4","ts":"2026-01-15T10:00:00.000000Z"}
 {"kind":"say","step":"1.5","text":"On main, with a clean working tree.","ts":"2026-01-15T10:00:00.000000Z"}
 {"kind":"stage_start","mutating":false,"stage":2,"title":"Choose the version","ts":"2026-01-15T10:00:00.000000Z"}
+{"kind":"pause","stage":2,"ts":"2026-01-15T10:00:00.000000Z"}
 {"argv":"git ls-remote --tags --refs --sort=-version:refname origin","command_kind":"read","exe":"/usr/bin/git","invocation_id":"0003-s2.1","kind":"command_start","step":"2.1","ts":"2026-01-15T10:00:00.000000Z"}
 {"invocation_id":"0003-s2.1","kind":"command_end","published":true,"status":{"exit":0},"stderr_bytes":0,"stdout_bytes":58,"ts":"2026-01-15T10:00:00.000000Z"}
 {"invocation_id":"0003-s2.1","kind":"capture","name":"last","ts":"2026-01-15T10:00:00.000000Z","value":"v0.1.0"}
@@ -28,6 +30,7 @@
 {"kind":"ask","name":"version","step":"2.7","ts":"2026-01-15T10:00:00.000000Z","value":"v0.2.0"}
 {"kind":"assert","passed":true,"step":"2.8","ts":"2026-01-15T10:00:00.000000Z"}
 {"kind":"stage_start","mutating":false,"stage":3,"title":"Is it released?","ts":"2026-01-15T10:00:00.000000Z"}
+{"kind":"pause","stage":3,"ts":"2026-01-15T10:00:00.000000Z"}
 {"argv":"git rev-parse --quiet --verify refs/tags/v0.2.0","command_kind":"read","exe":"/usr/bin/git","invocation_id":"0007-s3.1","kind":"command_start","step":"3.1","ts":"2026-01-15T10:00:00.000000Z"}
 {"invocation_id":"0007-s3.1","kind":"command_end","published":true,"status":{"exit":1},"stderr_bytes":0,"stdout_bytes":0,"ts":"2026-01-15T10:00:00.000000Z"}
 {"invocation_id":"0007-s3.1","kind":"expect","name":"untagged","ts":"2026-01-15T10:00:00.000000Z"}

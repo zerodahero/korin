@@ -25,7 +25,8 @@ Then add the last stage:
 - **`mutate`** runs a command that changes something. It works like `read`; the keyword
   tells korin, and you, what kind of step it is.
 - **`gates mutating`** asks for approval only at stages that can change something. The first
-  three stages only read, so they now run without asking. The `ask` still asks.
+  three stages only read, so each one shows its preview and waits for Enter instead of `y`.
+  The `ask` still asks.
 - **`confirm`** asks again, in the middle of a stage, right before the push. Answer anything
   but `y` and the wizard stops before it pushes.
 - **`record`** prints a line like `note`, and also writes it to the run's report.
@@ -42,7 +43,7 @@ korin run ../release.korin
 Answer `v0.2.0`. The gate of stage 4 shows every step that can run, including the steps
 inside each `when`:
 
---8<-- "docs-site/docs/generated/transcripts/tutorial/release-4.prompt-2.html"
+--8<-- "docs-site/docs/generated/transcripts/tutorial/release-4.prompt-5.html"
 
 Approve the stage, and the push:
 

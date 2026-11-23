@@ -327,9 +327,17 @@ fn rds_rehearsal_example_end_to_end() {
         &["run", "w.korin", "--param", "cluster=main-db-cluster"],
         &[("FAKE_AWS_DIR", root.join("aws"))],
     );
-    for stage in [3, 4, 6] {
-        s.wait_for(&format!("Run stage {stage}?"));
-        s.answer("y");
+    // Stages 1, 2 and 5 only read: under `gates mutating` they pause, and Enter continues.
+    let mut pauses = 0;
+    for stage in 1..=6 {
+        if [3, 4, 6].contains(&stage) {
+            s.wait_for(&format!("Run stage {stage}?"));
+            s.answer("y");
+        } else {
+            pauses += 1;
+            s.wait_for_nth("↵ continue", pauses);
+            s.answer("");
+        }
     }
     assert_eq!(s.wait(), 0, "{}", s.text());
     let calls = std::fs::read_to_string(root.join("aws/calls.log")).unwrap();
@@ -364,6 +372,19 @@ impl Session {
     fn answer(&mut self, key: &str) {
         std::thread::sleep(Duration::from_millis(400));
         self.send(&format!("{key}\r"));
+    }
+
+    /// Waits until `text` has appeared `n` times, such as the nth pause of a run.
+    fn wait_for_nth(&self, text: &str, n: usize) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while self.text().matches(text).count() < n {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timed out waiting for {text:?} #{n}; output:\n{}",
+                self.text()
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
 
     /// The pty's foreground process group, as the terminal driver sees it.

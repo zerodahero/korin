@@ -50,7 +50,8 @@ The default. Every stage has a gate.
 
 ## `gates mutating`
 
-Only mutating stages have a gate. Other stages are shown, then run without asking.
+Only mutating stages have a gate. A stage that only reads still shows its preview, then
+pauses: Enter or Space runs it. With `--yes`, the pause continues on its own.
 
 A stage is mutating if any step in it is `mutate`, `script mutate` or `interactive`. Steps
 inside `when`, `each`, `poll` and templates count, whether or not they will run.
@@ -61,7 +62,7 @@ inside `when`, `each`, `poll` and templates count, whether or not they will run.
 
 --8<-- "docs-site/docs/generated/transcripts/reference/gates/mutating.html"
 
-Stage 1 only reads, so it ran without asking. Stage 2 changes the deployment, so it asked
+Stage 1 only reads, so it paused for Enter. Stage 2 changes the deployment, so it asked
 first; the transcript shows the run after `y`.
 
 ## `mode guide`: no gates at all

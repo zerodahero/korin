@@ -46,7 +46,7 @@ safe to approve and safe to run again:
 - **Pass secrets through `env`.** Declare them with `param <name> secret`, `ask secret` or
   `capture secret`, then `env NAME={name}` on the step that needs them.
 - **List every program in `allow`.** Use `gates mutating` when the read-only stages are safe
-  to run unasked.
+  to run on Enter alone: they show a preview and pause, with no y/N.
 - **Use `mode guide` for a tour that changes nothing**, such as onboarding or a status
   check. A guide has no gates and pauses before each stage; `korin check` rejects any
   `mutate` in it, and any `gates` line.

@@ -914,7 +914,24 @@ impl<'p> Runner<'p> {
                 self.journal.event("pause", json!({"stage": stage.number}));
                 self.journal.report("- continued");
             }
-        } else if gated {
+        } else if !gated {
+            // `gates mutating` and a stage that only reads: the preview stays, and the stage
+            // runs when the operator continues.
+            if self.opts.yes {
+                self.journal
+                    .event("pause", json!({"stage": stage.number, "auto": true}));
+                self.journal.report("- continued by `--yes`");
+            } else {
+                self.prompt(&Style::Pause("continue"), Keys { view: true }, &|r| {
+                    if !stage.steps.is_empty() {
+                        r.say("");
+                        r.say_steps(&stage.steps.iter().collect::<Vec<_>>());
+                    }
+                })?;
+                self.journal.event("pause", json!({"stage": stage.number}));
+                self.journal.report("- continued");
+            }
+        } else {
             if self.opts.yes {
                 self.say("  approved by --yes");
                 self.journal

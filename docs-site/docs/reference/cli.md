@@ -42,12 +42,12 @@ rest of the run.
 
 At the gate of stage 2:
 
---8<-- "docs-site/docs/generated/transcripts/reference/cli/compact.prompt-1.html"
+--8<-- "docs-site/docs/generated/transcripts/reference/cli/compact.prompt-2.html"
 
 The view changes only what the terminal shows. The journal always holds the full command:
 
 ```json
---8<-- "docs-site/docs/generated/transcripts/reference/cli/compact.events.jsonl:10:10"
+--8<-- "docs-site/docs/generated/transcripts/reference/cli/compact.events.jsonl:11:11"
 ```
 
 A run without a terminal, such as in CI, always shows the full view.
