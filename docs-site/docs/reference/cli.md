@@ -7,6 +7,9 @@
 Every command takes `--color auto|always|never`. `auto` colors a terminal, unless
 `NO_COLOR` is set or `TERM` is `dumb`. `CLICOLOR_FORCE` colors output that is not a terminal.
 
+Your [config file](config.md) can set the color, the starting view and `require-enter` for
+every run.
+
 ## Output
 
 In a terminal with color, `korin run` keeps the view tidy. Once you approve a stage, its

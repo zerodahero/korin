@@ -277,3 +277,11 @@ ask or capture holding an absolute path with at least three components. Code: `P
 
 - UI label: `<name>/`
 - Avoid: alias (that word names a template call's `as`)
+
+### Config
+
+The user's `config.kdl` of reader preferences, such as the starting view. Never a project
+file, and never anything that changes what a wizard does. Code: `Config`.
+
+- UI label: config file
+- Avoid: settings, preferences (as code names)

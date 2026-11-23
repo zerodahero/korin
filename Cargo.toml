@@ -17,6 +17,7 @@ jaq-core = "3.1.2"
 jaq-json = "2.0.3"
 jaq-std = "3.0.4"
 jiff = "0.2.39"
+kdl = "6.7.1"
 miette = { version = "7.6.0", features = ["fancy"] }
 nix = { version = "0.31.3", features = [
   "signal",

@@ -201,6 +201,7 @@ fn every_docs_example_checks_and_plans() {
         }
         for cmd in ["check", "plan"] {
             let out = Command::new(KORIN)
+                .env("KORIN_CONFIG", "/nonexistent/korin/config.kdl")
                 .args(["--color", "never", cmd])
                 .arg(&wizard)
                 .output()
@@ -499,6 +500,8 @@ fn hermetic_env(home: &Path, path: &str) -> BTreeMap<String, String> {
         ("COLORTERM", "truecolor"),
         ("LANG", "en_US.UTF-8"),
         ("USER", "ada"),
+        // The developer's own config must never change a transcript.
+        ("KORIN_CONFIG", "/nonexistent/korin/config.kdl"),
         // git: no user config, a fixed identity and fixed dates, so commit IDs never change.
         ("GIT_CONFIG_GLOBAL", "/dev/null"),
         ("GIT_CONFIG_NOSYSTEM", "1"),
@@ -684,18 +687,20 @@ fn escape(text: &str) -> String {
 
 #[test]
 fn cli_help_and_modules_match() {
-    let outputs: [(&str, &[&str]); 7] = [
+    let outputs: [(&str, &[&str]); 8] = [
         ("help/korin.txt", &["--help"]),
         ("help/run.txt", &["run", "--help"]),
         ("help/plan.txt", &["plan", "--help"]),
         ("help/check.txt", &["check", "--help"]),
         ("help/fmt.txt", &["fmt", "--help"]),
         ("help/modules.txt", &["modules", "--help"]),
+        ("help/config.txt", &["config", "--help"]),
         ("modules.txt", &["modules"]),
     ];
     let mut failures = Vec::new();
     for (name, args) in outputs {
         let out = Command::new(KORIN)
+            .env("KORIN_CONFIG", "/nonexistent/korin/config.kdl")
             .args(args)
             .env("NO_COLOR", "1")
             .env("COLUMNS", "100")
@@ -707,6 +712,7 @@ fn cli_help_and_modules_match() {
     }
     // `check --format json` for an invalid example, as an agent would read it.
     let out = Command::new(KORIN)
+        .env("KORIN_CONFIG", "/nonexistent/korin/config.kdl")
         .args(["check", "--format", "json", "unguarded.korin"])
         .current_dir(examples().join("reference/cli/invalid"))
         .output()

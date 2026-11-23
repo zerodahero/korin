@@ -90,6 +90,8 @@ impl Env {
             .env("PATH", path)
             .env("TMPDIR", self.tmp.path())
             .env("FAKE_AWS_DIR", self.path("aws"))
+            // The developer's own config must never change a result.
+            .env("KORIN_CONFIG", "/nonexistent/korin/config.kdl")
             .stdin(Stdio::null());
         cmd
     }

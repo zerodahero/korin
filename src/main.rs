@@ -11,9 +11,10 @@ use korin::theme::{Choice, Theme};
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
-    /// When to use color: `auto` colors a terminal unless `NO_COLOR` is set.
-    #[arg(long, value_enum, default_value_t = ColorArg::Auto, global = true)]
-    color: ColorArg,
+    /// When to use color: `auto` colors a terminal unless `NO_COLOR` is set. Also set by the
+    /// config key `color`; the default is `auto`.
+    #[arg(long, value_enum, global = true)]
+    color: Option<ColorArg>,
     #[command(subcommand)]
     command: Cmd,
 }
@@ -70,7 +71,7 @@ enum Cmd {
         #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(0..=3600))]
         kill_grace: u64,
         /// Answer gates and `confirm` with y or n and then Enter, instead of a single key. Also
-        /// set by `KORIN_REQUIRE_ENTER=1`.
+        /// set by `KORIN_REQUIRE_ENTER=1` or the config key `require-enter`.
         #[arg(long)]
         require_enter: bool,
     },
@@ -84,6 +85,8 @@ enum Cmd {
     },
     /// List the built-in modules and their templates.
     Modules,
+    /// Show the config file's path and each setting's value, with where it comes from.
+    Config,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -94,7 +97,35 @@ enum Format {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let choice = Choice::from(cli.color);
+    let flags = korin::config::Flags {
+        require_enter: matches!(
+            &cli.command,
+            Cmd::Run {
+                require_enter: true,
+                ..
+            }
+        ),
+        color: cli.color.map(Choice::from),
+    };
+    // The config can set the color, so its own errors use the flag's color, or none.
+    let config = match korin::config::load() {
+        Ok(config) => config,
+        Err(diags) => {
+            let choice = flags.color.unwrap_or_default();
+            let diagnostics = Theme::stderr(choice).diagnostics();
+            let _ = miette::set_hook(Box::new(move |_| {
+                Box::new(
+                    miette::MietteHandlerOpts::new()
+                        .graphical_theme(diagnostics.clone())
+                        .build(),
+                )
+            }));
+            report(&diags, Format::Human);
+            return ExitCode::FAILURE;
+        }
+    };
+    let effective = korin::config::resolve(&config, flags);
+    let choice = effective.color.0;
     let diagnostics = Theme::stderr(choice).diagnostics();
     // Diagnostics are always graphical; the theme alone decides color. `force_graphical(false)`
     // would mean "narrated", the screen-reader format, so it is never set.
@@ -116,19 +147,27 @@ fn main() -> ExitCode {
             yes,
             from,
             kill_grace,
-            require_enter,
+            require_enter: _,
         } => run(
             &file,
             params,
             yes,
             from,
             kill_grace,
-            require_enter || env_flag("KORIN_REQUIRE_ENTER"),
+            effective,
             Theme::stdout(choice),
         ),
         Cmd::Fmt { files, check } => fmt(&files, check),
         Cmd::Modules => {
             print!("{}", korin::stdlib::listing());
+            ExitCode::SUCCESS
+        }
+        Cmd::Config => {
+            let state = if config.exists { "" } else { " (not found)" };
+            println!("{}{state}", config.path.display());
+            for (key, value, source) in effective.listing() {
+                println!("{key:<14} {value:<10} {source}");
+            }
             ExitCode::SUCCESS
         }
     }
@@ -204,11 +243,6 @@ fn parse_param(text: &str) -> Result<(String, String), String> {
         .ok_or_else(|| format!("expected NAME=VALUE, got `{text}`"))
 }
 
-/// Whether an environment variable is set to something other than empty or `0`.
-fn env_flag(name: &str) -> bool {
-    std::env::var_os(name).is_some_and(|v| !v.is_empty() && v != "0")
-}
-
 #[allow(clippy::too_many_arguments)]
 fn run(
     file: &std::path::Path,
@@ -216,7 +250,7 @@ fn run(
     yes: bool,
     from: Option<String>,
     kill_grace: u64,
-    require_enter: bool,
+    effective: korin::config::Effective,
     theme: Theme,
 ) -> ExitCode {
     let program = match compile_path(file) {
@@ -235,7 +269,8 @@ fn run(
         yes,
         from,
         grace: std::time::Duration::from_secs(kill_grace),
-        require_enter,
+        require_enter: effective.require_enter.0,
+        view: effective.view.0,
         runs_dir: cwd.join(".korin").join("runs"),
         cwd,
         theme,

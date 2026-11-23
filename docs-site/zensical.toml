@@ -47,6 +47,7 @@ nav = [
     "reference/secrets.md",
     "reference/journal.md",
     "reference/cli.md",
+    "reference/config.md",
     "reference/stdlib.md",
   ] },
   { "Changelog" = "changelog.md" },

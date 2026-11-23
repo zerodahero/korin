@@ -99,6 +99,8 @@ pub struct Options {
     pub grace: Duration,
     /// Gates and `confirm` read a whole line, ending with Enter, instead of a single key.
     pub require_enter: bool,
+    /// The view a run in a terminal starts in. Without a terminal, the view is always full.
+    pub view: View,
     /// Where run directories go, normally `.korin/runs`.
     pub runs_dir: PathBuf,
     /// The directory commands run in.
@@ -373,6 +375,7 @@ impl<'p> Runner<'p> {
         // The live view erases and redraws lines, so it needs a terminal it can measure. Ghost
         // lines are told apart from real output only by color, so it also needs color.
         let theme = opts.theme;
+        let view = opts.view;
         let live = tty && theme.enabled() && terminal_size::terminal_size().is_some();
         let cwd_for_alias = opts.cwd.clone();
         Ok(Self {
@@ -391,7 +394,7 @@ impl<'p> Runner<'p> {
             rests: Vec::new(),
             screen: RefCell::new(Screen::new(live, theme)),
             footer: None,
-            view: Cell::new(if tty { View::Compact } else { View::Full }),
+            view: Cell::new(if tty { view } else { View::Full }),
             named: Vec::new(),
             pwd_alias: pwd_alias(&cwd_for_alias),
         })

@@ -2,6 +2,7 @@
 
 pub mod ast;
 pub mod compile;
+pub mod config;
 pub mod diag;
 pub mod fmt;
 pub mod ir;

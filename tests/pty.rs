@@ -31,6 +31,8 @@ fn start_with_env(dir: &Path, args: &[&str], env: &[(&str, PathBuf)]) -> Session
     cmd.env_remove("NO_COLOR");
     cmd.env_remove("CLICOLOR_FORCE");
     cmd.env("TERM", "xterm-256color");
+    // The developer's own config must never change a result.
+    cmd.env("KORIN_CONFIG", "/nonexistent/korin/config.kdl");
     for (key, value) in env {
         cmd.env(key, value);
     }
@@ -962,9 +964,30 @@ fn hidden_input_counts_characters_and_leaves_only_a_tick() {
     assert_eq!(s.wait(), 0, "{}", s.text());
     let shown = screen(&s);
     assert!(shown.contains("token (hidden): ✓"), "{shown}");
-    assert!(!shown.contains("chars"), "the length stayed on screen:\n{shown}");
+    assert!(
+        !shown.contains("chars"),
+        "the length stayed on screen:\n{shown}"
+    );
     assert!(!s.text().contains("s3cret"), "{}", s.text());
     // The command got the whole value, and the journal holds no length.
     assert!(s.text().contains("len=6"), "{}", s.text());
     assert!(!events(dir.path()).contains("chars"));
+}
+
+// ---- the config file ----
+
+#[test]
+fn the_config_file_sets_the_starting_view_and_require_enter() {
+    let dir = setup("stage \"a\"\n  read true\n", &[]);
+    let config = dir.path().join("config.kdl");
+    std::fs::write(&config, "view full\nrequire-enter #true\n").unwrap();
+    let mut s = start_with_env(dir.path(), &["run", "w.korin"], &[("KORIN_CONFIG", config)]);
+    s.wait_for("f compact]");
+    std::thread::sleep(Duration::from_millis(400));
+    // With require-enter, y alone does not answer the gate.
+    s.send("y");
+    std::thread::sleep(Duration::from_millis(400));
+    assert!(!s.text().contains("stage 1 done"), "{}", s.text());
+    s.send("\r");
+    assert_eq!(s.wait(), 0, "{}", s.text());
 }

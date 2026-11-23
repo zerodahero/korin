@@ -1,0 +1,3 @@
+// Read every path in full, and answer gates with y and then Enter.
+view full
+require-enter #true

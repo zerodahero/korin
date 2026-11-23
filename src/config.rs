@@ -1,0 +1,319 @@
+//! The user's config file: reader preferences, such as the view a run starts in.
+//!
+//! The file is `$XDG_CONFIG_HOME/korin/config.kdl`, else `~/.config/korin/config.kdl`, or the
+//! path in `KORIN_CONFIG`. It is the operator's file only: no project file can change how a
+//! reviewer sees a gate. A missing file is not an error.
+//!
+//! Each key is a KDL v2 node with one argument, such as `view compact`. For every key a flag
+//! wins over the environment, the environment over the file, and the file over the default.
+
+use std::fmt;
+use std::path::{Path, PathBuf};
+
+use kdl::{KdlDocument, KdlNode, KdlValue};
+
+use crate::ast::Span;
+use crate::diag::{Diag, SourceFile};
+use crate::theme::Choice;
+use crate::view::View;
+
+/// The keys a config file may set, in the order `korin config` lists them.
+pub const KEYS: &[&str] = &["view", "require-enter", "color"];
+
+/// A loaded config file. Each key the file sets keeps its value.
+#[derive(Debug, Default)]
+pub struct Config {
+    /// Where the file is, or would be.
+    pub path: PathBuf,
+    /// Whether the file exists.
+    pub exists: bool,
+    pub view: Option<View>,
+    pub require_enter: Option<bool>,
+    pub color: Option<Choice>,
+}
+
+/// Where a key's effective value comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    Flag,
+    Env,
+    File,
+    Default,
+}
+
+impl fmt::Display for Source {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Source::Flag => "flag",
+            Source::Env => "env",
+            Source::File => "file",
+            Source::Default => "default",
+        })
+    }
+}
+
+/// The values given on the command line, which win over everything else.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Flags {
+    pub require_enter: bool,
+    pub color: Option<Choice>,
+}
+
+/// Every key's effective value, with where it came from.
+#[derive(Debug, Clone, Copy)]
+pub struct Effective {
+    pub view: (View, Source),
+    pub require_enter: (bool, Source),
+    pub color: (Choice, Source),
+}
+
+impl Effective {
+    /// Each key with its value as the file would write it, for `korin config`.
+    pub fn listing(&self) -> Vec<(&'static str, String, Source)> {
+        vec![
+            ("view", view_name(self.view.0).to_string(), self.view.1),
+            (
+                "require-enter",
+                bool_name(self.require_enter.0).to_string(),
+                self.require_enter.1,
+            ),
+            ("color", choice_name(self.color.0).to_string(), self.color.1),
+        ]
+    }
+}
+
+/// The config file's path: `KORIN_CONFIG`, else under `XDG_CONFIG_HOME`, else under `~/.config`.
+pub fn path() -> PathBuf {
+    if let Some(path) = std::env::var_os("KORIN_CONFIG").filter(|p| !p.is_empty()) {
+        return PathBuf::from(path);
+    }
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .unwrap_or_else(|| PathBuf::from(".config"));
+    base.join("korin").join("config.kdl")
+}
+
+/// Loads the config file at [`path`].
+///
+/// # Errors
+///
+/// Diagnostics when the file cannot be read or holds a bad key; see [`parse`].
+pub fn load() -> Result<Config, Vec<Diag>> {
+    load_from(&path())
+}
+
+/// Loads the config file at `path`. A missing file gives an empty config.
+///
+/// # Errors
+///
+/// Diagnostics when the file cannot be read or holds a bad key; see [`parse`].
+pub fn load_from(path: &Path) -> Result<Config, Vec<Diag>> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Config {
+                path: path.to_path_buf(),
+                ..Config::default()
+            });
+        }
+        Err(e) => {
+            let file = SourceFile::new(path, path.display().to_string(), "");
+            return Err(vec![Diag::error(
+                &file,
+                "config",
+                Span::new(0, 0),
+                format!("cannot read the config file: {e}"),
+            )]);
+        }
+    };
+    parse(path, &text)
+}
+
+/// Parses the text of a config file.
+///
+/// # Errors
+///
+/// One diagnostic per problem: text that is not KDL, an unknown or repeated key, or a value
+/// of the wrong kind.
+pub fn parse(path: &Path, text: &str) -> Result<Config, Vec<Diag>> {
+    let file = SourceFile::new(path, path.display().to_string(), text);
+    let doc = KdlDocument::parse_v2(text).map_err(|e| {
+        e.diagnostics
+            .iter()
+            .map(|d| {
+                let mut diag = Diag::error(
+                    &file,
+                    "config",
+                    span(d.span),
+                    d.message
+                        .clone()
+                        .unwrap_or_else(|| "the config file is not valid KDL".into()),
+                )
+                .label(d.label.clone().unwrap_or_default());
+                if let Some(help) = &d.help {
+                    diag = diag.help(help.clone());
+                }
+                diag
+            })
+            .collect::<Vec<_>>()
+    })?;
+    let mut config = Config {
+        path: path.to_path_buf(),
+        exists: true,
+        ..Config::default()
+    };
+    let mut diags = Vec::new();
+    let mut seen: Vec<(&str, Span)> = Vec::new();
+    for node in doc.nodes() {
+        let name = node.name().value();
+        let at = span(node.span());
+        let Some(key) = KEYS.iter().find(|k| **k == name) else {
+            diags.push(
+                Diag::error(&file, "config", at, format!("unknown config key `{name}`"))
+                    .label("not a key")
+                    .help(format!("the keys are {}", list(KEYS))),
+            );
+            continue;
+        };
+        if let Some((_, first)) = seen.iter().find(|(k, _)| k == key) {
+            diags.push(
+                Diag::error(
+                    &file,
+                    "config",
+                    at,
+                    format!("`{key}` appears more than once"),
+                )
+                .label("again here")
+                .related(*first, "first set here"),
+            );
+            continue;
+        }
+        seen.push((key, at));
+        let result = match *key {
+            "view" => one_of(node, &["compact", "full"]).map(|v| {
+                config.view = Some(if v == "full" {
+                    View::Full
+                } else {
+                    View::Compact
+                });
+            }),
+            "require-enter" => boolean(node).map(|b| config.require_enter = Some(b)),
+            "color" => one_of(node, &["auto", "always", "never"]).map(|v| {
+                config.color = Some(match v.as_str() {
+                    "always" => Choice::Always,
+                    "never" => Choice::Never,
+                    _ => Choice::Auto,
+                });
+            }),
+            _ => unreachable!("every key in KEYS has an arm"),
+        };
+        if let Err((message, help)) = result {
+            diags.push(
+                Diag::error(&file, "config", at, format!("`{key}` {message}"))
+                    .label("here")
+                    .help(help),
+            );
+        }
+    }
+    if diags.is_empty() {
+        Ok(config)
+    } else {
+        Err(diags)
+    }
+}
+
+/// Merges the flags, the environment and the file into each key's effective value.
+pub fn resolve(config: &Config, flags: Flags) -> Effective {
+    let view = config
+        .view
+        .map_or((View::Compact, Source::Default), |v| (v, Source::File));
+    let require_enter = if flags.require_enter {
+        (true, Source::Flag)
+    } else if let Some(v) = std::env::var_os("KORIN_REQUIRE_ENTER").filter(|v| !v.is_empty()) {
+        (v != "0", Source::Env)
+    } else {
+        config
+            .require_enter
+            .map_or((false, Source::Default), |v| (v, Source::File))
+    };
+    let color = if let Some(c) = flags.color {
+        (c, Source::Flag)
+    } else {
+        config
+            .color
+            .map_or((Choice::Auto, Source::Default), |c| (c, Source::File))
+    };
+    Effective {
+        view,
+        require_enter,
+        color,
+    }
+}
+
+/// The node's single argument, which must be a string.
+fn argument(node: &KdlNode) -> Result<&KdlValue, (String, String)> {
+    let entries = node.entries();
+    if node.children().is_some() {
+        return Err(("takes no children".into(), "write it on one line".into()));
+    }
+    match entries {
+        [entry] if entry.name().is_none() => Ok(entry.value()),
+        _ => Err((
+            "takes exactly one value".into(),
+            format!("write it as `{} <value>`", node.name().value()),
+        )),
+    }
+}
+
+fn one_of(node: &KdlNode, values: &[&str]) -> Result<String, (String, String)> {
+    match argument(node)? {
+        KdlValue::String(s) if values.contains(&s.as_str()) => Ok(s.clone()),
+        other => Err((
+            format!("cannot be {other}"),
+            format!("use one of {}", list(values)),
+        )),
+    }
+}
+
+fn boolean(node: &KdlNode) -> Result<bool, (String, String)> {
+    match argument(node)? {
+        KdlValue::Bool(b) => Ok(*b),
+        other => Err((
+            format!("cannot be {other}"),
+            "use `#true` or `#false`".into(),
+        )),
+    }
+}
+
+fn list(values: &[&str]) -> String {
+    values
+        .iter()
+        .map(|v| format!("`{v}`"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn span(s: miette::SourceSpan) -> Span {
+    Span::new(s.offset(), s.offset() + s.len())
+}
+
+fn view_name(view: View) -> &'static str {
+    match view {
+        View::Compact => "compact",
+        View::Full => "full",
+    }
+}
+
+fn bool_name(b: bool) -> &'static str {
+    if b { "#true" } else { "#false" }
+}
+
+fn choice_name(choice: Choice) -> &'static str {
+    match choice {
+        Choice::Auto => "auto",
+        Choice::Always => "always",
+        Choice::Never => "never",
+    }
+}
