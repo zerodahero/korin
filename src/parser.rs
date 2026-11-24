@@ -468,43 +468,69 @@ impl<'a> Parser<'a> {
             cur.expect_end()?;
             Ok(title)
         })?;
-        let (skip, steps) = self.stage_body(node, "the stage has no steps")?;
+        let body = self.stage_body(node, "the stage has no steps")?;
         Some(Stage {
             title,
-            skip,
-            steps,
+            skip: body.skip,
+            retry: body.retry,
+            steps: body.steps,
             span: node.span(),
         })
     }
 
-    /// A stage's or the preflight's body: an optional `skip` line first, then the steps.
-    fn stage_body(
-        &mut self,
-        node: &Node,
-        empty: &str,
-    ) -> Option<(Option<Spanned<SkipRule>>, Vec<Step>)> {
+    /// A stage's or the preflight's body: an optional `skip` line and an optional `retry`
+    /// line first, in either order, then the steps.
+    fn stage_body(&mut self, node: &Node, empty: &str) -> Option<StageBody> {
         let mut children = node.children.as_slice();
         let mut skip = None;
-        if let Some(first) = children.first()
-            && self.cur(first).peek_ident().as_deref() == Some("skip")
-        {
-            skip = self.recover(|p| p.skip_line(first));
-            children = &children[1..];
-            if let Some(second) = children.first()
-                && self.cur(second).peek_ident().as_deref() == Some("skip")
-            {
-                self.errors.push(
-                    self.err("skip", second.span(), "a stage has at most one `skip` line")
-                        .help("`never`, `ends` and `also` do not combine; list every stage on one `skip also`"),
-                );
-                children = &children[1..];
+        let mut skip_seen = false;
+        let mut retry = None;
+        while let Some(first) = children.first() {
+            match self.cur(first).peek_ident().as_deref() {
+                Some("skip") => {
+                    if skip_seen {
+                        self.errors.push(
+                            self.err("skip", first.span(), "a stage has at most one `skip` line")
+                                .help("`never`, `ends` and `also` do not combine; list every stage on one `skip also`"),
+                        );
+                    } else {
+                        skip = self.recover(|p| p.skip_line(first));
+                        skip_seen = true;
+                    }
+                }
+                Some("retry") => {
+                    if retry.is_some() {
+                        self.errors.push(self.err(
+                            "retry",
+                            first.span(),
+                            "a stage has at most one `retry` line",
+                        ));
+                    } else if let Some(span) = self.recover(|p| p.retry_line(first)) {
+                        retry = Some(span);
+                    }
+                }
+                _ => break,
             }
+            children = &children[1..];
         }
         if children.is_empty() {
             self.errors.push(self.err("syntax", node.span(), empty));
             return None;
         }
-        Some((skip, self.steps(children)))
+        Some(StageBody {
+            skip,
+            retry,
+            steps: self.steps(children),
+        })
+    }
+
+    /// `retry`: a failure in the stage can be retried.
+    fn retry_line(&mut self, node: &Node) -> PResult<Span> {
+        self.no_children(node)?;
+        let mut cur = self.cur(node);
+        cur.expect_keyword("retry")?;
+        cur.expect_end()?;
+        Ok(node.span())
     }
 
     /// `skip never`, `skip ends` or `skip also "A", "B"`.
@@ -549,11 +575,12 @@ impl<'a> Parser<'a> {
             cur.expect_end()?;
             Ok(title)
         })?;
-        let (skip, steps) = self.stage_body(node, "the preflight has no steps")?;
+        let body = self.stage_body(node, "the preflight has no steps")?;
         Some(Stage {
             title,
-            skip,
-            steps,
+            skip: body.skip,
+            retry: body.retry,
+            steps: body.steps,
             span: node.span(),
         })
     }
@@ -751,10 +778,10 @@ impl<'a> Parser<'a> {
                 span,
                 "`exports` must be the first line of a `define` body",
             )),
-            "skip" => Err(self.err(
+            "skip" | "retry" => Err(self.err(
                 "misplaced",
                 span,
-                "`skip` must be the first line of a stage or the preflight",
+                format!("`{keyword}` must come before the steps of a stage or the preflight"),
             )),
             _ => {
                 if cur.is_call() {
@@ -1768,4 +1795,11 @@ fn merge_literals(parts: Vec<Part>) -> Vec<Part> {
         merged.push(part);
     }
     merged
+}
+
+/// What a stage's or the preflight's body holds: its leading lines, then its steps.
+struct StageBody {
+    skip: Option<Spanned<SkipRule>>,
+    retry: Option<Span>,
+    steps: Vec<Step>,
 }

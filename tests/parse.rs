@@ -285,10 +285,32 @@ fn skip_lines_come_first_and_once() {
     ));
     assert!(twice.contains("at most one `skip` line"), "{twice}");
     let late = errors(&with_header("stage \"a\"\n  read true\n  skip never\n"));
-    assert!(late.contains("`skip` must be the first line"), "{late}");
+    assert!(late.contains("`skip` must come before the steps"), "{late}");
     let unknown = errors(&with_header("stage \"a\"\n  skip sometimes\n  read true\n"));
     assert!(
         unknown.contains("unknown skip rule `sometimes`"),
         "{unknown}"
     );
+}
+
+#[test]
+fn retry_lines_lead_a_stage_with_skip_in_either_order() {
+    let ok = wizard(&with_header(concat!(
+        "preflight\n  retry\n  read true\n",
+        "stage \"a\"\n  retry\n  skip never\n  read true\n",
+        "stage \"b\"\n  skip ends\n  retry\n  read true\n",
+        "stage \"c\"\n  read true\n",
+    )));
+    assert_eq!(ok.matches("retry: Some(").count(), 3, "{ok}");
+    assert_eq!(ok.matches("retry: None").count(), 1, "{ok}");
+    assert!(ok.contains("Never") && ok.contains("Ends"), "{ok}");
+    let twice = errors(&with_header("stage \"a\"\n  retry\n  retry\n  read true\n"));
+    assert!(twice.contains("at most one `retry` line"), "{twice}");
+    let late = errors(&with_header("stage \"a\"\n  read true\n  retry\n"));
+    assert!(
+        late.contains("`retry` must come before the steps"),
+        "{late}"
+    );
+    let extra = errors(&with_header("stage \"a\"\n  retry 3\n  read true\n"));
+    assert!(!extra.is_empty(), "{extra}");
 }

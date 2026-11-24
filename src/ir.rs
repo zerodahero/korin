@@ -241,6 +241,8 @@ pub struct Stage {
     pub title: String,
     /// What its `skip` line says, with `skip also` titles resolved to stage numbers.
     pub skip: SkipRule,
+    /// Whether a failure in the stage can be retried: its `retry` line.
+    pub retry: bool,
     pub steps: Vec<Step>,
     pub mutating: bool,
     pub loc: Loc,

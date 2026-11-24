@@ -238,8 +238,11 @@ stage "one"
   read true
 stage "two"
   skip ends
+  retry
   read true
 stage "three"
+  retry
+  skip never
   read true
 
 ----------------------------------------
@@ -266,10 +269,13 @@ stage "three"
     (string)
     (stage_body
       (skip)
+      (retry)
       (command
         (word))))
   (stage
     (string)
     (stage_body
+      (retry)
+      (skip)
       (command
         (word)))))

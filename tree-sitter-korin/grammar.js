@@ -115,7 +115,10 @@ module.exports = grammar({
 
     stage: $ => seq('stage', field('title', $.string), $._newline, field('body', $.stage_body)),
 
-    stage_body: $ => seq($._indent, optional($.skip), repeat1($._step), $._dedent),
+    // A `skip` line and a `retry` line may lead the body, in either order.
+    stage_body: $ => seq($._indent, repeat(choice($.skip, $.retry)), repeat1($._step), $._dedent),
+
+    retry: $ => seq('retry', $._newline),
 
     skip: $ => seq(
       'skip',

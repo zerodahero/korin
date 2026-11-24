@@ -1814,3 +1814,14 @@ fn a_piped_run_tags_each_command_on_a_line_of_its_own() {
         out.text
     );
 }
+
+#[test]
+fn a_retry_stage_without_a_terminal_fails_with_no_prompt() {
+    let env = Env::new();
+    env.script("bin/fails", "#!/bin/sh\nexit 3\n");
+    env.wizard("stage \"a\"\n  retry\n  read fails\n");
+    let out = env.run_yes(&[]);
+    assert_eq!(out.code, 1, "{}", out.text);
+    assert!(!out.text.contains("retry"), "{}", out.text);
+    assert!(env.events_of("stage_retry").is_empty());
+}

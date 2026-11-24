@@ -528,6 +528,8 @@ struct Runner<'p> {
     current_step: Option<String>,
     /// How each stage that started or was skipped ended, by stage number, for the pane.
     stage_states: HashMap<usize, StageState>,
+    /// How many times each `retry` stage was retried, by stage number.
+    retries: HashMap<usize, usize>,
     /// How much of each path and value the terminal shows. The toggle key switches it.
     view: Cell<View>,
     /// Values that name a directory, as path prefixes for the compact view: each name's
@@ -716,6 +718,7 @@ impl<'p> Runner<'p> {
             screen: RefCell::new(Screen::new(live, theme)),
             current_step: None,
             stage_states: HashMap::new(),
+            retries: HashMap::new(),
             view: Cell::new(if tty { view } else { View::Full }),
             named: Vec::new(),
             legend: Cell::new(legend),
@@ -875,7 +878,11 @@ impl<'p> Runner<'p> {
             let label = self.redactor.redact(&label);
             let line = match self.stage_states.get(&stage.number) {
                 Some(StageState::Done(took)) => {
-                    theme.pane_stage(pane::Mark::Done, &label, &elapsed(*took))
+                    let tail = match self.retries.get(&stage.number) {
+                        Some(n) => format!("{} · retried {n}×", elapsed(*took)),
+                        None => elapsed(*took),
+                    };
+                    theme.pane_stage(pane::Mark::Done, &label, &tail)
                 }
                 Some(StageState::Skipped) => {
                     theme.pane_stage(pane::Mark::Skipped, &label, "skipped")
@@ -2607,7 +2614,7 @@ impl<'p> Runner<'p> {
         self.stage_states
             .insert(stage.number, StageState::Running(started));
         self.current_step = Some(String::new());
-        let result = self.steps(&stage.steps, &prefix, "", None);
+        let result = self.stage_steps(stage, &prefix);
         self.current_step = None;
         // A failure prints flush, under the stage, as the run's own ending.
         if result.as_ref().is_err_and(|stop| !stop.skip_rest) {
@@ -2690,15 +2697,95 @@ impl<'p> Runner<'p> {
         suffix: &str,
         deadline: Option<Instant>,
     ) -> Result<(), Stop> {
-        for (index, step) in steps.iter().enumerate() {
+        self.steps_from(steps, 0, prefix, suffix, deadline)
+            .map_err(|(_, stop)| stop)
+    }
+
+    /// Runs `steps` from the one at `start`. A stop comes back with the index of the step
+    /// that stopped, so a `retry` stage can run again from it.
+    fn steps_from(
+        &mut self,
+        steps: &'p [Step],
+        start: usize,
+        prefix: &str,
+        suffix: &str,
+        deadline: Option<Instant>,
+    ) -> Result<(), (usize, Stop)> {
+        for (index, step) in steps.iter().enumerate().skip(start) {
             let path = format!("{prefix}.{}", index + 1);
             let rest = &steps[index + 1..];
             self.rests.push(rest);
             let result = self.step(step, rest, &path, suffix, deadline);
             self.rests.pop();
-            result?;
+            result.map_err(|stop| (index, stop))?;
         }
         Ok(())
+    }
+
+    /// Runs a stage's steps. When a step in a `retry` stage fails, and an operator is there
+    /// to answer, the stage asks whether to run again from that step, from its first step,
+    /// or to stop. A step inside `when`, `each` or `poll` runs again from the top-level step
+    /// that holds it.
+    fn stage_steps(&mut self, stage: &'p ir::Stage, prefix: &str) -> Result<(), Stop> {
+        let mut start = 0;
+        let mut attempt = 1;
+        loop {
+            let (index, stop) = match self.steps_from(&stage.steps, start, prefix, "", None) {
+                Ok(()) => return Ok(()),
+                Err(failed) => failed,
+            };
+            let retryable = stage.retry
+                && self.tty
+                && !self.opts.yes
+                && stop.ending == Ending::Failed
+                && !stop.skip_rest;
+            if !retryable {
+                return Err(stop);
+            }
+            let failed = stage.steps[index].id.clone();
+            let Some(from_failed) = self.ask_retry(stage, &failed, &stop)? else {
+                return Err(stop);
+            };
+            attempt += 1;
+            start = if from_failed { index } else { 0 };
+            let from = stage.steps[start].id.clone();
+            *self.retries.entry(stage.number).or_default() += 1;
+            self.journal.event(
+                "stage_retry",
+                json!({"stage": stage_id(stage), "attempt": attempt, "from": from, "failed": failed}),
+            );
+            self.journal
+                .report(&format!("- failed at {failed}; retried from {from}"));
+            self.say(&format!(
+                "↻ retry {attempt} of {}, from {from}",
+                stage.name()
+            ));
+            self.update_pane();
+        }
+    }
+
+    /// Asks, in the pane, whether to retry a failed stage: `Some(true)` from the step that
+    /// failed, `Some(false)` from the first step, `None` to stop.
+    fn ask_retry(
+        &mut self,
+        stage: &ir::Stage,
+        failed: &str,
+        stop: &Stop,
+    ) -> Result<Option<bool>, Stop> {
+        let theme = self.opts.theme;
+        self.screen.borrow_mut().mark();
+        let reason = self.redactor.redact(&stop.message);
+        self.show_prompt_pane(vec![
+            theme.lines(&format!("✗ {} failed at {failed}: {reason}", stage.name())),
+        ]);
+        let prompt = theme.ask(&format!("r retry from {failed} · R retry stage · q quit"));
+        let choice = self.read_choice(&prompt, &['r', 'R', 'q']);
+        self.close_gate();
+        Ok(match choice? {
+            Some('r') => Some(true),
+            Some('R') => Some(false),
+            _ => None,
+        })
     }
 
     fn step(

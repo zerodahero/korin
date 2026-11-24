@@ -1196,6 +1196,11 @@
     }
   },
   {
+    "type": "retry",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "say",
     "named": true,
     "fields": {
@@ -1355,6 +1360,10 @@
       "types": [
         {
           "type": "_step",
+          "named": true
+        },
+        {
+          "type": "retry",
           "named": true
         },
         {
@@ -1826,6 +1835,10 @@
   },
   {
     "type": "required",
+    "named": false
+  },
+  {
+    "type": "retry",
     "named": false
   },
   {

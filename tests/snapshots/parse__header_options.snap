@@ -77,6 +77,7 @@ Wizard {
         Stage {
             title: "s" @ 169..172,
             skip: None,
+            retry: None,
             steps: [
                 Say {
                     kind: Note,

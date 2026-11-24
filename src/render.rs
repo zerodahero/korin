@@ -910,13 +910,18 @@ pub fn plan(program: &Program, width: usize) -> String {
         let gated = program.gates == GateMode::All || preflight.mutating;
         out.push(preflight_rule(&preflight.title, width));
         out.push(format!(
-            "  read-only, {}; runs first, even with --from",
+            "  read-only, {}; runs first, even with --from{}",
             if guide {
                 "pause"
             } else if gated {
                 "gate"
             } else {
                 "pause"
+            },
+            if preflight.retry {
+                "; retry on failure"
+            } else {
+                ""
             },
         ));
         for step in &preflight.steps {
@@ -949,8 +954,13 @@ pub fn plan(program: &Program, width: usize) -> String {
             }
         };
         out.push(stage_rule(stage.number, total, &stage.title, width));
+        let retry = if stage.retry {
+            "; retry on failure"
+        } else {
+            ""
+        };
         out.push(format!(
-            "  {}, {}; {from}{skip}",
+            "  {}, {}; {from}{skip}{retry}",
             if stage.mutating {
                 "mutating"
             } else {

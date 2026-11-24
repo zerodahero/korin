@@ -16,6 +16,7 @@
   "preflight"
   "stage"
   "skip"
+  "retry"
   "exports"
   "confirm"
   "ask"

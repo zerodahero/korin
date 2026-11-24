@@ -21,7 +21,7 @@ from pygments.token import (
 
 # Words that start a line, or appear inside one, with a fixed meaning.
 KEYWORDS = (
-    "korin title gates mode unattended allowed allow use as param required secret preflight stage skip never ends also define "
+    "korin title gates mode unattended allowed allow use as param required secret preflight stage skip retry never ends also define "
     "exports confirm ask assert else when each in poll every for until fail note warn record "
     "capture expect env timeout output markdown and or not exists exit signal stdout stderr missing on file "
     "all mutating stepwise guide text lines list json"

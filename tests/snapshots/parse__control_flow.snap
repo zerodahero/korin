@@ -19,6 +19,7 @@ Wizard {
         Stage {
             title: "s" @ 24..27,
             skip: None,
+            retry: None,
             steps: [
                 When {
                     cond: And(

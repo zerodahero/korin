@@ -2450,3 +2450,96 @@ fn a_script_changed_after_the_gate_does_not_run() {
     );
     assert!(!s.text().contains("\n      │ short"), "{}", s.text());
 }
+
+// ---- retry ----
+
+const RETRY_WIZARD: &str = "stage \"a\"\n  retry\n  read mark-first\n  read flaky\n  read true\n";
+
+fn retry_setup() -> tempfile::TempDir {
+    setup(
+        RETRY_WIZARD,
+        &[
+            ("mark-first", "echo x >> \"$PWD/first.log\""),
+            (
+                "flaky",
+                "if [ -f \"$PWD/flag\" ]; then echo ok; else touch \"$PWD/flag\"; echo bad; exit 3; fi",
+            ),
+        ],
+    )
+}
+
+fn first_runs(dir: &Path) -> usize {
+    std::fs::read_to_string(dir.join("first.log"))
+        .unwrap_or_default()
+        .lines()
+        .count()
+}
+
+#[test]
+fn r_retries_a_stage_from_the_step_that_failed() {
+    let dir = retry_setup();
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("R retry stage");
+    assert!(s.text().contains("stage 1 failed at 1.2"), "{}", s.text());
+    key(&mut s, "r");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    // The step before the failure ran once.
+    assert_eq!(first_runs(dir.path()), 1);
+    let screen = s.screen();
+    assert!(
+        screen.contains("↻ retry 2 of stage 1, from 1.2"),
+        "{screen}"
+    );
+    assert!(screen.contains("retried 1×"), "{screen}");
+    // The prompt and its pane are gone from the run log.
+    assert!(!screen.contains("R retry stage"), "{screen}");
+}
+
+#[test]
+fn shift_r_retries_the_whole_stage() {
+    let dir = retry_setup();
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("R retry stage");
+    key(&mut s, "R");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert_eq!(first_runs(dir.path()), 2);
+    assert!(
+        s.screen().contains("↻ retry 2 of stage 1, from 1.1"),
+        "{}",
+        s.screen()
+    );
+}
+
+#[test]
+fn q_at_the_retry_prompt_fails_the_run() {
+    let dir = retry_setup();
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("R retry stage");
+    key(&mut s, "q");
+    assert_eq!(s.wait(), 1, "{}", s.text());
+    assert_eq!(first_runs(dir.path()), 1);
+    assert!(!s.screen().contains("↻ retry"), "{}", s.screen());
+}
+
+#[test]
+fn ctrl_c_in_a_retry_stage_offers_no_retry() {
+    let dir = setup(
+        "stage \"a\"\n  retry\n  read slow\n",
+        &[("slow", "echo started; sleep 5")],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("started");
+    std::thread::sleep(Duration::from_millis(300));
+    s.send("\x03");
+    let code = s.wait();
+    assert_ne!(code, 0, "{}", s.text());
+    assert!(!s.text().contains("R retry stage"), "{}", s.text());
+}

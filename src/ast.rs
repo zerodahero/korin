@@ -144,6 +144,8 @@ pub struct Stage {
     pub title: Spanned<String>,
     /// The stage's `skip` line, if any.
     pub skip: Option<Spanned<SkipRule>>,
+    /// The stage's `retry` line, if any: a failure in it can be retried.
+    pub retry: Option<Span>,
     pub steps: Vec<Step>,
     pub span: Span,
 }
