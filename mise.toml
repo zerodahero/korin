@@ -104,11 +104,14 @@ sed -i.bak -E 's/^(    "version": )"[^"]*"/\1"'"$version"'"/' tree-sitter-korin/
 # The Neovim setup pins the grammar to a tag that the mirror receives with this release.
 sed -i.bak -E "s/revision = 'v[^']*'/revision = '$tag'/" tree-sitter-korin/README.md
 rm Cargo.toml.bak tree-sitter-korin/tree-sitter.json.bak tree-sitter-korin/README.md.bak
+# parser.c records the grammar's version, and CI checks that regenerating changes nothing.
+(cd tree-sitter-korin && tree-sitter generate --js-runtime native)
 cargo update --workspace --offline --quiet
 git cliff --tag "$tag" -o CHANGELOG.md
 
 git --no-pager diff --stat
-git add Cargo.toml Cargo.lock CHANGELOG.md tree-sitter-korin/tree-sitter.json tree-sitter-korin/README.md
+git add Cargo.toml Cargo.lock CHANGELOG.md tree-sitter-korin/tree-sitter.json tree-sitter-korin/README.md \
+  tree-sitter-korin/src
 git commit --quiet -m "chore(release): $tag"
 git tag --annotate "$tag" -m "Release $tag"
 echo "Committed and tagged $tag."
