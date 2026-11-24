@@ -290,7 +290,13 @@ fn transcript(sidecar_path: &Path) -> Result<Transcript, String> {
         )
     });
 
-    let home = tempfile::tempdir().unwrap();
+    // Under `/tmp`, so the path is short on every machine. korin cuts a long value to fit
+    // the terminal before the transcript swaps this path for `/home/ada`, so a long path
+    // here (as macOS's `$TMPDIR` is) would cut values that CI shows in full.
+    let home = tempfile::Builder::new()
+        .prefix("k")
+        .tempdir_in("/tmp")
+        .unwrap();
     let home = home.path().canonicalize().unwrap();
     let place = home.join(&sidecar.place);
     copy_dir(source_dir, &place);
