@@ -301,6 +301,11 @@ fn run(
         legend: effective.legend.0,
         script_lines: effective.script_lines.0,
         pager: effective.pager.0.clone(),
+        openers: effective
+            .open
+            .iter()
+            .filter_map(|(kind, command, _)| Some(((*kind).to_string(), command.clone()?)))
+            .collect(),
         runs_dir: cwd.join(".korin").join("runs"),
         cwd,
         theme,

@@ -236,7 +236,7 @@ module.exports = grammar({
 
     // ---- command options ----
 
-    _option: $ => choice($.capture, $.expect, $.env, $.timeout),
+    _option: $ => choice($.capture, $.expect, $.env, $.timeout, $.output),
 
     capture: $ => seq(
       'capture',
@@ -285,6 +285,10 @@ module.exports = grammar({
     ),
 
     timeout: $ => seq('timeout', field('duration', $.duration), $._newline),
+
+    output: $ => seq('output', field('kind', $.output_kind), $._newline),
+
+    output_kind: $ => choice('markdown', 'json'),
 
     // ---- expressions ----
 

@@ -107,6 +107,7 @@ Wizard {
                         expects: [],
                         env: [],
                         timeout: None,
+                        output: None,
                         span: 30..92,
                     },
                 ),

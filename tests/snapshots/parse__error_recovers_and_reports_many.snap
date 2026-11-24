@@ -5,7 +5,7 @@ expression: "errors(&with_header(concat!(\"stage \\\"s\\\"\\n\", \"  frobnicate 
 test.korin:4:3: unknown-step: unknown step `frobnicate`
 test.korin:5:7: syntax: expected a command
 test.korin:7:13: syntax: expected a capture name
-test.korin:8:5: syntax: expected a command option: `capture`, `expect`, `env` or `timeout`
+test.korin:8:5: syntax: expected a command option: `capture`, `expect`, `env`, `timeout` or `output`
 test.korin:9:18: syntax: expected `else`
 test.korin:10:3: syntax: the poll has no `until` condition
 test.korin:12:8: syntax: this string is not closed

@@ -1608,6 +1608,7 @@ impl Compiler {
             expects: expects.into_iter().map(|(_, o)| o).collect(),
             env,
             timeout: command.timeout.as_ref().map(|t| t.value.0),
+            output: command.output.as_ref().map(|o| o.value),
             secret_producing,
         }
     }

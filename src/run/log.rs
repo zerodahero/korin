@@ -129,6 +129,72 @@ impl Exit {
     }
 }
 
+/// What an item in the `o` picker is, so it opens in the right program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenKind {
+    Script,
+    Json,
+    Markdown,
+    Text,
+}
+
+impl OpenKind {
+    /// Its name in the config file's `open` block.
+    pub fn name(self) -> &'static str {
+        match self {
+            OpenKind::Script => "script",
+            OpenKind::Json => "json",
+            OpenKind::Markdown => "markdown",
+            OpenKind::Text => "text",
+        }
+    }
+
+    /// The extension for the copy the opener reads, so it knows the format too.
+    pub fn extension(self) -> &'static str {
+        match self {
+            OpenKind::Json => "json",
+            OpenKind::Markdown => "md",
+            OpenKind::Script | OpenKind::Text => "txt",
+        }
+    }
+}
+
+/// The most output korin checks for JSON. A larger output opens as text.
+pub const JSON_LIMIT: usize = 16 * 1024 * 1024;
+
+/// A script's kind: markdown for a `.md` file, else script.
+pub fn script_kind(path: &Path) -> OpenKind {
+    if path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("md"))
+    {
+        OpenKind::Markdown
+    } else {
+        OpenKind::Script
+    }
+}
+
+/// An output's kind. A command's `output` line decides; otherwise stdout that parses as JSON
+/// is json, and the rest is text.
+pub fn output_kind(hint: Option<crate::ast::OutputKind>, stdout: &str) -> OpenKind {
+    match hint {
+        Some(crate::ast::OutputKind::Markdown) => OpenKind::Markdown,
+        Some(crate::ast::OutputKind::Json) => OpenKind::Json,
+        None => {
+            let text = stdout.trim();
+            let looks = text.starts_with('{') || text.starts_with('[');
+            if looks
+                && text.len() <= JSON_LIMIT
+                && serde_json::from_str::<serde_json::Value>(text).is_ok()
+            {
+                OpenKind::Json
+            } else {
+                OpenKind::Text
+            }
+        }
+    }
+}
+
 /// Which stream a line came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stream {
@@ -229,6 +295,22 @@ pub fn spool_text(path: &Path) -> std::io::Result<String> {
     Ok(out)
 }
 
+/// A spool's stdout lines only, for an opener that reads one format, such as JSON.
+///
+/// # Errors
+///
+/// Returns an I/O error if the file cannot be read.
+pub fn spool_stdout(path: &Path) -> std::io::Result<String> {
+    let mut out = String::new();
+    read_spool(path, |stream, line| {
+        if stream == Stream::Out {
+            out.push_str(line);
+            out.push('\n');
+        }
+    })?;
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -278,6 +360,35 @@ mod tests {
         assert_eq!(mode(false, false, FOLD_AT + 1), Mode::Full);
         assert_eq!(mode(true, true, FOLD_AT + 1), Mode::Full);
         assert_eq!(mode(true, false, FOLD_AT), Mode::Full);
+    }
+
+    #[test]
+    fn an_item_opens_by_its_kind() {
+        use crate::ast::OutputKind;
+        assert_eq!(output_kind(None, "{\"a\": 1}\n"), OpenKind::Json);
+        assert_eq!(output_kind(None, "  [1, 2]\n"), OpenKind::Json);
+        assert_eq!(output_kind(None, "{not json"), OpenKind::Text);
+        assert_eq!(output_kind(None, "plain"), OpenKind::Text);
+        assert_eq!(
+            output_kind(Some(OutputKind::Markdown), "{}"),
+            OpenKind::Markdown
+        );
+        assert_eq!(output_kind(Some(OutputKind::Json), "x"), OpenKind::Json);
+        assert_eq!(script_kind(Path::new("a/notes.MD")), OpenKind::Markdown);
+        assert_eq!(script_kind(Path::new("run.sh")), OpenKind::Script);
+    }
+
+    #[test]
+    fn json_is_checked_on_stdout_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("0001.out");
+        let mut spool = Spool::create(path.clone()).unwrap();
+        spool.push(Stream::Err, "warning: slow\n");
+        spool.push(Stream::Out, "{\"ok\": true}\n");
+        spool.close();
+        let stdout = spool_stdout(&path).unwrap();
+        assert_eq!(stdout, "{\"ok\": true}\n");
+        assert_eq!(output_kind(None, &stdout), OpenKind::Json);
     }
 
     #[test]

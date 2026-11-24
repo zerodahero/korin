@@ -741,7 +741,7 @@ impl<'a> Parser<'a> {
                 span,
                 format!("`{keyword}` belongs directly inside a `poll`"),
             )),
-            "capture" | "expect" | "env" | "timeout" => Err(self.err(
+            "capture" | "expect" | "env" | "timeout" | "output" => Err(self.err(
                 "misplaced",
                 span,
                 format!("`{keyword}` is an option and belongs indented under a command"),
@@ -784,6 +784,7 @@ impl<'a> Parser<'a> {
             expects: Vec::new(),
             env: Vec::new(),
             timeout: None,
+            output: None,
             span: node.span(),
         };
         for child in &node.children {
@@ -857,12 +858,37 @@ impl<'a> Parser<'a> {
                 }
                 command.timeout = Some(duration);
             }
+            Some("output") => {
+                cur.expect_keyword("output")?;
+                let kind = cur.expect_ident("`markdown` or `json`")?;
+                cur.expect_end()?;
+                let value = match kind.value.as_str() {
+                    "markdown" => crate::ast::OutputKind::Markdown,
+                    "json" => crate::ast::OutputKind::Json,
+                    other => {
+                        return Err(self
+                            .err(
+                                "syntax",
+                                kind.span,
+                                format!("unknown output kind `{other}`"),
+                            )
+                            .help("write `output markdown` or `output json`"));
+                    }
+                };
+                if command.output.is_some() {
+                    return Err(self.err("syntax", span, "the command already has an `output`"));
+                }
+                command.output = Some(Spanned {
+                    value,
+                    span: kind.span,
+                });
+            }
             _ => {
                 return Err(self
                     .err(
                         "syntax",
                         span,
-                        "expected a command option: `capture`, `expect`, `env` or `timeout`",
+                        "expected a command option: `capture`, `expect`, `env`, `timeout` or `output`",
                     )
                     .help("steps are not indented under a command; dedent this line"));
             }

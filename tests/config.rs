@@ -71,7 +71,7 @@ fn a_missing_file_gives_the_defaults() {
 #[test]
 fn the_file_sets_each_key() {
     let (_dir, path) = with_config(
-        "// my preferences\nview full\nlegend #false\nscript-lines 5\npager \"less -R\"\nrequire-enter #true\ncolor never\nicons nerd\n",
+        "// my preferences\nview full\nlegend #false\nscript-lines 5\npager \"less -R\"\nrequire-enter #true\ncolor never\nicons nerd\nopen {\n  json \"jnv\"\n  markdown \"glow -p\"\n}\n",
     );
     let out = korin(&path, &["config"], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
@@ -87,6 +87,15 @@ fn the_file_sets_each_key() {
     );
     assert_eq!(line(&text, "color"), ["color", "never", "file"]);
     assert_eq!(line(&text, "icons"), ["icons", "nerd", "file"]);
+    assert_eq!(line(&text, "open.json"), ["open.json", "\"jnv\"", "file"]);
+    assert_eq!(
+        line(&text, "open.markdown"),
+        ["open.markdown", "\"glow", "-p\"", "file"]
+    );
+    assert_eq!(
+        line(&text, "open.script"),
+        ["open.script", "the", "pager", "default"]
+    );
 }
 
 #[test]
@@ -121,6 +130,12 @@ fn errors_name_the_key_and_stop_before_anything_runs() {
         ("require-enter yes\n", "`require-enter` cannot be"),
         ("view wide\n", "`view` cannot be"),
         ("icons emoji\n", "`icons` cannot be"),
+        ("open \"jnv\"\n", "`open` takes no value"),
+        (
+            "open {\n  pdf \"zathura\"\n}\n",
+            "unknown kind `pdf` in `open`",
+        ),
+        ("open {\n  json 5\n}\n", "`open json` cannot be"),
         ("color\n", "`color` takes exactly one value"),
         ("script-lines -1\n", "`script-lines` cannot be"),
         ("pager 5\n", "`pager` cannot be"),

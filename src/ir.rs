@@ -194,6 +194,8 @@ pub struct Command {
     pub expects: Vec<Expect>,
     pub env: Vec<(String, Interpolated)>,
     pub timeout: Option<u64>,
+    /// What the output is, for the `o` picker's opener.
+    pub output: Option<crate::ast::OutputKind>,
     /// True when the step has any `capture secret`, so its payload is staged.
     pub secret_producing: bool,
 }

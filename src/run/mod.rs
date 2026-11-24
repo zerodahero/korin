@@ -145,6 +145,8 @@ pub struct Options {
     pub script_lines: usize,
     /// The pager command for `o`, from the config file; else `$PAGER`, else `less`.
     pub pager: Option<String>,
+    /// The command that opens each kind of item at `o`, by kind name, where one is set.
+    pub openers: Vec<(String, String)>,
     /// Where run directories go, normally `.korin/runs`.
     pub runs_dir: PathBuf,
     /// The directory commands run in.
@@ -211,6 +213,8 @@ struct CommandBlock {
     exit: Option<log::Exit>,
     /// How many rows of `head` are the `$` line, before its notes.
     shell_rows: usize,
+    /// What the command's `output` line says its output is.
+    output: Option<crate::ast::OutputKind>,
 }
 
 /// A poll that runs now, as its pane lines show it.
@@ -233,6 +237,8 @@ struct Folded {
     label: String,
     hidden: usize,
     spool: PathBuf,
+    /// What the command's `output` line says its output is.
+    output: Option<crate::ast::OutputKind>,
 }
 
 /// Where a stage stands, as the plan pane shows it.
@@ -1659,28 +1665,39 @@ impl<'p> Runner<'p> {
         }
     }
 
-    /// Opens one of the prompt's scripts in the pager: a redacted copy of its pinned bytes,
-    /// never the file itself. With no pager, prints it instead.
     /// The `o` picker: the scripts of the steps to come, then the outputs folded so far,
     /// newest first. With only one, it opens at once.
     fn open_item(&mut self) -> Result<(), Stop> {
         let scripts = self.prompt_scripts.borrow().clone();
         let outputs: Vec<Folded> = self.folded.borrow().iter().rev().cloned().collect();
+        // Each output's kind, from its `output` line or its stdout.
+        let kinds: Vec<log::OpenKind> = outputs
+            .iter()
+            .map(|output| {
+                let stdout = match output.output {
+                    Some(_) => String::new(),
+                    None => log::spool_stdout(&output.spool).unwrap_or_default(),
+                };
+                log::output_kind(output.output, &stdout)
+            })
+            .collect();
         let total = scripts.len() + outputs.len();
         let choice = if total == 1 {
             0
         } else {
             self.say("  open:");
-            let width = self.width().saturating_sub(24).max(20);
+            let width = self.width().saturating_sub(34).max(20);
             for (index, file) in scripts.iter().enumerate() {
                 let name = self.shorten_text(&render::escape_controls(&file.display().to_string()));
-                self.say(&format!("  {:>4}  script  {name}", index + 1));
+                let kind = log::script_kind(file).name();
+                self.say(&format!("  {:>4}  script  {kind:<8}  {name}", index + 1));
             }
             for (index, output) in outputs.iter().enumerate() {
                 let label = pane::clip(&render::escape_controls(&output.label), width);
                 self.say(&format!(
-                    "  {:>4}  output  {}  {label}  +{} lines",
+                    "  {:>4}  output  {:<8}  {}  {label}  +{} lines",
                     scripts.len() + index + 1,
+                    kinds[index].name(),
                     output.step,
                     output.hidden
                 ));
@@ -1696,10 +1713,19 @@ impl<'p> Runner<'p> {
             self.open_script(&scripts[choice]);
             return Ok(());
         }
-        let output = &outputs[choice - scripts.len()];
-        match log::spool_text(&output.spool) {
+        let index = choice - scripts.len();
+        let output = &outputs[index];
+        let kind = kinds[index];
+        // A JSON opener gets stdout alone, so stderr cannot break the format.
+        let text = if kind == log::OpenKind::Json {
+            log::spool_stdout(&output.spool)
+        } else {
+            log::spool_text(&output.spool)
+        };
+        match text {
             Ok(text) => {
-                self.page(&format!("output-{}.txt", output.step), &text);
+                let name = format!("output-{}.{}", output.step, kind.extension());
+                self.page(&name, &text, kind);
                 Ok(())
             }
             Err(e) => {
@@ -1709,7 +1735,7 @@ impl<'p> Runner<'p> {
         }
     }
 
-    /// Opens a script, as the gate showed it, in the pager.
+    /// Opens a script, as the gate showed it, in its opener.
     fn open_script(&mut self, file: &Path) {
         let Some(pin) = self.pins.get(file) else {
             self.say("  the script could not be read");
@@ -1720,20 +1746,21 @@ impl<'p> Runner<'p> {
             return;
         };
         let shown = self.redactor.redact(text);
+        // The copy keeps the script's own name, so an editor knows its language.
         let name = file
             .file_name()
             .map_or_else(|| "script".into(), |n| n.to_string_lossy().into_owned());
-        self.page(&name, &shown);
+        self.page(&name, &shown, log::script_kind(file));
     }
 
-    /// Shows redacted text in the pager, from a copy in the run's scratch root, or prints it
-    /// when there is no pager.
-    fn page(&mut self, name: &str, shown: &str) {
+    /// Shows redacted text in the opener for its kind, from a copy in the run's scratch root,
+    /// or prints it when there is no opener.
+    fn page(&mut self, name: &str, shown: &str, kind: log::OpenKind) {
         let name = name.replace('/', "_");
         let copy = self.scratch_root.join(format!("view-{name}"));
-        let pager = self.pager_argv();
+        let opener = self.opener_argv(kind);
         let opened = std::fs::write(&copy, shown.as_bytes()).is_ok()
-            && pager.as_ref().is_some_and(|(exe, argv)| {
+            && opener.as_ref().is_some_and(|(exe, argv)| {
                 let mut args: Vec<String> = argv[1..].to_vec();
                 args.push(copy.display().to_string());
                 self.screen.borrow_mut().hide();
@@ -1758,13 +1785,17 @@ impl<'p> Runner<'p> {
         }
     }
 
-    /// The pager to run: the config key `pager`, else `$PAGER`, else `less`, split into
-    /// words with no shell, and resolved on `PATH`.
-    fn pager_argv(&self) -> Option<(PathBuf, Vec<String>)> {
+    /// The program that opens an item of `kind`: the config's `open` entry for it, else the
+    /// config key `pager`, else `$PAGER`, else `less`. It is split into words with no shell,
+    /// and resolved on `PATH`.
+    fn opener_argv(&self, kind: log::OpenKind) -> Option<(PathBuf, Vec<String>)> {
         let command = self
             .opts
-            .pager
-            .clone()
+            .openers
+            .iter()
+            .find(|(k, _)| k == kind.name())
+            .map(|(_, command)| command.clone())
+            .or_else(|| self.opts.pager.clone())
             .or_else(|| std::env::var("PAGER").ok().filter(|p| !p.trim().is_empty()))
             .unwrap_or_else(|| "less".into());
         let argv: Vec<String> = command.split_whitespace().map(String::from).collect();
@@ -3989,6 +4020,7 @@ impl<'p> Runner<'p> {
             self.building = Some(CommandBlock {
                 head: head.clone(),
                 shell_rows: line.lines.len(),
+                output: command.output,
                 journal: format!("{}/out/{invocation}.stdout", self.journal_rel()),
                 step: step.to_string(),
                 label,
@@ -4172,6 +4204,7 @@ impl<'p> Runner<'p> {
                 label: block.label.clone(),
                 hidden: block.lines - shown,
                 spool: spool.clone(),
+                output: block.output,
             });
         }
         if shown < block.lines {

@@ -73,6 +73,7 @@ stage "a"
     capture r = regex /id-(\d+)\/x/ on ok
     env TOKEN={tok}
     timeout 90s
+    output json
 
 ----------------------------------------
 
@@ -104,7 +105,9 @@ stage "a"
               (interpolation
                 (identifier))))
           (timeout
-            (duration)))))))
+            (duration))
+          (output
+            (output_kind)))))))
 
 ========================================
 expect matches

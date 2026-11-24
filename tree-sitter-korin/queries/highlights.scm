@@ -26,6 +26,8 @@
   "expect"
   "env"
   "timeout"
+  "output"
+  "markdown"
   "file"
   "on"
   "exit"

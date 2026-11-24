@@ -1,6 +1,6 @@
 ---
 source: tests/parse.rs
-expression: "wizard(&with_header(concat!(\"stage \\\"s\\\"\\n\",\n\"  read aws ssm get-parameter --name n --output json\\n\",\n\"    expect missing = exit 254 and stderr ~ /ParameterNotFound/\\n\",\n\"    expect gone = exit != 0\\n\", \"    expect stopped = signal TERM\\n\",\n\"    capture value = jq .Parameter.Value\\n\",\n\"    capture secret tok? = jq .Parameter | .Token on missing\\n\",\n\"    capture all = jq list .Items[].Id\\n\", \"    capture doc = jq json .Doc\\n\",\n\"    capture raw = text\\n\", \"    capture rows = lines on gone\\n\",\n\"    capture n = regex /(\\\\d+) rows/\\n\",\n\"    capture notes = file {korin.out}/notes.md text\\n\",\n\"    env PGPASSWORD={password}\\n\", \"    timeout 90s\\n\",)))"
+expression: "wizard(&with_header(concat!(\"stage \\\"s\\\"\\n\",\n\"  read aws ssm get-parameter --name n --output json\\n\",\n\"    expect missing = exit 254 and stderr ~ /ParameterNotFound/\\n\",\n\"    expect gone = exit != 0\\n\", \"    expect stopped = signal TERM\\n\",\n\"    capture value = jq .Parameter.Value\\n\",\n\"    capture secret tok? = jq .Parameter | .Token on missing\\n\",\n\"    capture all = jq list .Items[].Id\\n\", \"    capture doc = jq json .Doc\\n\",\n\"    capture raw = text\\n\", \"    capture rows = lines on gone\\n\",\n\"    capture n = regex /(\\\\d+) rows/\\n\",\n\"    capture notes = file {korin.out}/notes.md text\\n\",\n\"    env PGPASSWORD={password}\\n\", \"    timeout 90s\\n\",\n\"    output json\\n\",)))"
 ---
 Wizard {
     header: Header {
@@ -223,6 +223,9 @@ Wizard {
                         ],
                         timeout: Some(
                             Duration(90) @ 557..560,
+                        ),
+                        output: Some(
+                            Json @ 572..576,
                         ),
                         span: 30..79,
                     },

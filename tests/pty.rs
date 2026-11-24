@@ -2324,10 +2324,10 @@ fn the_o_picker_lists_scripts_then_outputs_newest_first() {
     let text = s.text();
     let listing = &text[text.rfind("open:").unwrap()..];
     let first = listing
-        .find("1  output  1.2  $ many 2")
+        .find("1  output  text      1.2  $ many 2")
         .unwrap_or_else(|| panic!("{listing}"));
     let second = listing
-        .find("2  output  1.1  $ many 1")
+        .find("2  output  text      1.1  $ many 1")
         .unwrap_or_else(|| panic!("{listing}"));
     assert!(first < second, "{listing}");
     s.send("2\r");
@@ -2336,6 +2336,64 @@ fn the_o_picker_lists_scripts_then_outputs_newest_first() {
     assert_eq!(s.wait(), 0, "{}", s.text());
     let paged = std::fs::read_to_string(dir.path().join("paged.txt")).unwrap();
     assert!(paged.starts_with("1\n2\n"), "{paged}");
+}
+
+#[test]
+fn the_o_picker_opens_each_kind_in_its_own_opener() {
+    let dir = setup(
+        "stage \"a\"\n  read emit-json\n  read seq 1 20\n    output markdown\nstage \"b\"\n  read true\n",
+        &[
+            (
+                "emit-json",
+                "echo 'warning: slow' >&2; echo '['; seq 1 20 | sed 's/$/,/'; echo '0]'",
+            ),
+            (
+                "fake-json",
+                "echo \"$1\" > \"$PWD/json.path\"; cp \"$1\" \"$PWD/json.txt\"",
+            ),
+            (
+                "fake-md",
+                "echo \"$1\" > \"$PWD/md.path\"; cp \"$1\" \"$PWD/md.txt\"",
+            ),
+        ],
+    );
+    let bin = dir.path().join("bin");
+    let env = vec![
+        ("KORIN_OPEN_JSON", bin.join("fake-json")),
+        ("KORIN_OPEN_MARKDOWN", bin.join("fake-md")),
+        ("PAGER", bin.join("no-such-pager")),
+    ];
+    let mut s = start_with_env(dir.path(), &["run", "w.korin"], &env);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("Run stage 2?");
+    key(&mut s, "o");
+    s.wait_for("number to open");
+    let text = s.text();
+    let listing = &text[text.rfind("open:").unwrap()..];
+    assert!(listing.contains("1  output  markdown  1.2"), "{listing}");
+    assert!(listing.contains("2  output  json      1.1"), "{listing}");
+    s.send("2\r");
+    s.wait_for_nth("o open]", 2);
+    key(&mut s, "o");
+    s.wait_for_nth("number to open", 2);
+    s.send("1\r");
+    s.wait_for_nth("o open]", 3);
+    key(&mut s, "y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    // JSON opens with stdout alone, from a `.json` copy.
+    let json = std::fs::read_to_string(dir.path().join("json.txt")).unwrap();
+    assert!(json.starts_with("[\n1,\n"), "{json}");
+    assert!(!json.contains("warning"), "{json}");
+    let path = std::fs::read_to_string(dir.path().join("json.path")).unwrap();
+    let extension = |p: &str| {
+        Path::new(p.trim_end())
+            .extension()
+            .map(|e| e.to_string_lossy().into_owned())
+    };
+    assert_eq!(extension(&path).as_deref(), Some("json"), "{path}");
+    let md = std::fs::read_to_string(dir.path().join("md.path")).unwrap();
+    assert_eq!(extension(&md).as_deref(), Some("md"), "{md}");
 }
 
 #[test]

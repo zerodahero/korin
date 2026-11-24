@@ -1,0 +1,7 @@
+---
+source: tests/parse.rs
+expression: "errors(&with_header(concat!(\"stage \\\"s\\\"\\n\", \"  read x\\n\", \"    output pdf\\n\",\n\"  read y\\n\", \"    output markdown\\n\", \"    output json\\n\",\n\"  output json\\n\",)))"
+---
+test.korin:5:12: syntax: unknown output kind `pdf`
+test.korin:8:5: syntax: the command already has an `output`
+test.korin:9:3: misplaced: `output` is an option and belongs indented under a command

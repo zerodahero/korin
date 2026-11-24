@@ -263,7 +263,16 @@ pub struct Command {
     pub expects: Vec<Expect>,
     pub env: Vec<(Ident, Interpolated)>,
     pub timeout: Option<Spanned<Duration>>,
+    /// What the output is, for the `o` picker's opener: `output markdown` or `output json`.
+    pub output: Option<Spanned<OutputKind>>,
     pub span: Span,
+}
+
+/// What a command's output is, as an `output` line says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputKind {
+    Markdown,
+    Json,
 }
 
 #[derive(Debug, Clone)]

@@ -72,6 +72,20 @@ fn captures_outcomes_env_timeout() {
         "    capture notes = file {korin.out}/notes.md text\n",
         "    env PGPASSWORD={password}\n",
         "    timeout 90s\n",
+        "    output json\n",
+    ))));
+}
+
+#[test]
+fn error_output_kind_and_repeat() {
+    insta::assert_snapshot!(errors(&with_header(concat!(
+        "stage \"s\"\n",
+        "  read x\n",
+        "    output pdf\n",
+        "  read y\n",
+        "    output markdown\n",
+        "    output json\n",
+        "  output json\n",
     ))));
 }
 

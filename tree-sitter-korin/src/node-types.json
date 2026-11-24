@@ -70,6 +70,10 @@
         "named": true
       },
       {
+        "type": "output",
+        "named": true
+      },
+      {
         "type": "timeout",
         "named": true
       }
@@ -968,6 +972,27 @@
     }
   },
   {
+    "type": "output",
+    "named": true,
+    "fields": {
+      "kind": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "output_kind",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "output_kind",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "param",
     "named": true,
     "fields": {
@@ -1712,11 +1737,19 @@
     "named": true
   },
   {
+    "type": "json",
+    "named": false
+  },
+  {
     "type": "korin",
     "named": false
   },
   {
     "type": "lines",
+    "named": false
+  },
+  {
+    "type": "markdown",
     "named": false
   },
   {
@@ -1757,6 +1790,10 @@
   },
   {
     "type": "or",
+    "named": false
+  },
+  {
+    "type": "output",
     "named": false
   },
   {

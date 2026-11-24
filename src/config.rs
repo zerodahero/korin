@@ -26,7 +26,11 @@ pub const KEYS: &[&str] = &[
     "require-enter",
     "color",
     "icons",
+    "open",
 ];
+
+/// The kinds of item the `o` picker opens, each with its own opener in an `open` block.
+pub const OPEN_KINDS: &[&str] = &["script", "json", "markdown", "text"];
 
 /// A loaded config file. Each key the file sets keeps its value.
 #[derive(Debug, Default)]
@@ -42,6 +46,8 @@ pub struct Config {
     pub require_enter: Option<bool>,
     pub color: Option<Choice>,
     pub icons: Option<Icons>,
+    /// The `open` block: a command for each kind of item it names.
+    pub open: Vec<(&'static str, String)>,
 }
 
 /// Where a key's effective value comes from.
@@ -83,12 +89,24 @@ pub struct Effective {
     pub require_enter: (bool, Source),
     pub color: (Choice, Source),
     pub icons: (Icons, Source),
+    /// The opener for each kind in [`OPEN_KINDS`], if one is set; otherwise the pager.
+    pub open: Vec<(&'static str, Option<String>, Source)>,
+}
+
+impl Effective {
+    /// The command that opens an item of `kind`, if one is set.
+    pub fn opener(&self, kind: &str) -> Option<&str> {
+        self.open
+            .iter()
+            .find(|(k, _, _)| *k == kind)
+            .and_then(|(_, command, _)| command.as_deref())
+    }
 }
 
 impl Effective {
     /// Each key with its value as the file would write it, for `korin config`.
     pub fn listing(&self) -> Vec<(&'static str, String, Source)> {
-        vec![
+        let mut list = vec![
             ("view", view_name(self.view.0).to_string(), self.view.1),
             (
                 "legend",
@@ -123,7 +141,23 @@ impl Effective {
                 .to_string(),
                 self.icons.1,
             ),
-        ]
+        ];
+        for (kind, command, source) in &self.open {
+            list.push((
+                // Each kind lists on its own line, under the block's name.
+                match *kind {
+                    "script" => "open.script",
+                    "json" => "open.json",
+                    "markdown" => "open.markdown",
+                    _ => "open.text",
+                },
+                command
+                    .as_ref()
+                    .map_or_else(|| "the pager".to_string(), |c| format!("{c:?}")),
+                *source,
+            ));
+        }
+        list
     }
 }
 
@@ -258,6 +292,7 @@ pub fn parse(path: &Path, text: &str) -> Result<Config, Vec<Diag>> {
                     _ => Choice::Auto,
                 });
             }),
+            "open" => open_block(node, &file, &mut diags).map(|kinds| config.open = kinds),
             "icons" => one_of(node, &["plain", "nerd"]).map(|v| {
                 config.icons = Some(if v == "nerd" {
                     Icons::Nerd
@@ -327,6 +362,19 @@ pub fn resolve(config: &Config, flags: Flags) -> Effective {
     let icons = config
         .icons
         .map_or((Icons::Plain, Source::Default), |i| (i, Source::File));
+    let open = OPEN_KINDS
+        .iter()
+        .map(|kind| {
+            let env = format!("KORIN_OPEN_{}", kind.to_uppercase());
+            if let Some(command) = std::env::var(&env).ok().filter(|c| !c.trim().is_empty()) {
+                (*kind, Some(command), Source::Env)
+            } else if let Some((_, command)) = config.open.iter().find(|(k, _)| k == kind) {
+                (*kind, Some(command.clone()), Source::File)
+            } else {
+                (*kind, None, Source::Default)
+            }
+        })
+        .collect();
     Effective {
         view,
         legend,
@@ -335,6 +383,7 @@ pub fn resolve(config: &Config, flags: Flags) -> Effective {
         require_enter,
         color,
         icons,
+        open,
     }
 }
 
@@ -376,6 +425,66 @@ fn count(node: &KdlNode) -> Result<usize, (String, String)> {
             "use a whole number, 0 or more".into(),
         )),
     }
+}
+
+/// An `open` block: no value of its own, and one child per kind, each with a command.
+/// Problems with a child go into `diags` with the child's own span.
+fn open_block(
+    node: &KdlNode,
+    file: &std::sync::Arc<SourceFile>,
+    diags: &mut Vec<Diag>,
+) -> Result<Vec<(&'static str, String)>, (String, String)> {
+    if !node.entries().is_empty() {
+        return Err((
+            "takes no value".into(),
+            "put each opener on its own line inside braces, such as `open { json \"jnv\" }`".into(),
+        ));
+    }
+    let Some(children) = node.children() else {
+        return Err((
+            "needs a block".into(),
+            "write `open { json \"jnv\" }`".into(),
+        ));
+    };
+    let mut kinds: Vec<(&'static str, String)> = Vec::new();
+    for child in children.nodes() {
+        let name = child.name().value();
+        let at = span(child.span());
+        let Some(kind) = OPEN_KINDS.iter().find(|k| **k == name) else {
+            diags.push(
+                Diag::error(
+                    file,
+                    "config",
+                    at,
+                    format!("unknown kind `{name}` in `open`"),
+                )
+                .label("not a kind")
+                .help(format!("the kinds are {}", list(OPEN_KINDS))),
+            );
+            continue;
+        };
+        if kinds.iter().any(|(k, _)| k == kind) {
+            diags.push(
+                Diag::error(
+                    file,
+                    "config",
+                    at,
+                    format!("`open {kind}` appears more than once"),
+                )
+                .label("again here"),
+            );
+            continue;
+        }
+        match command_text(child) {
+            Ok(command) => kinds.push((kind, command)),
+            Err((message, help)) => diags.push(
+                Diag::error(file, "config", at, format!("`open {kind}` {message}"))
+                    .label("here")
+                    .help(help),
+            ),
+        }
+    }
+    Ok(kinds)
 }
 
 fn command_text(node: &KdlNode) -> Result<String, (String, String)> {
