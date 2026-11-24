@@ -2607,8 +2607,12 @@
     "regex_pattern": {
       "type": "IMMEDIATE_TOKEN",
       "content": {
-        "type": "PATTERN",
-        "value": "(\\\\.|[^\\/\\\\\\n])+"
+        "type": "PREC",
+        "value": 1,
+        "content": {
+          "type": "PATTERN",
+          "value": "(\\\\.|[^\\/\\\\\\n])+"
+        }
       }
     },
     "identifier": {

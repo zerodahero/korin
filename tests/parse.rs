@@ -314,3 +314,19 @@ fn retry_lines_lead_a_stage_with_skip_in_either_order() {
     let extra = errors(&with_header("stage \"a\"\n  retry 3\n  read true\n"));
     assert!(!extra.is_empty(), "{extra}");
 }
+
+#[test]
+fn a_hash_inside_a_regex_is_not_a_comment() {
+    let ok = wizard(&with_header(concat!(
+        "stage \"s\"\n",
+        "  read gh issue list\n",
+        "    capture n = regex /issue #(\\d+)/  # a real comment\n",
+        "    expect a = stdout ~ / #x/\n",
+        "  when n ~ /# /\n",
+        "    note \"x\"\n",
+    )));
+    assert!(ok.contains("issue #(\\\\d+)"), "{ok}");
+    assert!(ok.contains("\" #x\""), "{ok}");
+    assert!(ok.contains("\"# \""), "{ok}");
+    assert!(!ok.contains("a real comment"), "{ok}");
+}

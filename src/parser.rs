@@ -1022,20 +1022,37 @@ fn take_level(lines: &[Line], index: &mut usize, indent: usize) -> Vec<Node> {
 }
 
 /// Removes a `#` comment. A `#` starts a comment at the start of the content or after
-/// whitespace, outside double quotes.
+/// whitespace, outside double quotes and outside a regex. A regex is a `/` that follows `~`
+/// or the word `regex`, up to the next unescaped `/`: `/issue #\d+/` keeps its `#`.
 fn strip_comment(content: &str) -> &str {
     let mut in_quote = false;
+    let mut in_regex = false;
     let mut escaped = false;
     let mut previous_space = true;
+    // The last word before the current one, to tell a regex's `/` from a path's.
+    let mut word_start = 0;
+    let mut last_word = "";
     for (index, ch) in content.char_indices() {
         if escaped {
             escaped = false;
         } else if ch == '\\' {
             escaped = true;
+        } else if in_regex {
+            if ch == '/' {
+                in_regex = false;
+            }
         } else if ch == '"' {
             in_quote = !in_quote;
+        } else if ch == '/' && !in_quote && previous_space && matches!(last_word, "~" | "regex") {
+            in_regex = true;
         } else if ch == '#' && !in_quote && previous_space {
             return &content[..index];
+        }
+        if !in_quote && !in_regex && ch.is_whitespace() {
+            if index > word_start {
+                last_word = &content[word_start..index];
+            }
+            word_start = index + ch.len_utf8();
         }
         previous_space = ch.is_whitespace();
     }
@@ -1802,4 +1819,29 @@ struct StageBody {
     skip: Option<Spanned<SkipRule>>,
     retry: Option<Span>,
     steps: Vec<Step>,
+}
+
+#[cfg(test)]
+mod comment_tests {
+    use super::strip_comment;
+
+    #[test]
+    fn a_hash_inside_a_regex_is_not_a_comment() {
+        let keep = [
+            "capture n = regex /issue #(\\d+)/",
+            "expect a = stdout ~ /#\\d/",
+            "when x ~ / # /",
+            "capture n = regex /a\\/b #c/ on ok",
+        ];
+        for line in keep {
+            assert_eq!(strip_comment(line), line);
+        }
+        assert_eq!(strip_comment("read ls /tmp # list"), "read ls /tmp ");
+        assert_eq!(
+            strip_comment("capture n = regex /x/ # after"),
+            "capture n = regex /x/ "
+        );
+        assert_eq!(strip_comment("read echo \\# not"), "read echo \\# not");
+        assert_eq!(strip_comment("# whole line"), "");
+    }
 }

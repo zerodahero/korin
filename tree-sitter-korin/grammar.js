@@ -398,7 +398,8 @@ module.exports = grammar({
     // A regex runs to the next unescaped `/`, as in `src/parser.rs`.
     regex: $ => seq('/', optional(field('pattern', $.regex_pattern)), token.immediate('/')),
 
-    regex_pattern: _ => token.immediate(/(\\.|[^\/\\\n])+/),
+    // Like a word fragment, a pattern beats a comment: `/issue #\d+/` keeps its `#`.
+    regex_pattern: _ => token.immediate(prec(PREC.immediate, /(\\.|[^\/\\\n])+/)),
 
     identifier: _ => IDENTIFIER,
 
