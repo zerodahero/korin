@@ -19,11 +19,15 @@ scrollback:
   A secret shows as a shell variable, such as `"${TOKEN}"`; see
   [Secrets in the run log](secrets.md#secrets-in-the-run-log). The step's scratch directory
   shows as `${KORIN_OUT}`.
-- **`↳` notes** under a command give its exit status when it is not 0, the expect that
-  matched, and each capture, as `name = value`.
-- **korin's own lines start with `#`**: how each stage began (`# ── stage 2/4: Snapshot ──
-  approved`), each `note`, `warn` and `record`, values you gave (`# region = us-east-1
-  (asked)`), and how each stage ended.
+- **`↳` notes** under a command give its exit status when it is not 0, and the expect that
+  matched.
+- **Each stage opens with a banner** that says how its gate went, such as
+  `━━ 2/4 Snapshot ━━━━ approved ━━`. Everything in the stage sits indented under it, and
+  it closes with `✓ stage 2 done · 2 commands · 3m40s`.
+- **Captures show on one `→` line** under the command, such as `→ ready = 3  ·  wanted = 3`.
+  Values you gave show the same way: `→ region = us-east-1  (asked)`.
+- **`note`, `warn` and `record` show as messages**: a note as plain text, a warning after
+  `⚠`, and a record after `✓`.
 - **A long output folds.** A successful command with more than 12 lines shows its first 4,
   then `↳ ok · +N lines · <journal file>`. A failed command shows every line. Press `o` at
   any prompt to open a folded output in full.

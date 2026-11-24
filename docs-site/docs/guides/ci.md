@@ -23,7 +23,7 @@ korin run nightly.korin --yes
 --8<-- "docs-site/docs/generated/transcripts/guides/ci/nightly.html"
 
 Without a terminal there is no live view: every line prints in order, nothing folds, and each
-stage starts with a line such as `# ── stage 1/2: Build ── approved by --yes`.
+stage starts with a banner such as `━━ 1/2 Build ━━━━ approved by --yes ━━`.
 
 ## What korin refuses
 

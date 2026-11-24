@@ -1,22 +1,22 @@
 <pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Restart the API</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">1 stage</span>
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run values-confirm.korin
 
-<span class="k-comment"># ── stage 1/1: Restart ── approved</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment api <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
-{
-  "metadata": {"name": "api", "namespace": "shop"},
-  "spec": {
-    "replicas": 2,
-    "template": {"spec": {"containers": [{"name": "api", "image": "registry.example.com/api:2.3.1"}]
-}}
-  },
-  "status": {
-    "readyReplicas": 2,
-    "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
+<span class="k-border">━━</span> <span class="k-fg-dim">1/1</span> <span class="k-bold">Restart</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment api <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
+  {
+    "metadata": {"name": "api", "namespace": "shop"},
+    "spec": {
+      "replicas": 2,
+      "template": {"spec": {"containers": [{"name": "api", "image": "registry.example.com/api:2.3.1"
+}]}}
+    },
+    "status": {
+      "readyReplicas": 2,
+      "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
+    }
   }
-}
-  <span class="k-border">↳</span> <span class="k-fg-dim">image = registry.example.com/api:2.3.1</span>
-  values
-     <span class="k-fg-dim">1</span>  image  registry.example.com/api:2.3.1  capture 1.1
+    <span class="k-border">→</span> <span class="k-teal">image</span> <span class="k-border">=</span> <span class="k-cyan">registry.example.com/api:2.3.1</span>
+<span class="k-border">───────────────────────────────────────────────────────────────────────────────────────────────────</span>
+    values
+       <span class="k-fg-dim">1</span>  image  registry.example.com/api:2.3.1  capture 1.1
   <span class="k-magenta">?</span> <span class="k-bold">number to change, Enter to go back:</span></code></pre>

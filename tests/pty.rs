@@ -577,13 +577,12 @@ fn live_view_erases_the_preview_and_draws_the_plan_pane() {
     s.answer("y");
     s.wait_for("started");
     let running = s.raw()[before..].to_string();
-    // The gate's pane (the rule, a blank line, two step lines) and its prompt are erased,
-    // and the run log keeps one line for the gate.
-    assert!(running.contains("\x1b[5A\x1b[J"), "{running:?}");
-    assert!(
-        strip_ansi(&running).contains("# ── stage 1/1: a ── approved"),
-        "{running:?}"
-    );
+    // The gate's pane (the separator, the stage rule, a blank line, two step lines) and its
+    // prompt are erased, and the run log keeps one line for the gate.
+    assert!(running.contains("\x1b[6A\x1b[J"), "{running:?}");
+    // A rule in the frame color sets the pane apart from the run log.
+    assert!(running.contains("\x1b[38;2;83;83;83m────"), "{running:?}");
+    assert!(strip_ansi(&running).contains("━━ 1/1 a ━"), "{running:?}");
     // The pane names the stage running now and marks the step running now.
     let prompt = "\x1b[1;38;2;120;169;255m▶\x1b[0m";
     assert!(running.contains(&format!(" {prompt} ")), "{running:?}");
@@ -602,7 +601,7 @@ fn live_view_erases_the_preview_and_draws_the_plan_pane() {
         raw[last_pane..].contains("\x1b[J"),
         "the pane was never erased"
     );
-    assert!(s.text().contains("# note: still-to-come"), "{}", s.text());
+    assert!(s.text().contains("\n  still-to-come"), "{}", s.text());
     assert!(
         s.text().contains("✓ stage 1 done · 1 command"),
         "{}",
@@ -624,10 +623,10 @@ fn a_gate_leaves_one_line_in_the_run_log() {
     assert_eq!(s.wait(), 0, "{}", s.text());
     let screen = s.screen();
     assert!(
-        screen.contains("# ── stage 1/2: a ── approved\n\n$ echo first\nfirst"),
+        screen.contains(" approved ━━\n  $ echo first\n  first"),
         "{screen}"
     );
-    assert!(screen.contains("# ── stage 2/2: b ── approved"), "{screen}");
+    assert!(screen.contains("━━ 2/2 b ━"), "{screen}");
     // The gate's content and its prompt are gone from the run log.
     assert!(!screen.contains("Run stage"), "{screen}");
     assert!(!screen.contains("read ❯"), "{screen}");
@@ -664,7 +663,7 @@ fn a_gate_taller_than_the_terminal_scrolls() {
     s.answer("y");
     assert_eq!(s.wait(), 0, "{}", s.text());
     let screen = s.screen();
-    assert!(screen.contains("$ echo line-60\nline-60"), "{screen}");
+    assert!(screen.contains("  $ echo line-60\n  line-60"), "{screen}");
     assert!(!screen.contains("lines below"), "{screen}");
 }
 
@@ -682,7 +681,7 @@ fn a_confirm_shows_the_rest_in_the_pane_and_leaves_one_line() {
     s.answer("y");
     assert_eq!(s.wait(), 0, "{}", s.text());
     let screen = s.screen();
-    assert!(screen.contains("# confirmed: Go on?"), "{screen}");
+    assert!(screen.contains("  ✓ confirmed: Go on?"), "{screen}");
     assert!(!screen.contains("next:"), "{screen}");
 }
 
@@ -715,7 +714,7 @@ fn without_color_a_gate_prints_its_commands_before_it_asks() {
     s.send("y\r");
     assert_eq!(s.wait(), 0, "{}", s.text());
     let text = s.text();
-    assert!(text.contains("# ── stage 1/1: a ── approved"), "{text}");
+    assert!(text.contains("━━ 1/1 a ━"), "{text}");
     assert!(!text.contains('\x1b'), "{text:?}");
 }
 
@@ -743,7 +742,7 @@ fn a_value_set_in_the_values_view_leaves_one_record() {
     assert_eq!(s.wait(), 0, "{}", s.text());
     let screen = s.screen();
     assert_eq!(
-        screen.matches("# name = mars  (by hand)").count(),
+        screen.matches("→ name = mars  (by hand)").count(),
         1,
         "{screen}"
     );
@@ -787,12 +786,12 @@ fn a_long_output_folds_on_success_and_stays_full_on_failure() {
     let screen = s.screen();
     // Success folds to its first lines, and says where the rest is.
     assert!(
-        screen.contains("$ many\n1\n2\n3\n4\n  ↳ ok · +36 lines · ./.korin/runs/"),
+        screen.contains("  $ many\n  1\n  2\n  3\n  4\n    ↳ ok · +36 lines · ./.korin/runs/"),
         "{screen}"
     );
-    assert!(!screen.contains("\n40\n"), "{screen}");
+    assert!(!screen.contains("\n  40\n"), "{screen}");
     // Failure keeps every line.
-    assert!(screen.contains("\n139\n140\n  ↳ exit 3"), "{screen}");
+    assert!(screen.contains("\n  139\n  140\n    ↳ exit 3"), "{screen}");
 }
 
 #[test]
@@ -811,15 +810,17 @@ fn a_huge_failing_output_shows_in_full_once_in_arrival_order() {
     let screen = s.screen();
     assert_eq!(screen.matches("MARKER-2500").count(), 1, "the marker");
     // Each stream keeps its own order, and both are complete.
+    // The run log, without the failure message, which repeats the last lines as excerpts.
+    let log = &screen[..screen.rfind("✗ step").unwrap_or(screen.len())];
     let numbers = |prefix: &str| -> Vec<u32> {
-        screen
-            .lines()
-            .filter_map(|l| l.strip_prefix(prefix)?.parse().ok())
+        log.lines()
+            .filter_map(|l| l.trim_start().strip_prefix(prefix)?.parse().ok())
             .collect()
     };
     let out = numbers("out ");
     let err = numbers("err ");
-    assert!(out.windows(2).all(|w| w[0] < w[1]), "stdout out of order");
+    let bad = out.windows(2).find(|w| w[0] >= w[1]);
+    assert!(bad.is_none(), "stdout out of order at {bad:?}");
     assert!(err.windows(2).all(|w| w[0] < w[1]), "stderr out of order");
     assert_eq!(out.len() + err.len(), 4999, "lines lost");
 }
@@ -920,13 +921,13 @@ fn a_poll_shows_one_line_per_try_and_the_matching_try_in_full() {
     // Only the matching try prints its commands, both of them, in order.
     assert_eq!(screen.matches("$ tick").count(), 1, "{screen}");
     let tick = screen
-        .find("$ tick\nn=3")
+        .find("  $ tick\n  n=3")
         .unwrap_or_else(|| panic!("{screen}"));
     let second = screen
         .find("$ echo second")
         .unwrap_or_else(|| panic!("{screen}"));
     assert!(tick < second, "{screen}");
-    assert!(screen.contains("# until matched after 3 tries"), "{screen}");
+    assert!(screen.contains("↻ matched after 3 tries"), "{screen}");
     // The pane's poll lines are gone with the pane.
     assert!(!screen.contains("next try in"), "{screen}");
     let events = events(dir.path());
@@ -962,7 +963,7 @@ fn a_nested_poll_lands_inside_the_outer_try() {
         .unwrap_or_else(|| panic!("{screen}"));
     assert!(outer_line < inner_line, "{screen}");
     assert_eq!(screen.matches("$ inner").count(), 1, "{screen}");
-    assert!(screen.contains("$ outer\nn=2"), "{screen}");
+    assert!(screen.contains("  $ outer\n  n=2"), "{screen}");
 }
 
 #[test]
@@ -985,10 +986,10 @@ fn ctrl_c_during_a_try_keeps_that_try_in_full() {
     let _ = s.wait();
     let screen = s.screen();
     // The successful long command of the stopped try shows in full, not folded.
-    assert!(screen.contains("$ long\n1\n2\n"), "{screen}");
-    assert!(screen.contains("\n40\n"), "{screen}");
-    assert!(screen.contains("$ slow\nwaiting-now"), "{screen}");
-    assert!(screen.contains("# try 1 stopped:"), "{screen}");
+    assert!(screen.contains("  $ long\n  1\n  2\n"), "{screen}");
+    assert!(screen.contains("\n  40\n"), "{screen}");
+    assert!(screen.contains("  $ slow\n  waiting-now"), "{screen}");
+    assert!(screen.contains("✗ try 1 stopped:"), "{screen}");
 }
 
 #[test]
@@ -1006,13 +1007,13 @@ fn ctrl_c_while_waiting_shows_the_last_try_in_full() {
     let _ = s.wait();
     let screen = s.screen();
     let replay = screen
-        .find("# last try (try 1):")
+        .find("↻ last try (try 1), in full:")
         .unwrap_or_else(|| panic!("{screen}"));
     let rest = &screen[replay..];
-    assert!(rest.contains("$ long\n1\n2\n"), "{screen}");
-    assert!(rest.contains("\n40\n"), "{screen}");
+    assert!(rest.contains("  $ long\n  1\n  2\n"), "{screen}");
+    assert!(rest.contains("\n  40\n"), "{screen}");
     assert!(
-        rest.contains("# poll stopped: interrupted with Ctrl-C"),
+        rest.contains("✗ poll stopped: interrupted with Ctrl-C"),
         "{screen}"
     );
 }
@@ -1043,7 +1044,7 @@ fn a_huge_try_replays_once_in_full_after_the_scratch_directory_is_gone() {
     assert_eq!(screen.matches("MARKER-2500").count(), 1, "the marker");
     let out: Vec<u32> = screen
         .lines()
-        .filter_map(|l| l.strip_prefix("out ")?.parse().ok())
+        .filter_map(|l| l.trim_start().strip_prefix("out ")?.parse().ok())
         .collect();
     assert!(out.windows(2).all(|w| w[0] < w[1]), "stdout out of order");
     assert_eq!(out.len(), 3333, "stdout lines lost");
@@ -1066,11 +1067,13 @@ fn a_fail_condition_and_a_deadline_leave_their_try() {
     assert_eq!(s.wait(), 1, "{}", s.text());
     let screen = s.screen();
     assert!(screen.contains("↻ try 1 · 0s  n = 1"), "{screen}");
-    assert!(screen.contains("$ tick\nn=2"), "{screen}");
+    assert!(screen.contains("  $ tick\n  n=2"), "{screen}");
     assert!(
-        screen.contains("# try 2 stopped: poll at step 1.1 hit its failure condition"),
+        screen.contains("✗ try 2 stopped: poll at step 1.1 hit its failure condition"),
         "{screen}"
     );
+    // Close the first pty before opening another; the suite runs many at once.
+    drop(s);
 
     let dir = setup(
         "stage \"p\"\n  poll every 1s for 2s\n    read tick\n      capture n = regex /n=(\\d+)/\n    until n == \"never\"\n",
@@ -1081,10 +1084,10 @@ fn a_fail_condition_and_a_deadline_leave_their_try() {
     s.answer("y");
     assert_eq!(s.wait(), 1, "{}", s.text());
     let screen = s.screen();
-    assert!(screen.contains("# last try (try 2):"), "{screen}");
-    assert!(screen.contains("$ tick\nn=2"), "{screen}");
+    assert!(screen.contains("↻ last try (try 2), in full:"), "{screen}");
+    assert!(screen.contains("  $ tick\n  n=2"), "{screen}");
     assert!(
-        screen.contains("# poll stopped: poll at step 1.1 timed out"),
+        screen.contains("✗ poll stopped: poll at step 1.1 timed out"),
         "{screen}"
     );
 }
@@ -1131,7 +1134,7 @@ fn an_interactive_step_takes_the_pane_away_and_gives_it_back() {
     assert!(!before[erase..].contains("1.2  read"), "{before:?}");
     assert!(after.contains("1.2  read"), "{after:?}");
     assert!(
-        s.screen().contains("$ fakeui\nIN-PROGRAM"),
+        s.screen().contains("  $ fakeui\nIN-PROGRAM"),
         "{}",
         s.screen()
     );
@@ -1340,11 +1343,11 @@ fn the_run_log_shows_full_paths_and_the_journal_never_shortens() {
     let text = s.text();
     // The run log reads like a shell session, so its paths are real and pasteable.
     assert!(text.contains(&format!("$ lister {target}/a.txt")), "{text}");
-    assert!(text.contains(&format!("\nlisted {target}/a.txt")), "{text}");
     assert!(
-        text.contains(&format!("# record: wrote {target}/a.txt")),
+        text.contains(&format!("\n  listed {target}/a.txt")),
         "{text}"
     );
+    assert!(text.contains(&format!("✓ wrote {target}/a.txt")), "{text}");
     assert!(text.contains("journal: ./.korin/runs/"), "{text}");
     let run = run_dir(dir.path());
     let report = std::fs::read_to_string(run.join("report.md")).unwrap();
@@ -1526,7 +1529,7 @@ fn hidden_input_counts_characters_and_leaves_only_a_tick() {
     assert_eq!(s.wait(), 0, "{}", s.text());
     let shown = screen(&s);
     // The prompt goes with the pane; the run log keeps one record, with no length.
-    assert!(shown.contains("# token = ••••  (asked)"), "{shown}");
+    assert!(shown.contains("→ token = ••••  (asked)"), "{shown}");
     assert!(!shown.contains("token (hidden):"), "{shown}");
     assert!(
         !shown.contains("chars"),
@@ -1622,6 +1625,27 @@ fn the_pane_lists_each_name_while_a_stage_runs() {
         running.contains(&format!("<target> = {target}")),
         "{running}"
     );
+}
+
+#[test]
+fn the_legend_explains_korin_out_at_the_gate_and_in_the_pane() {
+    let dir = setup(
+        "stage \"a\"\n  mutate touch {korin.out}/marker\n  read sleep 0.5\n",
+        &[],
+    );
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    let gate = s.text();
+    assert!(gate.contains("touch <korin.out>/marker"), "{gate}");
+    assert!(gate.contains("<korin.out> = "), "{gate}");
+    assert!(gate.contains("/<step>"), "{gate}");
+    let before = s.text().len();
+    s.answer("y");
+    s.wait_for("$ sleep 0.5");
+    let running = s.text()[before..].to_string();
+    // The pane shows the step with `<korin.out>`, so its legend explains it too.
+    assert!(running.contains("<korin.out> = "), "{running}");
+    assert_eq!(s.wait(), 0, "{}", s.text());
 }
 
 // ---- the values view ----
@@ -1861,7 +1885,7 @@ fn s_at_a_gate_skips_the_stage_and_its_dependents() {
     s.wait_for("Run stage 4?");
     let text = s.text();
     assert!(
-        text.contains("── skipped: reads `id` from stage 2"),
+        text.contains("━ skipped: reads `id` from stage 2 ━━"),
         "{text}"
     );
     s.answer("y");
@@ -1893,7 +1917,9 @@ fn a_value_set_by_hand_keeps_the_dependent_and_esc_throws_it_away() {
     s.send("1\r");
     s.wait_for("? id:");
     s.send("thrown-away\r");
-    s.wait_for_nth("number to set", 2);
+    // The dialog redraws its lines in the pane, so earlier prompts show again in the raw
+    // output; wait for korin to go quiet at its next prompt instead of counting them.
+    s.settle(Duration::from_millis(400));
     s.send("\r");
     s.wait_for("now skips nothing else");
     key(&mut s, "\x1b");
@@ -1903,11 +1929,11 @@ fn a_value_set_by_hand_keeps_the_dependent_and_esc_throws_it_away() {
     key(&mut s, "s");
     s.wait_for_nth("v set values by hand", 2);
     key(&mut s, "v");
-    s.wait_for_nth("number to set", 3);
+    s.settle(Duration::from_millis(400));
     s.send("1\r");
-    s.wait_for_nth("? id:", 2);
+    s.settle(Duration::from_millis(400));
     s.send("hand-9\r");
-    s.wait_for_nth("number to set", 4);
+    s.settle(Duration::from_millis(400));
     s.send("\r");
     s.wait_for_nth("now skips nothing else", 2);
     key(&mut s, "s");
@@ -1934,7 +1960,7 @@ fn s_at_a_pause_and_at_a_confirm() {
     s.wait_for("↵ continue · s skip");
     key(&mut s, "s");
     s.wait_for("Run stage 2?");
-    assert!(s.text().contains("── skipped"), "{}", s.text());
+    assert!(s.text().contains("━ skipped ━━"), "{}", s.text());
     s.answer("y");
     s.wait_for("Go on? [y/N · s skip");
     key(&mut s, "s");

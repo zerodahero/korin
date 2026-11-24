@@ -1,12 +1,10 @@
 <pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Check a pull request</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">1 stage</span>
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run assert.korin --param pr=42
 
-<span class="k-comment"># ── stage 1/1: Checks ── approved</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">gh</span> pr view <span class="k-cyan">42</span> <span class="k-blue">--json</span> state,mergeable
-{"mergeable":"CONFLICTING","state":"OPEN"}
-  <span class="k-border">↳</span> <span class="k-fg-dim">state = OPEN</span>
-  <span class="k-border">↳</span> <span class="k-fg-dim">mergeable = CONFLICTING</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">1/1</span> <span class="k-bold">Checks</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">gh</span> pr view <span class="k-cyan">42</span> <span class="k-blue">--json</span> state,mergeable
+  {"mergeable":"CONFLICTING","state":"OPEN"}
+    <span class="k-border">→</span> <span class="k-teal">state</span> <span class="k-border">=</span> <span class="k-cyan">OPEN</span>  <span class="k-border">·</span>  <span class="k-teal">mergeable</span> <span class="k-border">=</span> <span class="k-cyan">CONFLICTING</span>
 
 <span class="k-comment">── failed · 1s · exit 1 ────────────────────────────────────────────────────────</span>
  <span class="k-red k-bold">✗</span> <span class="k-fg-dim">1/1 Checks</span>  <span class="k-comment">failed</span>

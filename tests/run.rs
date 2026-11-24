@@ -1423,7 +1423,7 @@ fn the_preflight_runs_first_even_with_from() {
         let out = env.run_yes(args);
         assert_eq!(out.code, 0, "{args:?}: {}", out.text);
         assert!(
-            out.text.contains("── preflight: Look up IDs ──"),
+            out.text.contains("━━ preflight · Look up IDs ━"),
             "{}",
             out.text
         );
@@ -1762,21 +1762,21 @@ fn a_piped_poll_prints_every_try_once_and_replays_nothing() {
     let text = &out.text;
     for n in 1..=3 {
         assert_eq!(
-            text.matches(&format!("\nn={n}\n")).count(),
+            text.matches(&format!("\n  n={n}\n")).count(),
             1,
             "try {n}: {text}"
         );
         assert_eq!(
-            text.matches(&format!("# try {n} · ")).count(),
+            text.matches(&format!("↻ try {n} · ")).count(),
             1,
             "try {n}: {text}"
         );
     }
     assert_eq!(text.matches("$ tick").count(), 3, "{text}");
-    assert!(!text.contains("↻"), "{text}");
-    assert!(text.contains("# until matched after 3 tries"), "{text}");
+    assert!(!text.contains("↻ try 1 · 0s  "), "{text}");
+    assert!(text.contains("↻ matched after 3 tries"), "{text}");
     // Each try's lines come under its own header.
-    let first = text.find("# try 1 · ").unwrap();
-    let second = text.find("# try 2 · ").unwrap();
+    let first = text.find("↻ try 1 · ").unwrap();
+    let second = text.find("↻ try 2 · ").unwrap();
     assert!(text[first..second].contains("n=1"), "{text}");
 }

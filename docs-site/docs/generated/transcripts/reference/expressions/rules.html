@@ -1,26 +1,24 @@
 <pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Check a deployment before a change</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">1 stage</span>
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run rules.korin --param env=production
 
-<span class="k-comment"># ── stage 1/1: Deployment ── approved</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment web <span class="k-blue">-n</span> <span class="k-cyan">production</span> <span class="k-blue">-o</span> json
-{
-  "metadata": {"name": "web", "namespace": "shop"},
-  "spec": {
-    "replicas": 4,
-    "template": {"spec": {"containers": [{"name": "web", "image": "registry.example.com/web:latest"}
-]}}
-  },
-  "status": {
-    "readyReplicas": 4,
-    "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
+<span class="k-border">━━</span> <span class="k-fg-dim">1/1</span> <span class="k-bold">Deployment</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment web <span class="k-blue">-n</span> <span class="k-cyan">production</span> <span class="k-blue">-o</span> json
+  {
+    "metadata": {"name": "web", "namespace": "shop"},
+    "spec": {
+      "replicas": 4,
+      "template": {"spec": {"containers": [{"name": "web", "image": "registry.example.com/web:latest
+"}]}}
+    },
+    "status": {
+      "readyReplicas": 4,
+      "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
+    }
   }
-}
-  <span class="k-border">↳</span> <span class="k-fg-dim">replicas = 4</span>
-  <span class="k-border">↳</span> <span class="k-fg-dim">image = registry.example.com/web:latest</span>
-<span class="k-magenta"># warn: Production runs a :latest image: registry.example.com/web:latest.</span>
-<span class="k-comment"># note: web runs 4 replicas in production.</span>
-<span class="k-comment"># ✓ stage 1 done · 1 command</span>
+    <span class="k-border">→</span> <span class="k-teal">replicas</span> <span class="k-border">=</span> <span class="k-cyan">4</span>  <span class="k-border">·</span>  <span class="k-teal">image</span> <span class="k-border">=</span> <span class="k-cyan">registry.example.com/web:latest</span>
+  <span class="k-magenta">⚠ Production runs a :latest image: registry.example.com/web:latest.</span>
+  web runs 4 replicas in production.
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command · 0s</span>
 
 <span class="k-comment">── done · 1s · exit 0 ──────────────────────────────────────────────────────────</span>
  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">1/1 Deployment</span>  <span class="k-comment">1s</span>

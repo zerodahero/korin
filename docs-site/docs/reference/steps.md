@@ -205,11 +205,11 @@ the body.
 
 In a terminal, each try that does not match leaves one line in the run log, such as
 `↻ try 2 · 2s  ready = 2`, with the time since the poll started and the captures it made.
-The try that matches prints in full, then `# until matched after 3 tries · 4s`. A try that
+The try that matches prints in full, then `↻ matched after 3 tries · 4s`. A try that
 stops, on an error, `fail`, the limit or Ctrl-C, prints in full, so you see why. While the
 poll runs, the plan pane shows whether a try is running or korin is waiting for the next one,
 and a bar of the time used against the limit. Without a live view, every try prints as it
-runs, under `# try N`.
+runs, under `↻ try N`.
 
 ```korin title="poll.korin"
 --8<-- "docs-site/examples/reference/steps/poll.korin"
@@ -225,8 +225,8 @@ running when the limit passes is cancelled.
 
 ## `note`, `warn` and `record`
 
-All three print a line in the run log: `# note: …`, `# warn: …` or `# record: …`. `warn`
-marks it as a warning. `record` also writes it to the run's
+All three print a line in the run log, inside their stage: a note as plain text, a warning
+after `⚠`, and a record after `✓`. `record` also writes it to the run's
 `report.md`, so use it for facts you want to keep: what was changed, and to what.
 
 ```korin title="messages.korin"

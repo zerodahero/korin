@@ -1,29 +1,26 @@
 <pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Tour the shop repository</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">2 stages</span>
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run tour.korin
 
-<span class="k-comment"># ── stage 1/2: Where things live ── continued</span>
-<span class="k-comment"># note: The shop is a small Python service: code in src, settings in config.</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">1/2</span> <span class="k-bold">Where things live</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">continued</span> <span class="k-border">━━</span>
+  The shop is a small Python service: code in src, settings in config.
+  <span class="k-blue k-bold">$</span> <span class="k-bold">ls</span> src config
+  config:
+  app.toml
 
-<span class="k-blue k-bold">$</span> <span class="k-bold">ls</span> src config
-config:
-app.toml
+  src:
+  app.py
+  cart.py
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command · 0s</span>
 
-src:
-app.py
-cart.py
-<span class="k-comment"># ✓ stage 1 done · 1 command</span>
-
-<span class="k-comment"># ── stage 2/2: How it is configured ── continued</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">pwd</span>
-/home/ada/project
-  <span class="k-border">↳</span> <span class="k-fg-dim">repo = /home/ada/project</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">cat</span> <span class="k-cyan">/home/ada/project</span><span class="k-fg-dim">/config/</span>app.toml
-port = 8080
-database = "postgres://localhost/shop"
-<span class="k-comment"># note: The service reads its port and its database from /home/ada/project/config/app.toml.</span>
-<span class="k-comment"># ✓ stage 2 done · 2 commands</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">2/2</span> <span class="k-bold">How it is configured</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">continued</span> <span class="k-border">━━</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">pwd</span>
+  /home/ada/project
+    <span class="k-border">→</span> <span class="k-teal">repo</span> <span class="k-border">=</span> <span class="k-cyan">/home/ada/project</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">cat</span> <span class="k-cyan">/home/ada/project</span><span class="k-fg-dim">/config/</span>app.toml
+  port = 8080
+  database = "postgres://localhost/shop"
+  The service reads its port and its database from /home/ada/project/config/app.toml.
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 2 commands · 0s</span>
 
 <span class="k-comment">── done · 1s · exit 0 ──────────────────────────────────────────────────────────</span>
  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">1/2 Where things live</span>  <span class="k-comment">1s</span>

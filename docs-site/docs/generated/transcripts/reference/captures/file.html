@@ -1,17 +1,15 @@
 <pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Read the status page</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">1 stage</span>
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run file.korin
 
-<span class="k-comment"># ── stage 1/1: Status ── approved</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">curl</span> <span class="k-border">\</span>
-    <span class="k-blue">--fail</span> <span class="k-border">\</span>
-    <span class="k-blue">--silent</span> <span class="k-border">\</span>
-    <span class="k-blue">--output</span> <span class="k-fg-dim">"${KORIN_OUT}/</span>status.json" <span class="k-border">\</span>
-    <span class="k-fg-dim">https://status.example.com/api/v2/</span>status.json
-  <span class="k-border">↳</span> <span class="k-fg-dim">indicator = none</span>
-  <span class="k-border">↳</span> <span class="k-fg-dim">summary = All Systems Operational</span>
-<span class="k-comment"># note: All Systems Operational</span>
-<span class="k-comment"># ✓ stage 1 done · 1 command</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">1/1</span> <span class="k-bold">Status</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">curl</span> <span class="k-border">\</span>
+      <span class="k-blue">--fail</span> <span class="k-border">\</span>
+      <span class="k-blue">--silent</span> <span class="k-border">\</span>
+      <span class="k-blue">--output</span> <span class="k-fg-dim">"${KORIN_OUT}/</span>status.json" <span class="k-border">\</span>
+      <span class="k-fg-dim">https://status.example.com/api/v2/</span>status.json
+    <span class="k-border">→</span> <span class="k-teal">indicator</span> <span class="k-border">=</span> <span class="k-cyan">none</span>  <span class="k-border">·</span>  <span class="k-teal">summary</span> <span class="k-border">=</span> <span class="k-cyan">All Systems Operational</span>
+  All Systems Operational
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command · 0s</span>
 
 <span class="k-comment">── done · 1s · exit 0 ──────────────────────────────────────────────────────────</span>
  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">1/1 Status</span>  <span class="k-comment">1s</span>

@@ -1,16 +1,15 @@
 <pre class="k-term"><code>╭─ korin ─ Release the shop ─ ~/project ─ 4 stages
 ╰─❯ korin run skip.korin --yes --skip Tag --skip Announce
 
-# ── stage 1/4: Tag ── skipped by --skip
+━━ 1/4 Tag ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ skipped by --skip ━━
 
-# ── stage 2/4: Changelog ── approved by --yes
+━━ 2/4 Changelog ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ approved by --yes ━━
+  $ git add CHANGELOG.md
+  ✓ stage 2 done · 1 command · 0s
 
-$ git add CHANGELOG.md
-# ✓ stage 2 done · 1 command
+━━ 3/4 Push ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ skipped: `skip also` in stage 1 ━━
 
-# ── stage 3/4: Push ── skipped: `skip also` in stage 1
-
-# ── stage 4/4: Announce ── skipped by --skip
+━━ 4/4 Announce ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ skipped by --skip ━━
 
 ── ended · 1s · exit 0 ─────────────────────────────────────────────────────────
  ↷ 1/4 Tag  skipped

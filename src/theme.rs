@@ -333,6 +333,14 @@ impl Theme {
         out
     }
 
+    /// The rule across the terminal between the run log and the live region under it: the
+    /// live window, the plan pane, a gate or a dialog.
+    pub fn separator(self, width: usize) -> String {
+        let mut out = String::new();
+        self.paint(Role::Frame, &"─".repeat(width), &mut out);
+        out
+    }
+
     /// The prefix for each line of a command's output.
     pub fn gutter(self) -> String {
         let mut out = String::from("      ");
@@ -472,6 +480,18 @@ impl Theme {
             self.paint(Role::Frame, "↳", out);
             out.push(' ');
             self.inline(&c[2], Some(Role::Dim), Text::Plain, out);
+        } else if let Some(c) = p.banner.captures(line) {
+            self.banner(&c, out);
+        } else if let Some(c) = p.captured.captures(line) {
+            out.push_str(&c[1]);
+            self.paint(Role::Frame, "→", out);
+            out.push(' ');
+            self.captured(&c[2], out);
+        } else if let Some(c) = p.poll.captures(line) {
+            out.push_str(&c[1]);
+            self.paint(Role::Prompt, "↻", out);
+            out.push(' ');
+            self.inline(&c[2], Some(Role::Dim), Text::Plain, out);
         } else if let Some(c) = p.comment.captures(line) {
             out.push_str(&c[1]);
             let role = if c[2].starts_with("warn:") {
@@ -561,6 +581,53 @@ impl Theme {
             self.inline(line, None, Text::Strings, out);
         }
         false
+    }
+
+    /// A stage's banner: `━━ 2/4 Title ━━━━ approved ━━`, with the outcome in its color.
+    fn banner(self, c: &regex::Captures<'_>, out: &mut String) {
+        self.paint(Role::Frame, "━━ ", out);
+        self.paint(Role::Dim, &c[1], out);
+        out.push(' ');
+        self.paint(Role::Title, &strip_marks(&c[2]), out);
+        out.push(' ');
+        self.paint(Role::Frame, &c[3], out);
+        out.push(' ');
+        let outcome = &c[4];
+        let role =
+            if outcome.starts_with("approved") || outcome == "continued" || outcome == "started" {
+                Role::Ok
+            } else if outcome.starts_with("not ") {
+                Role::Error
+            } else {
+                Role::Warn
+            };
+        self.paint(role, outcome, out);
+        self.paint(Role::Frame, " ━━", out);
+    }
+
+    /// Captured values: `name = value` pairs, apart by `  ·  `, with a dim tail such as
+    /// `(asked)`.
+    fn captured(self, text: &str, out: &mut String) {
+        let (pairs, tail) = match text.rsplit_once("  (") {
+            Some((pairs, tail)) if tail.ends_with(')') => (pairs, Some(tail)),
+            _ => (text, None),
+        };
+        for (index, pair) in pairs.split("  ·  ").enumerate() {
+            if index > 0 {
+                self.paint(Role::Frame, "  ·  ", out);
+            }
+            match pair.split_once(" = ") {
+                Some((name, value)) => {
+                    self.paint(Role::Label, name, out);
+                    self.paint(Role::Frame, " = ", out);
+                    self.inline(value, Some(Role::Value), Text::Plain, out);
+                }
+                None => self.inline(pair, Some(Role::Label), Text::Plain, out),
+            }
+        }
+        if let Some(tail) = tail {
+            self.paint(Role::Faint, &format!("  ({tail}"), out);
+        }
     }
 
     /// A later line of a command broken across lines: its indent, then more of the command.
@@ -756,6 +823,9 @@ struct Patterns {
     shell: Regex,
     note: Regex,
     comment: Regex,
+    banner: Regex,
+    captured: Regex,
+    poll: Regex,
     stage: Regex,
     tags: Regex,
     stage_end: Regex,
@@ -780,12 +850,18 @@ fn patterns() -> &'static Patterns {
             note: re(r"^(\s*)↳ (.*)$"),
             // korin's own line in the run log: `# note: snapshot started`.
             comment: re(r"^(\s*)# (.*)$"),
+            // A stage's banner in the run log: `━━ 2/4 Title ━━━━ approved ━━`.
+            banner: re(r"^━━ (\d+/\d+|preflight ·) (.*) (━+) ([^━]+?) ━━$"),
+            // Captured or given values: `  → ready = 3  ·  wanted = 3`.
+            captured: re(r"^(\s*)→ (.*)$"),
+            // A poll's lines: `  ↻ try 2 · 1s  n = 2`.
+            poll: re(r"^(\s*)↻ (.*)$"),
             // The rule that starts a stage: `━━ Stage 1/2 · Title ━━━━`.
             stage: re(r"^(\s*)━━ (Stage \d+/\d+) · (.*?) (━+)$"),
             // The plan's tags under a stage rule: `  read-only, gate; valid --from start`.
             tags: re(r"^(\s+)((?:read-only|mutating), (?:gate|no gate|pause); .*)$"),
             // The stage-end line: `  ✓ stage 2 done · 4 commands`.
-            stage_end: re(r"^(\s*)✓ (stage \d+ done(?: · .*)?)$"),
+            stage_end: re(r"^(\s*)✓ ((?:stage \d+|preflight) done(?: · .*)?)$"),
             // A command as it runs: `  2.1 ❯ echo hi`.
             ran: re(r"^(\s*)(\d+(?:\.\d+)*) ❯ (.*)$"),
             // A command in a plan or at a gate: `  2.1  read ❯ echo hi`.
@@ -885,6 +961,11 @@ mod tests {
             "  4.1 ❯ git tag --message 'Release v0.2.0' $'a\\'b' 'it'\\''s'",
             "  4.2 ❯ ./scripts/run.sh \u{e002}<pwd>\u{e003}/a.txt '\u{e002}<work>\u{e003}/my file'",
             "  4.3 ❯ \u{e000}tool\u{e001} 'hi \u{e000}susan\u{e001}'",
+            "━━ 2/4 Snapshot the cluster ━━━━━━━━━━ approved ━━",
+            "━━ preflight · Look around ━━━━━━━━ skipped: reads `id` ━━",
+            "    → ready = 3  ·  wanted = \u{e000}3\u{e001}  (asked)",
+            "  ↻ try 2 · 1s  n = 2",
+            "  $ echo \"${TOKEN}\" \\\n      --flag",
         ];
         for line in lines {
             assert_eq!(strip_ansi(&TRUE.lines(line)), strip_marks(line), "{line}");

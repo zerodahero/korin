@@ -528,8 +528,10 @@ struct Runner<'p> {
     legend_used: RefCell<Option<Vec<String>>>,
     /// The secret variables a `$` line has already explained, each named once per run.
     announced_vars: HashSet<String>,
-    /// `#` lines a dialog leaves for the run log, printed once the dialog closes.
+    /// Lines a dialog leaves for the run log, printed once the dialog closes.
     records: Vec<String>,
+    /// Whether the run log is inside a stage, so its lines sit indented under the banner.
+    indented: Cell<bool>,
     /// The block of the command running now, while a live view builds it.
     building: Option<CommandBlock>,
     /// Blocks a poll holds back until it knows a try's fate.
@@ -698,7 +700,7 @@ impl<'p> Runner<'p> {
             scratch_root,
             from,
             rests: Vec::new(),
-            screen: RefCell::new(Screen::new(live)),
+            screen: RefCell::new(Screen::new(live, theme)),
             current_step: None,
             stage_states: HashMap::new(),
             view: Cell::new(if tty { view } else { View::Full }),
@@ -707,6 +709,7 @@ impl<'p> Runner<'p> {
             legend_used: RefCell::new(None),
             announced_vars: HashSet::new(),
             records: Vec::new(),
+            indented: Cell::new(false),
             building: None,
             scopes: log::Scopes::default(),
             folded: RefCell::new(Vec::new()),
@@ -887,10 +890,34 @@ impl<'p> Runner<'p> {
     /// colored only if removing the marks gives exactly the plain line, redacted. Otherwise it
     /// prints that plain line without value colors.
     fn say(&self, line: &str) {
-        let line = self.redact_marked(line);
+        let line = self.pad_lines(line);
+        let line = self.redact_marked(&line);
         self.note_prefixes(&line);
         let shown = self.opts.theme.lines(&line);
         self.screen.borrow_mut().print(&format!("{shown}\n"));
+    }
+
+    /// The indent for the run log's lines: two spaces inside a stage, under its banner.
+    fn pad(&self) -> &'static str {
+        if self.indented.get() { "  " } else { "" }
+    }
+
+    /// Indents every line of `text` that is not blank, inside a stage.
+    fn pad_lines(&self, text: &str) -> String {
+        let pad = self.pad();
+        if pad.is_empty() {
+            return text.to_string();
+        }
+        text.split('\n')
+            .map(|line| {
+                if line.is_empty() {
+                    String::new()
+                } else {
+                    format!("{pad}{line}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// Adds lines to the run log, or to the poll try that holds them.
@@ -930,17 +957,10 @@ impl<'p> Runner<'p> {
         let Some(used) = used.as_mut() else {
             return;
         };
-        let mut rest = text;
-        while let Some(start) = rest.find(render::PREFIX_OPEN) {
-            let after = &rest[start + render::PREFIX_OPEN.len_utf8()..];
-            let Some(end) = after.find(render::PREFIX_CLOSE) else {
-                break;
-            };
-            let label = &after[..end];
-            if !used.iter().any(|l| l == label) {
-                used.push(label.to_string());
+        for label in legend_labels(text) {
+            if !used.contains(&label) {
+                used.push(label);
             }
-            rest = &after[end + render::PREFIX_CLOSE.len_utf8()..];
         }
     }
 
@@ -974,6 +994,11 @@ impl<'p> Runner<'p> {
     /// The path a prefix label stands for, as the legend shows it. `~` has no entry.
     fn legend_path(&self, label: &str) -> Option<String> {
         let path = match label {
+            // A new scratch directory for each step, under the run's own scratch root.
+            KORIN_OUT_LABEL => {
+                let root = home_relative(&self.scratch_root);
+                return Some(render::escape_controls(&format!("{root}/<step>")));
+            }
             "<pwd>" => self.opts.cwd.to_string_lossy().into_owned(),
             "<tmp>" => std::env::var("TMPDIR")
                 .ok()
@@ -1148,7 +1173,7 @@ impl<'p> Runner<'p> {
             return;
         }
         // Rows for the content: the terminal, less the prompt line and one to spare.
-        let room = screen::height().saturating_sub(2).max(3) - 1;
+        let room = screen::height().saturating_sub(3).max(3) - 1;
         let cols = screen::width();
         let rows_of = |line: &String| screen::rows(&format!("{line}\n"), cols);
         if lines.iter().map(rows_of).sum::<usize>() <= room {
@@ -1212,19 +1237,22 @@ impl<'p> Runner<'p> {
         self.flush_records();
     }
 
-    /// The `#` line that records how a stage began or ended in the run log, such as
-    /// `# ── stage 2/4: Snapshot ── approved`.
-    fn stage_comment(&self, stage: &ir::Stage, what: &str) -> String {
+    /// The banner that opens a stage in the run log, with how its gate went:
+    /// `━━ 2/4 Snapshot ━━━━━━━━ approved ━━`.
+    fn stage_banner(&self, stage: &ir::Stage, what: &str) -> String {
         let title = render::escape_controls(&stage.title);
-        if stage.is_preflight() {
-            format!("# ── preflight: {title} ── {what}")
+        let head = if stage.is_preflight() {
+            format!("━━ preflight · {title} ")
         } else {
-            format!(
-                "# ── stage {}/{}: {title} ── {what}",
-                stage.number,
-                self.p.stages.len()
-            )
-        }
+            format!("━━ {}/{} {title} ", stage.number, self.p.stages.len())
+        };
+        let tail = format!(" {what} ━━");
+        let used = head.chars().count() + tail.chars().count();
+        let fill = render::RULE_MAX
+            .min(self.width())
+            .saturating_sub(used)
+            .max(2);
+        format!("{head}{}{tail}", "━".repeat(fill))
     }
 
     /// The plan pane's content, themed, before it is fitted to the terminal.
@@ -1266,6 +1294,8 @@ impl<'p> Runner<'p> {
                     .push(theme.pane_stage(pane::Mark::Pending, &label, "")),
             }
         }
+        // The labels the pane's lines show, for its legend.
+        let mut used: Vec<String> = Vec::new();
         if plan.current.is_some() {
             let stage = self.p.stage(self.stage_now);
             let current = self.current_step.as_deref().unwrap_or_default();
@@ -1290,6 +1320,11 @@ impl<'p> Runner<'p> {
                 } else {
                     line
                 };
+                for label in legend_labels(&line) {
+                    if !used.contains(&label) {
+                        used.push(label);
+                    }
+                }
                 let line = pane::clip(&line, width);
                 let mark = match at {
                     Some(at) if index == at => pane::Mark::Current,
@@ -1323,13 +1358,20 @@ impl<'p> Runner<'p> {
             }
         }
         if self.legend_on() {
-            let entries: Vec<(String, String)> = self
+            // Every name known so far, then every other label the pane's lines use.
+            let mut labels: Vec<String> = self
                 .named
                 .iter()
-                .filter_map(|(sym, _)| {
-                    let label = format!("<{}>", self.p.sym(*sym).name);
-                    Some((label.clone(), self.legend_path(&label)?))
-                })
+                .map(|(sym, _)| format!("<{}>", self.p.sym(*sym).name))
+                .collect();
+            for label in used {
+                if !labels.contains(&label) {
+                    labels.push(label);
+                }
+            }
+            let entries: Vec<(String, String)> = labels
+                .into_iter()
+                .filter_map(|label| Some((label.clone(), self.legend_path(&label)?)))
                 .collect();
             if !entries.is_empty() {
                 plan.legend = Some(theme.legend(&entries, Some(width)));
@@ -1712,7 +1754,7 @@ impl<'p> Runner<'p> {
             return Ok(());
         }
         let description = why.describe(self.p);
-        self.say(&format!("\n{}", self.stage_comment(stage, &description)));
+        self.say(&format!("\n{}", self.stage_banner(stage, &description)));
         self.journal.report(&format!(
             "\n## {} · {}\n\n- {description}",
             heading(stage),
@@ -2002,7 +2044,7 @@ impl<'p> Runner<'p> {
         } else {
             self.capture_shown(&data)
         };
-        self.records.push(format!("# {name} = {shown}  ({who})"));
+        self.records.push(format!("→ {name} = {shown}  ({who})"));
         self.set_value(
             sym,
             Some(Value {
@@ -2201,7 +2243,7 @@ impl<'p> Runner<'p> {
                 self.journal
                     .report(&format!("- `{}` cleared by hand", info.name));
                 self.records
-                    .push(format!("# {} cleared  (by hand)", info.name));
+                    .push(format!("→ {} = (cleared)  (by hand)", info.name));
                 self.set_value(sym, None);
                 self.hand_set = true;
             }
@@ -2415,7 +2457,7 @@ impl<'p> Runner<'p> {
                     Key::Skip => {
                         if self.in_dialog(|r| r.operator_skip(stage))? {
                             self.close_gate();
-                            self.say(&format!("\n{}", self.stage_comment(stage, "skipped")));
+                            self.say(&format!("\n{}", self.stage_banner(stage, "skipped")));
                             return Ok(());
                         }
                         {
@@ -2442,7 +2484,7 @@ impl<'p> Runner<'p> {
                         self.journal
                             .event("gate", json!({"stage": id, "approved": false}));
                         self.close_gate();
-                        self.say(&format!("\n{}", self.stage_comment(stage, "not approved")));
+                        self.say(&format!("\n{}", self.stage_banner(stage, "not approved")));
                         return Err(Stop::failed(format!(
                             "{} was not approved; nothing in it ran",
                             stage.name()
@@ -2452,7 +2494,8 @@ impl<'p> Runner<'p> {
             }
         }
         self.close_gate();
-        self.say(&format!("\n{}", self.stage_comment(stage, opened)));
+        self.say(&format!("\n{}", self.stage_banner(stage, opened)));
+        self.indented.set(true);
         self.prompt_scripts.borrow_mut().clear();
         self.in_stage = true;
         let prefix = if stage.is_preflight() {
@@ -2467,6 +2510,10 @@ impl<'p> Runner<'p> {
         self.current_step = Some(String::new());
         let result = self.steps(&stage.steps, &prefix, "", None);
         self.current_step = None;
+        // A failure prints flush, under the stage, as the run's own ending.
+        if result.as_ref().is_err_and(|stop| !stop.skip_rest) {
+            self.indented.set(false);
+        }
         self.screen.borrow_mut().clear_all();
         // A stage whose rest was skipped still ended well.
         let ended_well = match &result {
@@ -2480,7 +2527,8 @@ impl<'p> Runner<'p> {
         if let Err(stop) = &result
             && stop.skip_rest
         {
-            self.say(&format!("# ↷ the rest of {} was skipped", stage.name()));
+            self.say(&format!("↷ the rest of {} was skipped", stage.name()));
+            self.indented.set(false);
             return Ok(());
         }
         result?;
@@ -2496,7 +2544,9 @@ impl<'p> Runner<'p> {
         } else {
             format!("stage {}", stage.number)
         };
-        self.say(&format!("# ✓ {done} done{tail}"));
+        let took = elapsed(started.elapsed());
+        self.say(&format!("✓ {done} done{tail} · {took}"));
+        self.indented.set(false);
         Ok(())
     }
 
@@ -2607,7 +2657,7 @@ impl<'p> Runner<'p> {
                     match self.ask(&Style::Question(&question), keys, &redraw)? {
                         Key::Yes => {
                             self.close_gate();
-                            self.say(&comment(&format!("confirmed: {text}")));
+                            self.say(&format!("✓ confirmed: {text}"));
                             self.update_pane();
                             self.journal
                                 .event("confirm", json!({"step": step.id, "approved": true}));
@@ -2648,7 +2698,7 @@ impl<'p> Runner<'p> {
                         }
                         _ => {
                             self.close_gate();
-                            self.say(&comment(&format!("not confirmed: {text}")));
+                            self.say(&format!("✗ not confirmed: {text}"));
                             self.journal
                                 .event("confirm", json!({"step": step.id, "approved": false}));
                             return Err(Stop::failed(format!(
@@ -2747,12 +2797,14 @@ impl<'p> Runner<'p> {
             StepKind::Say { kind, text } => {
                 // One full, redacted text: the journal keeps it, the terminal shows its view.
                 let text = self.display_interpolated(text);
-                let keyword = match kind {
-                    SayKind::Note => "note",
-                    SayKind::Warn => "warn",
-                    SayKind::Record => "record",
+                // A message from the wizard's author, styled by its kind.
+                let mark = match kind {
+                    SayKind::Note => "",
+                    SayKind::Warn => "⚠ ",
+                    SayKind::Record => "✓ ",
                 };
-                self.log_line(&comment(&format!("{keyword}: {text}")));
+                let shown = text.replace('\n', "\n  ");
+                self.log_line(&format!("{mark}{shown}"));
                 if *kind == SayKind::Record {
                     self.journal.report(&format!("- {text}"));
                 }
@@ -2791,7 +2843,7 @@ impl<'p> Runner<'p> {
         // A live view holds each try until it knows its fate; otherwise tries print as they run.
         let live = self.screen.borrow().live();
         self.log_line(&format!(
-            "# poll every {every}s, up to {}: until {}",
+            "↻ poll every {every}s, up to {}: until {}",
             pane::short_duration(Duration::from_secs(limit)),
             render::expr(self.p, until, self)
         ));
@@ -2819,7 +2871,7 @@ impl<'p> Runner<'p> {
                     self.scopes.hold();
                 } else {
                     let at = pane::short_duration(started.elapsed());
-                    self.log_line(&format!("# try {attempt} · {at}"));
+                    self.log_line(&format!("↻ try {attempt} · {at}"));
                 }
                 let before = self.seq;
                 let ran = self.steps(body, path, &format!("@{attempt}"), Some(deadline));
@@ -2874,7 +2926,7 @@ impl<'p> Runner<'p> {
                         }
                         let took = pane::short_duration(started.elapsed());
                         let tries = if attempt == 1 { "try" } else { "tries" };
-                        self.log_line(&format!("# until matched after {attempt} {tries} · {took}"));
+                        self.log_line(&format!("↻ matched after {attempt} {tries} · {took}"));
                         break 'poll Ok(());
                     }
                     Ok(false) => {
@@ -2882,7 +2934,7 @@ impl<'p> Runner<'p> {
                             last_try = self.scopes.take();
                             let took = pane::short_duration(started.elapsed());
                             let shown = result.map_or_else(String::new, |r| format!("  {r}"));
-                            self.log_line(&format!("  ↻ try {attempt} · {took}{shown}"));
+                            self.log_line(&format!("↻ try {attempt} · {took}{shown}"));
                         }
                     }
                     Err(stop) => {
@@ -2892,7 +2944,7 @@ impl<'p> Runner<'p> {
                                 self.emit(block, true);
                             }
                         }
-                        self.log_line(&format!("# try {attempt} stopped: {}", stop.message));
+                        self.log_line(&format!("✗ try {attempt} stopped: {}", stop.message));
                         break 'poll Err(stop);
                     }
                 }
@@ -2910,12 +2962,12 @@ impl<'p> Runner<'p> {
                     // Stopped while waiting: the last try, which only left a `↻` line, shows
                     // in full.
                     if live && !last_try.is_empty() {
-                        self.log_line(&format!("# last try (try {attempt}):"));
+                        self.log_line(&format!("↻ last try (try {attempt}), in full:"));
                         for block in std::mem::take(&mut last_try) {
                             self.emit(block, true);
                         }
                     }
-                    self.log_line(&format!("# poll stopped: {}", stop.message));
+                    self.log_line(&format!("✗ poll stopped: {}", stop.message));
                     break 'poll Err(stop);
                 }
             }
@@ -3181,7 +3233,6 @@ impl<'p> Runner<'p> {
             let redactor = self.redactor.clone();
             // One buffer per stream: a secret split across two reads is held until whole.
             let mut buffers = [StreamRedactor::default(), StreamRedactor::default()];
-            let mut line_start = true;
             let screen = &self.screen;
             let live = screen.borrow().live();
             let theme = self.opts.theme;
@@ -3208,7 +3259,8 @@ impl<'p> Runner<'p> {
                 lines.push(theme.faint("  output held until its secret captures resolve"));
                 screen.borrow_mut().set_window(lines, true);
             }
-            let cols = self.width().saturating_sub(1).max(20);
+            let cols = self.width().saturating_sub(3).max(20);
+            let pad = self.pad();
             let mut first: Vec<String> = Vec::new();
             let mut count = 0;
             let mut tail: std::collections::VecDeque<String> = std::collections::VecDeque::new();
@@ -3230,7 +3282,7 @@ impl<'p> Runner<'p> {
                     if tail.len() == log::WINDOW {
                         tail.pop_front();
                     }
-                    tail.push_back(theme.output(&pane::clip(line, cols)));
+                    tail.push_back(format!("{pad}{}", theme.output(&pane::clip(line, cols))));
                 }
                 let mut lines = head.clone();
                 lines.extend(tail.iter().cloned());
@@ -3247,13 +3299,16 @@ impl<'p> Runner<'p> {
                             feed(is_err, &whole, false);
                         }
                     } else {
-                        // The run log reads like a shell session: output follows its `$` line
-                        // as it is, with korin's own marks removed.
-                        screen.borrow_mut().print_raw(&indent_from(
-                            &theme.output(&text),
-                            "",
-                            &mut line_start,
-                        ));
+                        // Whole lines only, per stream, so stdout and stderr never split a
+                        // line between them. korin's own marks are removed.
+                        let buffer = &mut partial[usize::from(is_err)];
+                        buffer.push_str(&text);
+                        if let Some(end) = buffer.rfind('\n') {
+                            let whole: String = buffer.drain(..=end).collect();
+                            screen
+                                .borrow_mut()
+                                .print(&indent(&theme.output(&whole), pad));
+                        }
                     }
                 }
             };
@@ -3287,15 +3342,12 @@ impl<'p> Runner<'p> {
                     }
                 } else {
                     let mut screen = self.screen.borrow_mut();
-                    for buffer in &mut buffers {
-                        screen.print_raw(&indent_from(
-                            &theme.output(&buffer.finish(&redactor)),
-                            "",
-                            &mut line_start,
-                        ));
-                    }
-                    if !line_start {
-                        screen.print_raw("\n");
+                    for (index, buffer) in buffers.iter_mut().enumerate() {
+                        let mut rest = std::mem::take(&mut partial[index]);
+                        rest.push_str(&buffer.finish(&redactor));
+                        if !rest.is_empty() {
+                            screen.print(&indent(&theme.output(&rest), pad));
+                        }
                     }
                 }
             }
@@ -3579,8 +3631,9 @@ impl<'p> Runner<'p> {
             } else {
                 let theme = self.opts.theme;
                 let mut screen = self.screen.borrow_mut();
-                screen.print(&indent(&theme.output(&out), ""));
-                screen.print(&indent(&theme.output(&err), ""));
+                let pad = self.pad();
+                screen.print(&indent(&theme.output(&out), pad));
+                screen.print(&indent(&theme.output(&err), pad));
             }
         } else if !published {
             self.note(&format!(
@@ -3611,12 +3664,13 @@ impl<'p> Runner<'p> {
         };
         let expect = matched.map(|sym| format!("expect {}", self.p.sym(sym).name));
         let status_note: Vec<String> = code.into_iter().chain(expect).collect();
-        if !status_note.is_empty() {
+        let status_note = (!status_note.is_empty()).then(|| {
             let tail = if succeeded { " · continuing" } else { "" };
-            self.note(&format!("{}{tail}", status_note.join(" · ")));
-        }
+            format!("{}{tail}", status_note.join(" · "))
+        });
 
-        // Store values and log captures.
+        // Store values and log captures, all on one `→` line.
+        let mut captured: Vec<String> = Vec::new();
         let mut failures = Vec::new();
         for (capture, result, file) in &results {
             let name = self.p.sym(capture.sym).name.clone();
@@ -3629,7 +3683,7 @@ impl<'p> Runner<'p> {
                         } else {
                             self.capture_shown(data)
                         };
-                        self.note(&format!("{name} = {shown}"));
+                        captured.push(format!("{name} = {shown}"));
                     } else {
                         self.journal.event(
                             "capture",
@@ -3649,7 +3703,7 @@ impl<'p> Runner<'p> {
                     );
                 }
                 Extract::Absent => {
-                    self.note(&format!("{name} absent"));
+                    captured.push(format!("{name} = (absent)"));
                     self.journal.event(
                         "capture",
                         json!({"invocation_id": invocation, "name": name, "absent": true}),
@@ -3659,6 +3713,12 @@ impl<'p> Runner<'p> {
                     failures.push((name, message.clone(), capture.secret, file.clone()));
                 }
             }
+        }
+        if !captured.is_empty() {
+            self.note_line(&format!("  → {}", captured.join("  ·  ")));
+        }
+        if let Some(status) = status_note {
+            self.note(&status);
         }
 
         if !succeeded {
@@ -3835,13 +3895,19 @@ impl<'p> Runner<'p> {
                 line.partial.join(", ")
             )));
         }
-        let head = head.join("\n");
+        let pad = self.pad();
+        let head = head
+            .iter()
+            .flat_map(|h| h.split('\n'))
+            .map(|line| format!("{pad}{line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         // A live view builds the command's block while it runs, and shows it in the live
         // window. An interactive program takes the whole terminal, so its line prints now.
         if live && command.kind != CommandKind::Interactive {
             let label = render::strip_marks(&render::join_breaks(&line.lines.join("\n")));
             self.building = Some(CommandBlock {
-                head: format!("\n{head}"),
+                head: head.clone(),
                 journal: format!("{}/out/{invocation}.stdout", self.journal_rel()),
                 step: step.to_string(),
                 label,
@@ -3850,7 +3916,7 @@ impl<'p> Runner<'p> {
             let lines = head.split('\n').map(str::to_string).collect();
             self.screen.borrow_mut().set_window(lines, true);
         } else {
-            self.screen.borrow_mut().print(&format!("\n{head}\n"));
+            self.screen.borrow_mut().print(&format!("{head}\n"));
         }
         Ok(())
     }
@@ -3887,7 +3953,12 @@ impl<'p> Runner<'p> {
 
     /// Adds a `↳` note under the command running now, or prints it.
     fn note(&mut self, text: &str) {
-        let line = format!("  ↳ {text}");
+        self.note_line(&format!("  ↳ {text}"));
+    }
+
+    /// Adds a line under the command running now, or prints it.
+    fn note_line(&mut self, line: &str) {
+        let line = line.to_string();
         match &mut self.building {
             Some(block) => block.notes.push(line),
             None => self.say(&line),
@@ -3919,6 +3990,7 @@ impl<'p> Runner<'p> {
 
     fn render_command(&mut self, block: &CommandBlock, full: bool) {
         let theme = self.opts.theme;
+        let pad = self.pad();
         self.screen.borrow_mut().print(&format!("{}\n", block.head));
         let mode = log::mode(block.ok, full, block.lines);
         let mut text = String::new();
@@ -3926,6 +3998,7 @@ impl<'p> Runner<'p> {
         if let (log::Mode::Full, Some(spool)) = (mode, &block.spool) {
             let mut screen = self.screen.borrow_mut();
             let read = log::read_spool(spool, |_, line| {
+                text.push_str(pad);
                 text.push_str(&theme.output(line));
                 text.push('\n');
                 shown += 1;
@@ -3946,6 +4019,7 @@ impl<'p> Runner<'p> {
                 block.first.len()
             };
             for line in block.first.iter().take(take) {
+                text.push_str(pad);
                 text.push_str(&theme.output(line));
                 text.push('\n');
                 shown += 1;
@@ -4246,12 +4320,37 @@ fn answer_record(name: &str, value: &str, secret: bool, how: &str) -> String {
     } else {
         render::escape_controls(value)
     };
-    format!("# {name} = {shown}  ({how})")
+    format!("→ {name} = {shown}  ({how})")
 }
 
 /// How many lines one scroll key moves a prompt's content: half the terminal.
 fn scroll_step() -> usize {
     (screen::height() / 2).max(1)
+}
+
+/// How a command shows the step's scratch directory before it runs.
+const KORIN_OUT_LABEL: &str = "<korin.out>";
+
+/// The labels a legend can explain that a line shows: each shortened path prefix, such as
+/// `<pwd>`, and `<korin.out>`, in the order they appear.
+fn legend_labels(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(render::PREFIX_OPEN) {
+        let after = &rest[start + render::PREFIX_OPEN.len_utf8()..];
+        let Some(end) = after.find(render::PREFIX_CLOSE) else {
+            break;
+        };
+        let label = after[..end].to_string();
+        if !out.contains(&label) {
+            out.push(label);
+        }
+        rest = &after[end + render::PREFIX_CLOSE.len_utf8()..];
+    }
+    if text.contains(KORIN_OUT_LABEL) {
+        out.push(KORIN_OUT_LABEL.to_string());
+    }
+    out
 }
 
 /// The step id a rendered step line starts with, such as `2.1` in `    2.1  read ❯ ls`.
@@ -4323,27 +4422,6 @@ fn excerpts(mut stop: Stop, redactor: &Redactor, stdout: &[u8], stderr: &[u8]) -
         }
     }
     stop
-}
-
-/// Text as `#` comment lines for the run log, one `# ` per line.
-fn comment(text: &str) -> String {
-    text.lines()
-        .map(|line| format!("# {line}"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// Indents streamed output, continuing a line that an earlier piece left open.
-fn indent_from(text: &str, gutter: &str, line_start: &mut bool) -> String {
-    let mut out = String::new();
-    for line in text.split_inclusive('\n') {
-        if *line_start {
-            out.push_str(gutter);
-        }
-        out.push_str(line);
-        *line_start = line.ends_with('\n');
-    }
-    out
 }
 
 fn indent(text: &str, gutter: &str) -> String {

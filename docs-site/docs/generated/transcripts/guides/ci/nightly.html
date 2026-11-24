@@ -1,29 +1,26 @@
 <pre class="k-term"><code>╭─ korin ─ Nightly: prune old preview environments ─ ~/project ─ 2 stages
 ╰─❯ korin run nightly.korin --yes
 
-# ── stage 1/2: Find stale previews ── started
+━━ 1/2 Find stale previews ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ started ━━
+  $ kubectl get namespaces -l preview=true -o json
+  {
+    "items": [
+      {"metadata": {"name": "preview-51", "annotations": {"example.com/age-days": "12"}}},
+      {"metadata": {"name": "preview-57", "annotations": {"example.com/age-days": "2"}}},
+      {"metadata": {"name": "preview-60", "annotations": {"example.com/age-days": "9"}}}
+    ]
+  }
+    → stale = [preview-51, preview-60]
+  preview-51 is more than 7 days old.
+  preview-60 is more than 7 days old.
+  ✓ stage 1 done · 1 command · 0s
 
-$ kubectl get namespaces -l preview=true -o json
-{
-  "items": [
-    {"metadata": {"name": "preview-51", "annotations": {"example.com/age-days": "12"}}},
-    {"metadata": {"name": "preview-57", "annotations": {"example.com/age-days": "2"}}},
-    {"metadata": {"name": "preview-60", "annotations": {"example.com/age-days": "9"}}}
-  ]
-}
-  ↳ stale = [preview-51, preview-60]
-# note: preview-51 is more than 7 days old.
-# note: preview-60 is more than 7 days old.
-# ✓ stage 1 done · 1 command
-
-# ── stage 2/2: Delete them ── approved by --yes
-
-$ kubectl delete namespace preview-51 --wait=false
-namespace "preview-51" deleted
-
-$ kubectl delete namespace preview-60 --wait=false
-namespace "preview-60" deleted
-# ✓ stage 2 done · 2 commands
+━━ 2/2 Delete them ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ approved by --yes ━━
+  $ kubectl delete namespace preview-51 --wait=false
+  namespace "preview-51" deleted
+  $ kubectl delete namespace preview-60 --wait=false
+  namespace "preview-60" deleted
+  ✓ stage 2 done · 2 commands · 0s
 
 ── done · 1s · exit 0 ──────────────────────────────────────────────────────────
  ✓ 1/2 Find stale previews  1s

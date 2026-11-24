@@ -1,18 +1,15 @@
 <pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Restart the web deployment</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">1 stage</span>
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run deploy.korin
 
-<span class="k-comment"># ── stage 1/1: Restart ── approved</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment web <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
-NAME   READY   UP-TO-DATE   AVAILABLE   AGE
-web    3/3     3            3           41d
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>web <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
-deployment.apps/web restarted
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span>web <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">--timeout</span> 2m
-deployment "web" successfully rolled out
-<span class="k-comment"># ✓ stage 1 done · 3 commands</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">1/1</span> <span class="k-bold">Restart</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment web <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
+  NAME   READY   UP-TO-DATE   AVAILABLE   AGE
+  web    3/3     3            3           41d
+  <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>web <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
+  deployment.apps/web restarted
+  <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span>web <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">--timeout</span> 2m
+  deployment "web" successfully rolled out
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 3 commands · 0s</span>
 
 <span class="k-comment">── done · 1s · exit 0 ──────────────────────────────────────────────────────────</span>
  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">1/1 Restart</span>  <span class="k-comment">1s</span>

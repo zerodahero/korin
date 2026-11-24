@@ -1,65 +1,55 @@
 <pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Release the shop</span> <span class="k-border">─</span> <span class="k-cyan">~/tutorial/work</span> <span class="k-border">─</span> <span class="k-fg-dim">4 stages</span>
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run ../release.korin
 
-<span class="k-comment"># ── stage 1/4: Check the working tree ── continued</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">1/4</span> <span class="k-bold">Check the working tree</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">continued</span> <span class="k-border">━━</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> branch <span class="k-blue">--show-current</span>
+  main
+    <span class="k-border">→</span> <span class="k-teal">$call1$current</span> <span class="k-border">=</span> <span class="k-cyan">main</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> status <span class="k-blue">--porcelain</span>
+    <span class="k-border">→</span> <span class="k-teal">$call1$changes</span> <span class="k-border">=</span> <span class="k-cyan">""</span>
+  On main, with a clean working tree.
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 2 commands · 0s</span>
 
-<span class="k-blue k-bold">$</span> <span class="k-bold">git</span> branch <span class="k-blue">--show-current</span>
-main
-  <span class="k-border">↳</span> <span class="k-fg-dim">$call1$current = main</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">2/4</span> <span class="k-bold">Choose the version</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">continued</span> <span class="k-border">━━</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> ls-remote <span class="k-border">\</span>
+      <span class="k-blue">--tags</span> <span class="k-border">\</span>
+      <span class="k-blue">--refs</span> <span class="k-border">\</span>
+      <span class="k-blue">--sort=</span>-version:refname <span class="k-border">\</span>
+      <span class="k-cyan">origin</span>
+  89c5a47ca11ea20ec8e5ad20036318a256cc3255      refs/tags/v0.1.0
+    <span class="k-border">→</span> <span class="k-teal">last</span> <span class="k-border">=</span> <span class="k-cyan">v0.1.0</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> rev-list <span class="k-blue">--count</span> <span class="k-cyan">v0.1.0</span>..HEAD
+  2
+    <span class="k-border">→</span> <span class="k-teal">ahead</span> <span class="k-border">=</span> <span class="k-cyan">2</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> log <span class="k-blue">--oneline</span> <span class="k-cyan">v0.1.0</span>..HEAD
+  aeb8b5d fix: show the cart total
+  3f88576 feat: add a cart
+    <span class="k-border">→</span> <span class="k-teal">commits</span> <span class="k-border">=</span> <span class="k-cyan">[aeb8b5d fix: show the cart total, 3f88576 feat: add a cart]</span>
+  aeb8b5d fix: show the cart total
+  3f88576 feat: add a cart
+  <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> rev-parse <span class="k-blue">--short</span> HEAD
+  aeb8b5d
+    <span class="k-border">→</span> <span class="k-teal">head</span> <span class="k-border">=</span> <span class="k-cyan">aeb8b5d</span>
+  <span class="k-border">→</span> <span class="k-teal">version</span> <span class="k-border">=</span> <span class="k-cyan">v0.2.0</span>  <span class="k-comment">(asked)</span>
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 4 commands · 0s</span>
 
-<span class="k-blue k-bold">$</span> <span class="k-bold">git</span> status <span class="k-blue">--porcelain</span>
-  <span class="k-border">↳</span> <span class="k-fg-dim">$call1$changes = ""</span>
-<span class="k-comment"># note: On main, with a clean working tree.</span>
-<span class="k-comment"># ✓ stage 1 done · 2 commands</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">3/4</span> <span class="k-bold">Is it released?</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">continued</span> <span class="k-border">━━</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> rev-parse <span class="k-blue">--quiet --verify</span> <span class="k-fg-dim">refs/tags/</span><span class="k-cyan">v0.2.0</span>
+    <span class="k-border">↳</span> <span class="k-fg-dim">exit 1 · expect tag.untagged · continuing</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> ls-remote <span class="k-blue">--exit-code --tags</span> <span class="k-cyan">origin</span> <span class="k-fg-dim">refs/tags/</span><span class="k-cyan">v0.2.0</span>
+    <span class="k-border">↳</span> <span class="k-fg-dim">exit 2 · expect tag.unpushed · continuing</span>
+  v0.2.0 is not tagged yet.
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 3 done · 2 commands · 0s</span>
 
-<span class="k-comment"># ── stage 2/4: Choose the version ── continued</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">git</span> ls-remote <span class="k-border">\</span>
-    <span class="k-blue">--tags</span> <span class="k-border">\</span>
-    <span class="k-blue">--refs</span> <span class="k-border">\</span>
-    <span class="k-blue">--sort=</span>-version:refname <span class="k-border">\</span>
-    <span class="k-cyan">origin</span>
-89c5a47ca11ea20ec8e5ad20036318a256cc3255        refs/tags/v0.1.0
-  <span class="k-border">↳</span> <span class="k-fg-dim">last = v0.1.0</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">git</span> rev-list <span class="k-blue">--count</span> <span class="k-cyan">v0.1.0</span>..HEAD
-2
-  <span class="k-border">↳</span> <span class="k-fg-dim">ahead = 2</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">git</span> log <span class="k-blue">--oneline</span> <span class="k-cyan">v0.1.0</span>..HEAD
-aeb8b5d fix: show the cart total
-3f88576 feat: add a cart
-  <span class="k-border">↳</span> <span class="k-fg-dim">commits = [aeb8b5d fix: show the cart total, 3f88576 feat: add a cart]</span>
-<span class="k-comment"># note: aeb8b5d fix: show the cart total</span>
-<span class="k-comment"># note: 3f88576 feat: add a cart</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">git</span> rev-parse <span class="k-blue">--short</span> HEAD
-aeb8b5d
-  <span class="k-border">↳</span> <span class="k-fg-dim">head = aeb8b5d</span>
-<span class="k-comment"># version = v0.2.0  (asked)</span>
-<span class="k-comment"># ✓ stage 2 done · 4 commands</span>
-
-<span class="k-comment"># ── stage 3/4: Is it released? ── continued</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">git</span> rev-parse <span class="k-blue">--quiet --verify</span> <span class="k-fg-dim">refs/tags/</span><span class="k-cyan">v0.2.0</span>
-  <span class="k-border">↳</span> <span class="k-fg-dim">exit 1 · expect tag.untagged · continuing</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">git</span> ls-remote <span class="k-blue">--exit-code --tags</span> <span class="k-cyan">origin</span> <span class="k-fg-dim">refs/tags/</span><span class="k-cyan">v0.2.0</span>
-  <span class="k-border">↳</span> <span class="k-fg-dim">exit 2 · expect tag.unpushed · continuing</span>
-<span class="k-comment"># note: v0.2.0 is not tagged yet.</span>
-<span class="k-comment"># ✓ stage 3 done · 2 commands</span>
-
-<span class="k-comment"># ── stage 4/4: Release ── approved</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">git</span> tag <span class="k-blue">--annotate</span> <span class="k-cyan">v0.2.0</span> <span class="k-blue">--message</span> <span class="k-green">'Release</span> <span class="k-cyan">v0.2.0</span><span class="k-green">'</span>
-<span class="k-comment"># record: tagged v0.2.0 at aeb8b5d</span>
-<span class="k-comment"># confirmed: Push v0.2.0 to origin? Anyone who fetches will see it.</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">git</span> push <span class="k-cyan">origin v0.2.0</span>
-To ../remote.git
- * [new tag]         v0.2.0 -&gt; v0.2.0
-<span class="k-comment"># record: pushed v0.2.0 to origin</span>
-<span class="k-comment"># ✓ stage 4 done · 2 commands</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">4/4</span> <span class="k-bold">Release</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> tag <span class="k-blue">--annotate</span> <span class="k-cyan">v0.2.0</span> <span class="k-blue">--message</span> <span class="k-green">'Release</span> <span class="k-cyan">v0.2.0</span><span class="k-green">'</span>
+  <span class="k-green k-bold">✓</span> <span class="k-bold">tagged v0.2.0 at aeb8b5d</span>
+  <span class="k-green k-bold">✓</span> <span class="k-bold">confirmed: Push v0.2.0 to origin? Anyone who fetches will see it.</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">git</span> push <span class="k-cyan">origin v0.2.0</span>
+  To ../remote.git
+   * [new tag]         v0.2.0 -&gt; v0.2.0
+  <span class="k-green k-bold">✓</span> <span class="k-bold">pushed v0.2.0 to origin</span>
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 4 done · 2 commands · 0s</span>
 
 <span class="k-comment">── done · 1s · exit 0 ──────────────────────────────────────────────────────────</span>
  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">1/4 Check the working tree</span>  <span class="k-comment">1s</span>

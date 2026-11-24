@@ -1,15 +1,14 @@
 <pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Restart the API</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">2 stages</span>
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run skip.korin
-<span class="k-comment"># account = 123456789012  (by hand)</span>
+<span class="k-border">→</span> <span class="k-teal">account</span> <span class="k-border">=</span> <span class="k-cyan">123456789012</span>  <span class="k-comment">(by hand)</span>
 
-<span class="k-comment"># ── stage 1/2: Which account? ── skipped</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">1/2</span> <span class="k-bold">Which account?</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-magenta">skipped</span> <span class="k-border">━━</span>
 
-<span class="k-comment"># ── stage 2/2: Restart ── approved</span>
-
-<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> shop
-deployment.apps/api restarted
-<span class="k-comment"># record: restarted api in 123456789012</span>
-<span class="k-comment"># ✓ stage 2 done · 1 command</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">2/2</span> <span class="k-bold">Restart</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> shop
+  deployment.apps/api restarted
+  <span class="k-green k-bold">✓</span> <span class="k-bold">restarted api in 123456789012</span>
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 1 command · 0s</span>
 
 <span class="k-comment">── done · 1s · exit 0 ──────────────────────────────────────────────────────────</span>
    <span class="k-comment">1/2 Which account?  not run</span>

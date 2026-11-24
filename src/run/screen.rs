@@ -17,6 +17,8 @@ use std::sync::OnceLock;
 use regex::Regex;
 use unicode_width::UnicodeWidthStr as _;
 
+use crate::theme::Theme;
+
 pub struct Screen {
     live: bool,
     /// The plan pane's lines, already themed and fitted, without trailing newlines.
@@ -32,6 +34,8 @@ pub struct Screen {
     pane_rows: Option<usize>,
     /// Rows written since [`Screen::mark`], for erasing a gate's preview.
     since_mark: Option<usize>,
+    /// Colors the rule that sets the live region apart from the run log.
+    theme: Theme,
     /// How many dialogs are open. While one is, prints go into the pane, not the run log.
     dialogs: usize,
     /// The lines an open dialog printed, its prompts and answers included.
@@ -41,9 +45,10 @@ pub struct Screen {
 }
 
 impl Screen {
-    pub fn new(live: bool) -> Self {
+    pub fn new(live: bool, theme: Theme) -> Self {
         Self {
             live,
+            theme,
             pane: Vec::new(),
             window: Vec::new(),
             window_drawn: None,
@@ -83,13 +88,6 @@ impl Screen {
             *count += added;
         }
         self.show();
-    }
-
-    /// Writes text that may end mid-line. Only for a view that is not live.
-    pub fn print_raw(&mut self, text: &str) {
-        debug_assert!(!self.live, "a live view writes whole lines only");
-        print!("{text}");
-        flush();
     }
 
     /// Replaces the plan pane's lines.
@@ -214,7 +212,7 @@ impl Screen {
     /// left for its next prompt.
     fn show_dialog(&mut self) {
         let cols = width();
-        let budget = height().saturating_sub(3);
+        let budget = height().saturating_sub(4);
         let mut used = 0;
         let mut start = self.dialog.len();
         while start > 0 {
@@ -275,15 +273,20 @@ impl Screen {
         let budget = height().saturating_sub(2);
         let row_count = |line: &String| rows(&format!("{line}\n"), cols);
         let pane_rows: usize = self.pane.iter().map(row_count).sum();
-        let mut window_room = budget.saturating_sub(pane_rows);
+        let mut window_room = budget.saturating_sub(pane_rows + 1);
         let mut start = self.window.len();
         while start > 0 && row_count(&self.window[start - 1]) <= window_room {
             window_room -= row_count(&self.window[start - 1]);
             start -= 1;
         }
+        // A rule across the terminal sets the live region apart from the run log above it.
+        let rule = self.theme.separator(cols.saturating_sub(1).max(1));
         let mut text = String::new();
         let mut used = 0;
-        for line in self.window[start..].iter().chain(&self.pane) {
+        for line in std::iter::once(&rule)
+            .chain(&self.window[start..])
+            .chain(&self.pane)
+        {
             let line_rows = row_count(line);
             if used + line_rows > budget {
                 break;

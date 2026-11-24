@@ -1,20 +1,19 @@
 <pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Drain a node</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">2 stages</span>
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run declined.korin --param node=node-7
 
-<span class="k-comment"># ── stage 1/2: Pods on the node ── approved</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">1/2</span> <span class="k-bold">Pods on the node</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
+  <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get pods <span class="k-border">\</span>
+      <span class="k-blue">--all-namespaces</span> <span class="k-border">\</span>
+      <span class="k-blue">--field-selector</span> spec.nodeName=<span class="k-cyan">node-7</span> <span class="k-border">\</span>
+      <span class="k-blue">-o</span> name
+  pod/web-6b8d9c7f5-hx2lq
+  pod/api-7d9f8b6c4-2xkqp
+  pod/fluent-bit-8kq2v
+    <span class="k-border">→</span> <span class="k-teal">pods</span> <span class="k-border">=</span> <span class="k-cyan">[pod/web-6b8d9c7f5-hx2lq, pod/api-7d9f8b6c4-2xkqp, pod/fluent-bit-8kq2v]</span>
+  node-7 runs pods that will move.
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command · 0s</span>
 
-<span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get pods <span class="k-border">\</span>
-    <span class="k-blue">--all-namespaces</span> <span class="k-border">\</span>
-    <span class="k-blue">--field-selector</span> spec.nodeName=<span class="k-cyan">node-7</span> <span class="k-border">\</span>
-    <span class="k-blue">-o</span> name
-pod/web-6b8d9c7f5-hx2lq
-pod/api-7d9f8b6c4-2xkqp
-pod/fluent-bit-8kq2v
-  <span class="k-border">↳</span> <span class="k-fg-dim">pods = [pod/web-6b8d9c7f5-hx2lq, pod/api-7d9f8b6c4-2xkqp, pod/fluent-bit-8kq2v]</span>
-<span class="k-comment"># note: node-7 runs pods that will move.</span>
-<span class="k-comment"># ✓ stage 1 done · 1 command</span>
-
-<span class="k-comment"># ── stage 2/2: Drain ── not approved</span>
+<span class="k-border">━━</span> <span class="k-fg-dim">2/2</span> <span class="k-bold">Drain</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-red k-bold">not approved</span> <span class="k-border">━━</span>
 
 <span class="k-comment">── failed · 1s · exit 1 ────────────────────────────────────────────────────────</span>
  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">1/2 Pods on the node</span>  <span class="k-comment">1s</span>
