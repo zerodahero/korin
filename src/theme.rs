@@ -128,13 +128,50 @@ enum Text {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Theme {
     depth: Depth,
+    icons: Icons,
+}
+
+/// The glyphs the plan pane marks its lines with.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Icons {
+    /// Symbols any font has: `▶ ✓ ✗ ↷ ⚠`.
+    #[default]
+    Plain,
+    /// Nerd Font glyphs, for terminals that use such a font.
+    Nerd,
+}
+
+impl Icons {
+    /// The glyph for a mark, or for a mutating step with `None`.
+    fn glyph(self, mark: Option<Mark>) -> &'static str {
+        match (self, mark) {
+            (Icons::Plain, Some(Mark::Current)) => "▶",
+            (Icons::Plain, Some(Mark::Done)) => "✓",
+            (Icons::Plain, Some(Mark::Skipped)) => "↷",
+            (Icons::Plain, Some(Mark::Failed)) => "✗",
+            (Icons::Plain, None) => "⚠",
+            (Icons::Nerd, Some(Mark::Current)) => "\u{f04b}",
+            (Icons::Nerd, Some(Mark::Done)) => "\u{f00c}",
+            (Icons::Nerd, Some(Mark::Skipped)) => "\u{f064}",
+            (Icons::Nerd, Some(Mark::Failed)) => "\u{f00d}",
+            (Icons::Nerd, None) => "\u{f071}",
+            (_, Some(Mark::Pending | Mark::None)) => " ",
+        }
+    }
 }
 
 impl Theme {
     /// No color at all.
     pub const PLAIN: Theme = Theme {
         depth: Depth::Plain,
+        icons: Icons::Plain,
     };
+
+    /// The same theme with another set of pane glyphs.
+    #[must_use]
+    pub fn with_icons(self, icons: Icons) -> Self {
+        Self { icons, ..self }
+    }
 
     /// The theme for stdout.
     pub fn stdout(choice: Choice) -> Self {
@@ -174,6 +211,7 @@ impl Theme {
             } else {
                 Depth::Ansi256
             },
+            icons: Icons::Plain,
         }
     }
 
@@ -265,13 +303,14 @@ impl Theme {
     /// time it took. The text must already be redacted.
     pub fn pane_stage(self, mark: Mark, label: &str, tail: &str) -> String {
         let mut out = String::from(" ");
-        let (sign, sign_role, text_role) = match mark {
-            Mark::Current => ("▶", Role::Prompt, Role::Title),
-            Mark::Done => ("✓", Role::Ok, Role::Dim),
-            Mark::Skipped => ("↷", Role::Warn, Role::Dim),
-            Mark::Failed => ("✗", Role::Error, Role::Dim),
-            Mark::Pending | Mark::None => (" ", Role::Faint, Role::Faint),
+        let (sign_role, text_role) = match mark {
+            Mark::Current => (Role::Prompt, Role::Title),
+            Mark::Done => (Role::Ok, Role::Dim),
+            Mark::Skipped => (Role::Warn, Role::Dim),
+            Mark::Failed => (Role::Error, Role::Dim),
+            Mark::Pending | Mark::None => (Role::Faint, Role::Faint),
         };
+        let sign = self.icons.glyph(Some(mark));
         self.paint(sign_role, sign, &mut out);
         out.push(' ');
         self.paint(text_role, &strip_marks(label), &mut out);
@@ -287,13 +326,14 @@ impl Theme {
     /// the step id. The line must already be redacted.
     pub fn pane_step(self, mark: Mark, line: &str) -> String {
         let pad = line.len() - line.trim_start_matches(' ').len();
-        let (sign, role) = match mark {
-            Mark::Current => ("▶", Role::Prompt),
-            Mark::Done => ("✓", Role::Ok),
-            Mark::Skipped => ("↷", Role::Warn),
-            Mark::Failed => ("✗", Role::Error),
-            Mark::Pending | Mark::None => (" ", Role::Faint),
+        let role = match mark {
+            Mark::Current => Role::Prompt,
+            Mark::Done => Role::Ok,
+            Mark::Skipped => Role::Warn,
+            Mark::Failed => Role::Error,
+            Mark::Pending | Mark::None => Role::Faint,
         };
+        let sign = self.icons.glyph(Some(mark));
         if pad < 2 {
             return if mark == Mark::Current {
                 self.lines(line)
@@ -301,15 +341,35 @@ impl Theme {
                 self.faint(line)
             };
         }
-        let rest = if mark == Mark::Current {
+        let mut rest = String::new();
+        if let Some(c) = patterns().planned_command.captures(line) {
+            // A command drops its kind in the pane: `3.2 cmd`, or `3.2 ⚠ cmd` if it mutates.
+            let mutating = c[3].ends_with("mutate");
+            let current = mark == Mark::Current;
+            self.paint(
+                if current { Role::Dim } else { Role::Faint },
+                &c[2],
+                &mut rest,
+            );
+            rest.push(' ');
+            if mutating {
+                self.paint(Role::Warn, self.icons.glyph(None), &mut rest);
+                rest.push(' ');
+            }
+            if current {
+                self.command(&c[4], true, &mut rest);
+            } else {
+                self.paint(Role::Faint, &strip_marks(&c[4]), &mut rest);
+            }
+        } else if mark == Mark::Current {
             // The highlighter needs the indent to know the line; it writes it back as is.
             let colored = self.lines(line);
-            colored
+            rest = colored
                 .strip_prefix(&line[..pad])
-                .map_or(colored.clone(), str::to_string)
+                .map_or(colored.clone(), str::to_string);
         } else {
-            self.faint(&line[pad..])
-        };
+            rest = self.faint(&line[pad..]);
+        }
         let mut out = " ".repeat(pad - 2);
         self.paint(role, sign, &mut out);
         out.push(' ');
@@ -930,6 +990,7 @@ mod tests {
 
     const TRUE: Theme = Theme {
         depth: Depth::TrueColor,
+        icons: Icons::Plain,
     };
 
     fn strip_ansi(text: &str) -> String {
@@ -1071,13 +1132,33 @@ mod tests {
         let line = "    2.1  read ❯ echo hi";
         assert_eq!(
             strip_ansi(&TRUE.pane_step(Mark::Current, line)),
-            "  ▶ 2.1  read ❯ echo hi"
+            "  ▶ 2.1 echo hi"
+        );
+        assert_eq!(Theme::PLAIN.pane_step(Mark::Done, line), "  ✓ 2.1 echo hi");
+        assert_eq!(
+            Theme::PLAIN.pane_step(Mark::Pending, line),
+            "    2.1 echo hi"
+        );
+        // A mutating step, plain or as a script, gets the mutate mark.
+        let mutate = "    2.2  mutate ❯ touch x";
+        assert_eq!(
+            strip_ansi(&TRUE.pane_step(Mark::Current, mutate)),
+            "  ▶ 2.2 ⚠ touch x"
         );
         assert_eq!(
-            Theme::PLAIN.pane_step(Mark::Done, line),
-            "  ✓ 2.1  read ❯ echo hi"
+            Theme::PLAIN.pane_step(Mark::Pending, "    2.3  script mutate ❯ ./x.sh"),
+            "    2.3 ⚠ ./x.sh"
         );
-        assert_eq!(Theme::PLAIN.pane_step(Mark::Pending, line), line);
+        let nerd = TRUE.with_icons(Icons::Nerd);
+        assert_eq!(
+            strip_ansi(&nerd.pane_step(Mark::Current, mutate)),
+            "  \u{f04b} 2.2 \u{f071} touch x"
+        );
+        // A step that is not a command keeps its words.
+        assert_eq!(
+            Theme::PLAIN.pane_step(Mark::Pending, "    2.4  when ok"),
+            "    2.4  when ok"
+        );
         assert_eq!(
             Theme::PLAIN.pane_stage(Mark::Done, "1/4 Check", "3s"),
             " ✓ 1/4 Check  3s"

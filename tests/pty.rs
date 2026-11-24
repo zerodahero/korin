@@ -565,6 +565,24 @@ fn a_terminal_gets_carbonfox_colors_unless_no_color_is_set() {
 }
 
 #[test]
+fn the_pane_marks_a_mutating_step_and_drops_the_kind() {
+    let dir = setup(
+        "stage \"a\"\n  mutate slow\n  read echo next\n",
+        &[("slow", "echo started; sleep 1; echo finished")],
+    );
+    let env = vec![("COLORTERM", PathBuf::from("truecolor"))];
+    let mut s = start_with_env(dir.path(), &["run", "w.korin"], &env);
+    s.wait_for("Run stage 1?");
+    let before = s.raw().len();
+    s.answer("y");
+    s.wait_for("started");
+    let text = strip_ansi(&s.raw()[before..]);
+    assert!(text.contains("  ▶ 1.1 ⚠ slow"), "{text:?}");
+    assert!(text.contains("    1.2 echo next"), "{text:?}");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+}
+
+#[test]
 fn live_view_erases_the_preview_and_draws_the_plan_pane() {
     let dir = setup(
         "stage \"a\"\n  read slow\n  note \"still-to-come\"\n",
@@ -588,7 +606,7 @@ fn live_view_erases_the_preview_and_draws_the_plan_pane() {
     assert!(running.contains(&format!(" {prompt} ")), "{running:?}");
     let text = strip_ansi(&running);
     assert!(text.contains(" ▶ 1/1 a"), "{text:?}");
-    assert!(text.contains("  ▶ 1.1  read ❯ slow"), "{text:?}");
+    assert!(text.contains("  ▶ 1.1 slow"), "{text:?}");
     // The note still to come is drawn in carbonfox's comment color under the output.
     let faint = "\x1b[38;2;110;111;112m1.2  note \"still-to-come\"\x1b[0m";
     assert!(running.contains(faint), "{running:?}");
@@ -1131,8 +1149,9 @@ fn an_interactive_step_takes_the_pane_away_and_gives_it_back() {
     let after = &raw[program..];
     // The pane was erased before the program ran, and drawn again after it.
     let erase = before.rfind("\x1b[J").unwrap();
-    assert!(!before[erase..].contains("1.2  read"), "{before:?}");
-    assert!(after.contains("1.2  read"), "{after:?}");
+    let pane_line = "m1.2\x1b[0m";
+    assert!(!before[erase..].contains(pane_line), "{before:?}");
+    assert!(after.contains(pane_line), "{after:?}");
     assert!(
         s.screen().contains("  $ fakeui\nIN-PROGRAM"),
         "{}",
@@ -1617,10 +1636,7 @@ fn the_pane_lists_each_name_while_a_stage_runs() {
     let text = s.text();
     let running = &text[text.find("legend] y").unwrap()..];
     assert!(running.contains("▶ 1/1 a"), "{running}");
-    assert!(
-        running.contains("✓ 1.1  read ❯ lister <target>/a.txt"),
-        "{running}"
-    );
+    assert!(running.contains("✓ 1.1 lister <target>/a.txt"), "{running}");
     assert!(
         running.contains(&format!("<target> = {target}")),
         "{running}"

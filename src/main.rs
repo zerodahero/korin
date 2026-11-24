@@ -178,7 +178,7 @@ fn main() -> ExitCode {
             (skip, skip_preflight, set),
             kill_grace,
             &effective,
-            Theme::stdout(choice),
+            Theme::stdout(choice).with_icons(effective.icons.0),
         ),
         Cmd::Fmt { files, check } => fmt(&files, check),
         Cmd::Modules => {

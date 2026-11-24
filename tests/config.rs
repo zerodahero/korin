@@ -65,12 +65,13 @@ fn a_missing_file_gives_the_defaults() {
         ["require-enter", "#false", "default"]
     );
     assert_eq!(line(&text, "color"), ["color", "auto", "default"]);
+    assert_eq!(line(&text, "icons"), ["icons", "plain", "default"]);
 }
 
 #[test]
 fn the_file_sets_each_key() {
     let (_dir, path) = with_config(
-        "// my preferences\nview full\nlegend #false\nscript-lines 5\npager \"less -R\"\nrequire-enter #true\ncolor never\n",
+        "// my preferences\nview full\nlegend #false\nscript-lines 5\npager \"less -R\"\nrequire-enter #true\ncolor never\nicons nerd\n",
     );
     let out = korin(&path, &["config"], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
@@ -85,6 +86,7 @@ fn the_file_sets_each_key() {
         ["require-enter", "#true", "file"]
     );
     assert_eq!(line(&text, "color"), ["color", "never", "file"]);
+    assert_eq!(line(&text, "icons"), ["icons", "nerd", "file"]);
 }
 
 #[test]
@@ -118,6 +120,7 @@ fn errors_name_the_key_and_stop_before_anything_runs() {
         ("view full\nview compact\n", "`view` appears more than once"),
         ("require-enter yes\n", "`require-enter` cannot be"),
         ("view wide\n", "`view` cannot be"),
+        ("icons emoji\n", "`icons` cannot be"),
         ("color\n", "`color` takes exactly one value"),
         ("script-lines -1\n", "`script-lines` cannot be"),
         ("pager 5\n", "`pager` cannot be"),

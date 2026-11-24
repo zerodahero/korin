@@ -14,7 +14,7 @@ use kdl::{KdlDocument, KdlNode, KdlValue};
 
 use crate::ast::Span;
 use crate::diag::{Diag, SourceFile};
-use crate::theme::Choice;
+use crate::theme::{Choice, Icons};
 use crate::view::View;
 
 /// The keys a config file may set, in the order `korin config` lists them.
@@ -25,6 +25,7 @@ pub const KEYS: &[&str] = &[
     "pager",
     "require-enter",
     "color",
+    "icons",
 ];
 
 /// A loaded config file. Each key the file sets keeps its value.
@@ -40,6 +41,7 @@ pub struct Config {
     pub pager: Option<String>,
     pub require_enter: Option<bool>,
     pub color: Option<Choice>,
+    pub icons: Option<Icons>,
 }
 
 /// Where a key's effective value comes from.
@@ -80,6 +82,7 @@ pub struct Effective {
     pub pager: (Option<String>, Source),
     pub require_enter: (bool, Source),
     pub color: (Choice, Source),
+    pub icons: (Icons, Source),
 }
 
 impl Effective {
@@ -111,6 +114,15 @@ impl Effective {
                 self.require_enter.1,
             ),
             ("color", choice_name(self.color.0).to_string(), self.color.1),
+            (
+                "icons",
+                match self.icons.0 {
+                    Icons::Plain => "plain",
+                    Icons::Nerd => "nerd",
+                }
+                .to_string(),
+                self.icons.1,
+            ),
         ]
     }
 }
@@ -246,6 +258,13 @@ pub fn parse(path: &Path, text: &str) -> Result<Config, Vec<Diag>> {
                     _ => Choice::Auto,
                 });
             }),
+            "icons" => one_of(node, &["plain", "nerd"]).map(|v| {
+                config.icons = Some(if v == "nerd" {
+                    Icons::Nerd
+                } else {
+                    Icons::Plain
+                });
+            }),
             _ => unreachable!("every key in KEYS has an arm"),
         };
         if let Err((message, help)) = result {
@@ -305,6 +324,9 @@ pub fn resolve(config: &Config, flags: Flags) -> Effective {
             .color
             .map_or((Choice::Auto, Source::Default), |c| (c, Source::File))
     };
+    let icons = config
+        .icons
+        .map_or((Icons::Plain, Source::Default), |i| (i, Source::File));
     Effective {
         view,
         legend,
@@ -312,6 +334,7 @@ pub fn resolve(config: &Config, flags: Flags) -> Effective {
         pager,
         require_enter,
         color,
+        icons,
     }
 }
 
