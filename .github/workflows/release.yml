@@ -330,3 +330,19 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+
+  # dist's post-announce job: see post-announce-jobs in dist-workspace.toml. Added by hand,
+  # since release.yml is edited after generation (allow-dirty), with the permissions the
+  # packslip workflow's jobs need.
+  custom-packslip:
+    needs:
+      - plan
+      - announce
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    # actionlint does not know GitHub's newer `$/` form yet.
+    uses: ./.github/workflows/packslip.yml # zizmor: ignore[self-repository]
+    with:
+      plan: ${{ needs.plan.outputs.val }}
