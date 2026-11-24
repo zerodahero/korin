@@ -3640,12 +3640,10 @@ impl<'p> Runner<'p> {
                     Match::Signal(name) => {
                         matches!(status, Status::Signaled(s) if crate::signals::name(s) == name)
                     }
-                    Match::Stdout(re) => {
-                        regex::Regex::new(re).is_ok_and(|r| r.is_match(&stdout_text))
-                    }
-                    Match::Stderr(re) => {
-                        regex::Regex::new(re).is_ok_and(|r| r.is_match(&stderr_text))
-                    }
+                    Match::Stdout(re) => regex::Regex::new(&self.regex_pattern(re)?)
+                        .is_ok_and(|r| r.is_match(&stdout_text)),
+                    Match::Stderr(re) => regex::Regex::new(&self.regex_pattern(re)?)
+                        .is_ok_and(|r| r.is_match(&stderr_text)),
                     Match::Missing(file) => {
                         let path = self.cwd_path(&self.exec_text(file, scratch)?);
                         !is_fresh(&path)
@@ -3733,8 +3731,12 @@ impl<'p> Runner<'p> {
                         }
                     }
                 };
+                let mode = match &capture.regex {
+                    Some(pattern) => crate::ast::CaptureMode::Regex(self.regex_pattern(pattern)?),
+                    None => capture.mode.clone(),
+                };
                 let extracted = match self.jq_values(capture, scratch) {
-                    Ok(vars) => extract_with(&capture.mode, &input, capture.optional, &vars),
+                    Ok(vars) => extract_with(&mode, &input, capture.optional, &vars),
                     Err(message) => Extract::Fail(message),
                 };
                 results.push((capture, extracted, file_bytes));
@@ -4068,6 +4070,21 @@ impl<'p> Runner<'p> {
                 }
             };
             out.push((name.clone(), json));
+        }
+        Ok(out)
+    }
+
+    /// A regex's pattern, with each `{name}` part's value escaped, so it matches as literal
+    /// text.
+    fn regex_pattern(&self, t: &Interpolated) -> Result<String, Stop> {
+        let mut out = String::new();
+        for part in &t.parts {
+            match part {
+                IPart::Lit(text) => out.push_str(text),
+                IPart::Sym { sym, .. } => {
+                    out.push_str(&regex::escape(&data_text(&self.value(*sym)?.data)));
+                }
+            }
         }
         Ok(out)
     }
@@ -4491,7 +4508,7 @@ impl<'p> Runner<'p> {
             }
             Expr::Regex(a, re) => {
                 let text = self.eval_str(a)?;
-                let re = regex::Regex::new(re)
+                let re = regex::Regex::new(&self.regex_pattern(re)?)
                     .map_err(|e| Stop::failed(format!("invalid regex: {e}")))?;
                 Data::Bool(re.is_match(&text))
             }

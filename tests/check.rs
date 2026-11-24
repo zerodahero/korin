@@ -552,3 +552,24 @@ fn a_jq_filter_names_korin_values_as_variables() {
     ));
     assert!(early.contains("error"), "{early}");
 }
+
+#[test]
+fn a_regex_names_korin_values_in_braces_and_keeps_counts() {
+    let ok = wizard(concat!(
+        "param app = \"web\"\n",
+        "stage \"s\"\n",
+        "  read tool\n",
+        "    capture x = regex /({app}-a{2,3}) \\{app\\}/\n",
+    ));
+    assert_eq!(ok, "ok");
+    let unknown = wizard("stage \"s\"\n  read tool\n    capture x = regex /({nope})/\n");
+    assert!(unknown.contains("unknown name `nope`"), "{unknown}");
+    let list = wizard(concat!(
+        "stage \"s\"\n",
+        "  read tool\n",
+        "    capture xs = lines\n",
+        "  read tool\n",
+        "    expect a = stdout ~ /{xs}/\n",
+    ));
+    assert!(list.contains("list"), "{list}");
+}

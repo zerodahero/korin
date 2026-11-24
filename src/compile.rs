@@ -1272,8 +1272,8 @@ impl Compiler {
                         "the left side of `~` must be a value",
                     );
                 }
-                self.check_regex(&file, &re.value, re.span, false);
-                (ir::Expr::Regex(Box::new(la), re.value.clone()), ETy::Bool)
+                let pattern = self.regex_template(ctx, &re.value, re.span, false);
+                (ir::Expr::Regex(Box::new(la), pattern), ETy::Bool)
             }
             ast::Expr::Not(inner, _) => {
                 let lowered = self.condition(ctx, inner);
@@ -1313,6 +1313,71 @@ impl Compiler {
             ir::Expr::Sym(sym) if self.syms[*sym].kind == SymKind::Expect => vec![Guard::Is(*sym)],
             ir::Expr::Exists(sym) => vec![Guard::Exists(*sym)],
             _ => Vec::new(),
+        }
+    }
+
+    /// A regex's text as a template: each `{name}` (a name starts with a letter or `_`)
+    /// becomes the value, matched as literal text. `{2,3}` stays a count, and `\{` stays a
+    /// literal brace. The pattern is checked with each value as `x`.
+    fn regex_template(
+        &mut self,
+        ctx: &mut Ctx,
+        pattern: &str,
+        span: Span,
+        needs_group: bool,
+    ) -> ir::Interpolated {
+        let mut parts: Vec<IPart> = Vec::new();
+        let mut literal = String::new();
+        let mut chars = pattern.char_indices().peekable();
+        while let Some((index, ch)) = chars.next() {
+            if ch == '\\' {
+                literal.push(ch);
+                if let Some((_, next)) = chars.next() {
+                    literal.push(next);
+                }
+                continue;
+            }
+            if ch == '{'
+                && let Some(end) = pattern[index + 1..].find('}')
+            {
+                let inner = &pattern[index + 1..index + 1 + end];
+                let path: Vec<&str> = inner.split('.').collect();
+                let is_name = path.iter().all(|part| {
+                    part.chars().next().is_some_and(is_name_start)
+                        && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                });
+                if is_name {
+                    if !literal.is_empty() {
+                        parts.push(IPart::Lit(std::mem::take(&mut literal)));
+                    }
+                    let r = ast::Ref {
+                        path: path.iter().map(|p| (*p).to_string()).collect(),
+                        splat: false,
+                        span,
+                    };
+                    parts.extend(self.interpolated_ref(ctx, &r, ICtx::Text, false));
+                    // Skip past the `}`.
+                    while chars.next_if(|(i, _)| *i <= index + 1 + end).is_some() {}
+                    continue;
+                }
+            }
+            literal.push(ch);
+        }
+        if !literal.is_empty() {
+            parts.push(IPart::Lit(literal));
+        }
+        let checked: String = parts
+            .iter()
+            .map(|part| match part {
+                IPart::Lit(text) => text.clone(),
+                IPart::Sym { .. } => "x".to_string(),
+            })
+            .collect();
+        let file = Arc::clone(&ctx.file);
+        self.check_regex(&file, &checked, span, needs_group);
+        ir::Interpolated {
+            parts,
+            loc: ctx.loc(span),
         }
     }
 
@@ -1563,12 +1628,10 @@ impl Compiler {
                     ast::Match::ExitNonZero => ir::Match::ExitNonZero,
                     ast::Match::Signal(name) => ir::Match::Signal(name.clone()),
                     ast::Match::Stdout(re) => {
-                        self.check_regex(&file, re, p.span, false);
-                        ir::Match::Stdout(re.clone())
+                        ir::Match::Stdout(self.regex_template(ctx, re, p.span, false))
                     }
                     ast::Match::Stderr(re) => {
-                        self.check_regex(&file, re, p.span, false);
-                        ir::Match::Stderr(re.clone())
+                        ir::Match::Stderr(self.regex_template(ctx, re, p.span, false))
                     }
                     ast::Match::Missing(path) => {
                         ir::Match::Missing(self.interpolated(ctx, path, ICtx::Path))
@@ -1592,6 +1655,7 @@ impl Compiler {
         let mut capture_names = Vec::new();
         for capture in &command.captures {
             let mut jq_vars = Vec::new();
+            let mut regex = None;
             match &capture.mode.value {
                 CaptureMode::Jq(filter)
                 | CaptureMode::JqList(filter)
@@ -1618,7 +1682,9 @@ impl Compiler {
                         self.push(diag);
                     }
                 }
-                CaptureMode::Regex(re) => self.check_regex(&file, re, capture.mode.span, true),
+                CaptureMode::Regex(re) => {
+                    regex = Some(self.regex_template(ctx, re, capture.mode.span, true));
+                }
                 CaptureMode::Text | CaptureMode::Lines => {}
             }
             let on = capture.on.as_ref().and_then(|on| {
@@ -1683,6 +1749,7 @@ impl Compiler {
                 sym,
                 mode: capture.mode.value.clone(),
                 jq_vars,
+                regex,
                 file: file_template,
                 on,
                 optional: capture.optional,
@@ -1898,7 +1965,12 @@ fn expr_syms(expr: &ir::Expr) -> Vec<Sym> {
             v.extend(expr_syms(b));
             v
         }
-        ir::Expr::Not(e) | ir::Expr::Regex(e, _) => expr_syms(e),
+        ir::Expr::Not(e) => expr_syms(e),
+        ir::Expr::Regex(e, pattern) => {
+            let mut v = expr_syms(e);
+            v.extend(pattern.syms());
+            v
+        }
         ir::Expr::Num(_) => Vec::new(),
     }
 }
@@ -1950,4 +2022,8 @@ fn short_key(key: &str) -> String {
         Some(t) => format!("{name}#{t}"),
         None => name,
     }
+}
+
+fn is_name_start(c: char) -> bool {
+    c.is_ascii_alphabetic() || c == '_'
 }

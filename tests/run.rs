@@ -1882,3 +1882,31 @@ fn a_stage_whose_filter_reads_a_skipped_value_is_a_dependent() {
         out.text
     );
 }
+
+#[test]
+fn a_regex_matches_a_korin_value_as_literal_text() {
+    let env = Env::new();
+    env.script("bin/pods", "#!/bin/sh\necho 'webxv2-abc web.v2-xyz'\n");
+    env.wizard(concat!(
+        "param app = \"web.v2\"\n",
+        "stage \"a\"\n",
+        "  read pods\n",
+        "    expect found = stdout ~ /{app}-xyz/\n",
+        "  when found\n",
+        "    note \"found it\"\n",
+        "  read pods\n",
+        "    capture pod = regex /({app}-[a-z]{3})/\n",
+        "  when pod ~ /^{app}/\n",
+        "    note \"starts with the app\"\n",
+    ));
+    let out = env.run_yes(&[]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    // The `.` in the value matches only a `.`, so `webxv2-abc` is not the pod.
+    assert_eq!(capture_value(&env, "pod"), "web.v2-xyz");
+    let said: Vec<String> = env
+        .events_of("say")
+        .iter()
+        .map(|e| e["text"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(said, ["found it", "starts with the app"], "{}", out.text);
+}

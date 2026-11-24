@@ -729,7 +729,11 @@ pub fn expr(program: &Program, e: &Expr, values: &dyn Values) -> String {
             expr(program, a, values),
             expr(program, b, values)
         ),
-        Expr::Regex(a, re) => format!("{} ~ /{re}/", expr(program, a, values)),
+        Expr::Regex(a, re) => format!(
+            "{} ~ /{}/",
+            expr(program, a, values),
+            interpolated(program, re, values, false)
+        ),
         Expr::Exists(sym) => format!("exists {}", program.sym(*sym).name),
         Expr::Sym(sym) => program.sym(*sym).name.clone(),
         Expr::Str(t) => format!("\"{}\"", interpolated(program, t, values, false)),
