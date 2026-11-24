@@ -1180,8 +1180,8 @@ impl<'p> Runner<'p> {
             }
             return;
         }
-        // Rows for the content: the terminal, less the prompt line and one to spare.
-        let room = screen::height().saturating_sub(3).max(3) - 1;
+        // Rows for the content: the terminal, less the prompt line, its box, and one to spare.
+        let room = screen::height().saturating_sub(5).max(3) - 1;
         let cols = screen::width();
         let rows_of = |line: &String| screen::rows(&format!("{line}\n"), cols);
         if lines.iter().map(rows_of).sum::<usize>() <= room {
@@ -1447,22 +1447,69 @@ impl<'p> Runner<'p> {
         }
         if secret {
             let prompt = self.opts.theme.ask(&format!("{name} (hidden):"));
-            let value = read_hidden_interruptible(&self.signals, &prompt, self.opts.theme)?;
-            self.screen
-                .borrow_mut()
-                .prompted(&format!("{prompt}{}", self.opts.theme.hidden_done()));
+            let framed = self.frame(&prompt);
+            let value = read_hidden_interruptible(&self.signals, &framed, self.opts.theme)?;
+            let done = self.opts.theme.hidden_done();
+            self.screen.borrow_mut().prompted(
+                &format!("{}{done}", framed.shown),
+                &format!("{prompt}{done}"),
+            );
             Ok(value.to_string())
         } else {
             self.read_line(&self.opts.theme.ask(&format!("{name}:")))
         }
     }
 
+    /// A prompt in a box, in a live view, so a glance finds it under the output above. The
+    /// box's top border joins the pane. With no live view, or when keys come as lines, the
+    /// prompt is plain.
+    fn frame(&self, prompt: &str) -> Framed {
+        let live = self.screen.borrow().live();
+        if !live
+            || self.opts.require_enter
+            || !std::io::stdin().is_terminal()
+            || prompt.contains('\n')
+        {
+            return Framed::plain(prompt);
+        }
+        self.screen.borrow_mut().open_box();
+        let theme = self.opts.theme;
+        let cols = screen::width().max(4);
+        // The box is one column narrower than the terminal, like the rule above the pane.
+        let inner = cols - 1;
+        let side = theme.box_side();
+        // The box sets the prompt apart, so it drops its own indent.
+        let shown = format!("{side} {}", prompt.trim_start_matches(' '));
+        let used = screen::display_width(&shown);
+        // The right side goes in the box's last column, if the prompt leaves room for it and
+        // an answer. A wider prompt wraps, and its box has no right side.
+        let right = if used + 4 <= inner {
+            format!("\x1b7\x1b[{inner}G{side}\x1b8")
+        } else {
+            String::new()
+        };
+        // Down a row for the bottom border, then back up to the end of the prompt. Moving
+        // relative to the cursor still works when the border scrolls the screen.
+        let bottom = format!(
+            "\r\n{}\x1b[1A\x1b[{}G",
+            theme.box_border(false, inner),
+            used % cols + 1
+        );
+        Framed {
+            shown,
+            right,
+            bottom,
+        }
+    }
+
     /// Reads a line from the terminal. Ctrl-C and `SIGTERM` cancel the run instead of being lost.
     fn read_line(&self, prompt: &str) -> Result<String, Stop> {
-        let answer = read_line_interruptible(&self.signals, prompt)?;
-        self.screen
-            .borrow_mut()
-            .prompted(&format!("{prompt}{answer}"));
+        let framed = self.frame(prompt);
+        let answer = read_line_interruptible(&self.signals, &framed.shown, &framed.after())?;
+        self.screen.borrow_mut().prompted(
+            &format!("{}{answer}", framed.shown),
+            &format!("{prompt}{answer}"),
+        );
         Ok(answer)
     }
 
@@ -2207,17 +2254,21 @@ impl<'p> Runner<'p> {
                 .copied()
                 .find(|c| line.len() == 1 && line.starts_with(*c)));
         }
-        let (choice, echo) = read_key_interruptible(&self.signals, prompt, |bytes| match bytes {
-            [b'\r' | b'\n', ..] | [0x1b] => Some((None, "")),
-            [b, ..] => choices
-                .iter()
-                .find(|c| u32::from(**c) == u32::from(*b))
-                .map(|c| (Some(*c), choice_echo(*c))),
-            [] => None,
-        })?;
-        self.screen
-            .borrow_mut()
-            .prompted(&format!("{prompt}{echo}"));
+        let framed = self.frame(prompt);
+        let after = framed.after();
+        let (choice, echo) =
+            read_key_interruptible(&self.signals, &framed.shown, &after, |bytes| match bytes {
+                [b'\r' | b'\n', ..] | [0x1b] => Some((None, "")),
+                [b, ..] => choices
+                    .iter()
+                    .find(|c| u32::from(**c) == u32::from(*b))
+                    .map(|c| (Some(*c), choice_echo(*c))),
+                [] => None,
+            })?;
+        self.screen.borrow_mut().prompted(
+            &format!("{}{echo}", framed.shown),
+            &format!("{prompt}{echo}"),
+        );
         Ok(choice)
     }
 
@@ -2266,10 +2317,13 @@ impl<'p> Runner<'p> {
         loop {
             let result = if info.secret {
                 let prompt = theme.ask(&format!("{} (hidden):", info.name));
-                let text = read_hidden_interruptible(&self.signals, &prompt, theme)?;
-                self.screen
-                    .borrow_mut()
-                    .prompted(&format!("{prompt}{}", theme.hidden_done()));
+                let framed = self.frame(&prompt);
+                let text = read_hidden_interruptible(&self.signals, &framed, theme)?;
+                let done = theme.hidden_done();
+                self.screen.borrow_mut().prompted(
+                    &format!("{}{done}", framed.shown),
+                    &format!("{prompt}{done}"),
+                );
                 Ok(Data::Str(text.to_string()))
             } else {
                 match info.ty {
@@ -2345,10 +2399,10 @@ impl<'p> Runner<'p> {
             let question = matches!(style, Style::Question(_));
             let key = if self.opts.require_enter || !std::io::stdin().is_terminal() {
                 // The prompt sits under the pane, which holds what it asks about.
-                let line = read_line_interruptible(&self.signals, &prompt)?;
+                let line = read_line_interruptible(&self.signals, &prompt, "")?;
                 self.screen
                     .borrow_mut()
-                    .prompted(&format!("{prompt}{line}"));
+                    .prompted(&format!("{prompt}{line}"), &format!("{prompt}{line}"));
                 let line = line.trim();
                 match (keys.key_for_line(line), question) {
                     (Some(key), _) => Some(key),
@@ -2358,21 +2412,27 @@ impl<'p> Runner<'p> {
                     (None, false) => None,
                 }
             } else {
-                let (key, echo) = read_key_interruptible(&self.signals, &prompt, |bytes| {
-                    if let Some(key) = keys.key_for_bytes(bytes) {
-                        return Some((key, key.echo()));
-                    }
-                    match (bytes, question) {
-                        ([b'y' | b'Y', ..], true) => Some((Key::Yes, "y")),
-                        ([b'n' | b'N' | b'\r' | b'\n', ..] | [0x1b], true) => Some((Key::No, "n")),
-                        ([b'\r' | b'\n' | b' ', ..], false) => Some((Key::Continue, "")),
-                        // Anything else, such as an arrow key's escape sequence, is ignored.
-                        _ => None,
-                    }
-                })?;
-                self.screen
-                    .borrow_mut()
-                    .prompted(&format!("{prompt}{echo}"));
+                let framed = self.frame(&prompt);
+                let after = framed.after();
+                let (key, echo) =
+                    read_key_interruptible(&self.signals, &framed.shown, &after, |bytes| {
+                        if let Some(key) = keys.key_for_bytes(bytes) {
+                            return Some((key, key.echo()));
+                        }
+                        match (bytes, question) {
+                            ([b'y' | b'Y', ..], true) => Some((Key::Yes, "y")),
+                            ([b'n' | b'N' | b'\r' | b'\n', ..] | [0x1b], true) => {
+                                Some((Key::No, "n"))
+                            }
+                            ([b'\r' | b'\n' | b' ', ..], false) => Some((Key::Continue, "")),
+                            // Anything else, such as an arrow key's escape sequence, is ignored.
+                            _ => None,
+                        }
+                    })?;
+                self.screen.borrow_mut().prompted(
+                    &format!("{}{echo}", framed.shown),
+                    &format!("{prompt}{echo}"),
+                );
                 Some(key)
             };
             match key {
@@ -3195,7 +3255,7 @@ impl<'p> Runner<'p> {
             ));
             let mut on_suspend = || {
                 println!();
-                match read_line_interruptible(signals, &suspended) {
+                match read_line_interruptible(signals, &suspended, "") {
                     Ok(answer) if !answer.trim().starts_with('k') => Suspended::Resume,
                     _ => Suspended::Kill,
                 }
@@ -4644,13 +4704,37 @@ fn sweep_scratch() {
 }
 
 /// Reads a line from the terminal while watching for Ctrl-C and `SIGTERM`.
-fn read_line_interruptible(signals: &Signals, prompt: &str) -> Result<String, Stop> {
+/// A prompt as it prints: in a live view, inside a box. `shown` is the prompt line with the
+/// box's left side. `right` draws the right side without moving the cursor. `bottom` draws
+/// the bottom border on the next row, then puts the cursor back after the prompt.
+#[derive(Debug, Default)]
+struct Framed {
+    shown: String,
+    right: String,
+    bottom: String,
+}
+
+impl Framed {
+    fn plain(prompt: &str) -> Self {
+        Self {
+            shown: prompt.to_string(),
+            ..Self::default()
+        }
+    }
+
+    /// What prints once, after the prompt line: the rest of the box.
+    fn after(&self) -> String {
+        format!("{}{}", self.right, self.bottom)
+    }
+}
+
+fn read_line_interruptible(signals: &Signals, prompt: &str, after: &str) -> Result<String, Stop> {
     // Discard anything typed before the prompt appeared, so type-ahead never answers a gate
     // the human has not read.
     if std::io::stdin().is_terminal() {
         let _ = nix::sys::termios::tcflush(std::io::stdin(), nix::sys::termios::FlushArg::TCIFLUSH);
     }
-    print!("{prompt}");
+    print!("{prompt}{after}");
     let _ = std::io::stdout().flush();
     loop {
         let stdin = std::io::stdin();
@@ -4942,7 +5026,7 @@ fn parse_list(text: &str) -> Result<Vec<String>, String> {
 /// so the length never stays in the scrollback. Ctrl-C and `SIGTERM` cancel the run.
 fn read_hidden_interruptible(
     signals: &Signals,
-    prompt: &str,
+    prompt: &Framed,
     theme: Theme,
 ) -> Result<Zeroizing<String>, Stop> {
     use nix::sys::termios::{LocalFlags, SetArg, SpecialCharacterIndices, tcgetattr, tcsetattr};
@@ -4967,9 +5051,16 @@ fn read_hidden_interruptible(
     let mut value: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::new());
     let draw = |value: &[u8]| {
         let count = String::from_utf8_lossy(value).chars().count();
-        print!("\r{prompt}{}\x1b[K", theme.hidden_count(count));
+        // Clearing the line takes the box's right side with it, so it is drawn again.
+        print!(
+            "\r{}{}\x1b[K{}",
+            prompt.shown,
+            theme.hidden_count(count),
+            prompt.right
+        );
         let _ = std::io::stdout().flush();
     };
+    print!("{}{}", prompt.shown, prompt.after());
     draw(&value);
     let mut escape = false;
     loop {
@@ -5008,7 +5099,12 @@ fn read_hidden_interruptible(
             }
             match byte {
                 b'\r' | b'\n' => {
-                    print!("\r{prompt}{}\x1b[K\r\n", theme.hidden_done());
+                    print!(
+                        "\r{}{}\x1b[K{}\r\n",
+                        prompt.shown,
+                        theme.hidden_done(),
+                        prompt.right
+                    );
                     let _ = std::io::stdout().flush();
                     return match String::from_utf8(std::mem::take(&mut *value)) {
                         Ok(text) => Ok(Zeroizing::new(text)),
@@ -5043,6 +5139,7 @@ fn read_hidden_interruptible(
 fn read_key_interruptible<T>(
     signals: &Signals,
     prompt: &str,
+    after: &str,
     answer: impl Fn(&[u8]) -> Option<(T, &'static str)>,
 ) -> Result<(T, &'static str), Stop> {
     use nix::sys::termios::{LocalFlags, SetArg, SpecialCharacterIndices, tcgetattr, tcsetattr};
@@ -5063,7 +5160,7 @@ fn read_key_interruptible<T>(
     // The kernel's own flag for "reprint pending input"; restoring it would echo stray keys.
     restore.local_flags.remove(LocalFlags::PENDIN);
     let _restore = RestoreModes(restore);
-    print!("{prompt}");
+    print!("{prompt}{after}");
     let _ = std::io::stdout().flush();
     let armed = Instant::now() + ARMING;
     loop {

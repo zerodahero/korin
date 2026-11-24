@@ -565,6 +565,34 @@ fn a_terminal_gets_carbonfox_colors_unless_no_color_is_set() {
 }
 
 #[test]
+fn a_live_prompt_sits_in_a_box_that_goes_with_it() {
+    let dir = setup("stage \"a\"\n  read echo hi\n", &[]);
+    let mut s = start(dir.path(), &["run", "w.korin"]);
+    s.wait_for("Run stage 1?");
+    std::thread::sleep(Duration::from_millis(200));
+    let screen = s.screen();
+    let lines: Vec<&str> = screen.lines().collect();
+    let at = lines
+        .iter()
+        .position(|l| l.starts_with("│ ? Run stage 1?"))
+        .unwrap_or_else(|| panic!("{screen}"));
+    assert!(
+        lines[at - 1].starts_with('╭') && lines[at - 1].ends_with('╮'),
+        "{screen}"
+    );
+    assert!(lines[at].trim_end().ends_with('│'), "{screen}");
+    assert!(
+        lines[at + 1].starts_with('╰') && lines[at + 1].ends_with('╯'),
+        "{screen}"
+    );
+    s.answer("y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    // Once answered, no row of the box stays behind.
+    let screen = s.screen();
+    assert!(!screen.contains('╮') && !screen.contains('╯'), "{screen}");
+}
+
+#[test]
 fn the_pane_marks_a_mutating_step_and_drops_the_kind() {
     let dir = setup(
         "stage \"a\"\n  mutate slow\n  read echo next\n",
@@ -595,9 +623,10 @@ fn live_view_erases_the_preview_and_draws_the_plan_pane() {
     s.answer("y");
     s.wait_for("started");
     let running = s.raw()[before..].to_string();
-    // The gate's pane (the separator, the stage rule, a blank line, two step lines) and its
-    // prompt are erased, and the run log keeps one line for the gate.
-    assert!(running.contains("\x1b[6A\x1b[J"), "{running:?}");
+    // The gate's pane (the separator, the stage rule, a blank line, two step lines), the top
+    // of the prompt's box, and the prompt are erased, and the run log keeps one line for the
+    // gate. The box's bottom border sits under the cursor, so the erase clears it too.
+    assert!(running.contains("\x1b[7A\x1b[J"), "{running:?}");
     // A rule in the frame color sets the pane apart from the run log.
     assert!(running.contains("\x1b[38;2;83;83;83m────"), "{running:?}");
     assert!(strip_ansi(&running).contains("━━ 1/1 a ━"), "{running:?}");

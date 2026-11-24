@@ -488,7 +488,9 @@ fn at_prompt(bytes: &[u8]) -> bool {
             }
         })
         .collect();
+    // A live prompt sits in a box: `│ ? …`.
     let line = line.trim_start();
+    let line = line.strip_prefix("│").unwrap_or(line).trim_start();
     line.starts_with("? ") || line.starts_with("↵ ")
 }
 

@@ -42,6 +42,9 @@ pub struct Screen {
     dialog: Vec<String>,
     /// The pane a dialog took over, drawn again once the dialog closes.
     saved: Vec<String>,
+    /// Whether a prompt is about to show under the pane, in a box whose top border is the
+    /// live region's last line.
+    boxed: bool,
 }
 
 impl Screen {
@@ -58,6 +61,33 @@ impl Screen {
             dialogs: 0,
             dialog: Vec::new(),
             saved: Vec::new(),
+            boxed: false,
+        }
+    }
+
+    /// Draws the top border of a prompt's box under the pane. The prompt prints the rest of
+    /// the box; [`Screen::prompted`] ends it.
+    pub fn open_box(&mut self) {
+        if !self.live {
+            return;
+        }
+        if self.boxed {
+            self.show();
+            return;
+        }
+        self.boxed = true;
+        match &mut self.pane_rows {
+            // The region is on screen: the border joins it as one more row, with no redraw.
+            Some(drawn) => {
+                let cols = width();
+                println!(
+                    "{}",
+                    self.theme.box_border(true, cols.saturating_sub(1).max(2))
+                );
+                flush();
+                *drawn += 1;
+            }
+            None => self.show(),
         }
     }
 
@@ -212,7 +242,8 @@ impl Screen {
     /// left for its next prompt.
     fn show_dialog(&mut self) {
         let cols = width();
-        let budget = height().saturating_sub(4);
+        // Rows for the prompt and its box too.
+        let budget = height().saturating_sub(6);
         let mut used = 0;
         let mut start = self.dialog.len();
         while start > 0 {
@@ -230,14 +261,17 @@ impl Screen {
     }
 
     /// Counts a prompt line the terminal showed under the pane, with the answer it echoed,
-    /// so the next erase removes it with the pane. In a dialog, the line joins the dialog's
-    /// lines, so it stays in view. With no pane on screen it counts toward [`Screen::mark`].
-    pub fn prompted(&mut self, visible: &str) {
+    /// so the next erase removes it with the pane. In a dialog, `record` (the line without
+    /// its box) joins the dialog's lines, so it stays in view. With no pane on screen it
+    /// counts toward [`Screen::mark`]. A box's bottom border sits under the cursor, so the
+    /// next erase clears it without counting it.
+    pub fn prompted(&mut self, visible: &str, record: &str) {
         if !self.live {
             return;
         }
+        self.boxed = false;
         if self.dialogs > 0 {
-            self.dialog.push(visible.to_string());
+            self.dialog.push(record.to_string());
         }
         let added = rows(&format!("{visible}\n"), width());
         match &mut self.pane_rows {
@@ -263,14 +297,16 @@ impl Screen {
     }
 
     fn show(&mut self) {
-        if self.pane_rows.is_some() || (self.pane.is_empty() && self.window.is_empty()) {
+        if self.pane_rows.is_some()
+            || (self.pane.is_empty() && self.window.is_empty() && !self.boxed)
+        {
             return;
         }
         let cols = width();
         // The runner fits the pane to a third of the terminal; this only guards the rule
         // that the window and the pane are never taller than the screen. The window gives
         // up rows first, its oldest lines first.
-        let budget = height().saturating_sub(2);
+        let budget = height().saturating_sub(if self.boxed { 3 } else { 2 });
         let row_count = |line: &String| rows(&format!("{line}\n"), cols);
         let pane_rows: usize = self.pane.iter().map(row_count).sum();
         let mut window_room = budget.saturating_sub(pane_rows + 1);
@@ -281,11 +317,15 @@ impl Screen {
         }
         // A rule across the terminal sets the live region apart from the run log above it.
         let rule = self.theme.separator(cols.saturating_sub(1).max(1));
+        let top = self
+            .boxed
+            .then(|| self.theme.box_border(true, cols.saturating_sub(1).max(2)));
         let mut text = String::new();
         let mut used = 0;
         for line in std::iter::once(&rule)
             .chain(&self.window[start..])
             .chain(&self.pane)
+            .chain(top.iter())
         {
             let line_rows = row_count(line);
             if used + line_rows > budget {
@@ -337,7 +377,7 @@ pub fn rows(text: &str, cols: usize) -> usize {
 
 /// The columns a piece of a line takes: escape sequences take none, and a tab moves to the
 /// next multiple of eight.
-fn display_width(text: &str) -> usize {
+pub fn display_width(text: &str) -> usize {
     static ESCAPES: OnceLock<Regex> = OnceLock::new();
     let escapes = ESCAPES.get_or_init(|| {
         Regex::new(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[()][0-9A-Za-z]|\x1b[=>78]")

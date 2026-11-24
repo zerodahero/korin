@@ -161,8 +161,16 @@ impl Session {
 
 /// Removes color and cursor codes, so tests match the text korin wrote.
 pub fn visible(text: &str) -> String {
+    // A live prompt's box draws its right side and its bottom border after the prompt, then
+    // moves back for the answer. Dropping both keeps a prompt and its answer together.
+    let right = regex::Regex::new("\x1b7.*?\x1b8").unwrap();
+    let bottom =
+        regex::Regex::new("\r*\n(?:\x1b\\[[0-9;]*m)*╰─*╯(?:\x1b\\[0m)?\x1b\\[1A\x1b\\[[0-9]+G")
+            .unwrap();
+    let text = right.replace_all(text, "");
+    let text = bottom.replace_all(&text, "");
     regex::Regex::new("\x1b\\[[0-9;?]*[A-Za-z]")
         .unwrap()
-        .replace_all(text, "")
+        .replace_all(&text, "")
         .into_owned()
 }

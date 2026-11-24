@@ -318,6 +318,25 @@ impl Theme {
         out
     }
 
+    /// A border of the box around a live prompt: `╭───╮` or `╰───╯`, `width` columns wide.
+    pub fn box_border(self, top: bool, width: usize) -> String {
+        let (first, last) = if top { ('╭', '╮') } else { ('╰', '╯') };
+        let mut line = String::new();
+        line.push(first);
+        line.push_str(&"─".repeat(width.saturating_sub(2)));
+        line.push(last);
+        let mut out = String::new();
+        self.paint(Role::Prompt, &line, &mut out);
+        out
+    }
+
+    /// A side of the box around a live prompt: `│`.
+    pub fn box_side(self) -> String {
+        let mut out = String::new();
+        self.paint(Role::Prompt, "│", &mut out);
+        out
+    }
+
     pub fn faint(self, line: &str) -> String {
         let mut out = String::new();
         self.paint(Role::Faint, &strip_marks(line), &mut out);
