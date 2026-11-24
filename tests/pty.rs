@@ -619,7 +619,7 @@ fn live_view_erases_the_preview_and_draws_the_plan_pane() {
         raw[last_pane..].contains("\x1b[J"),
         "the pane was never erased"
     );
-    assert!(s.text().contains("\n  still-to-come"), "{}", s.text());
+    assert!(s.text().contains("\n  ▌ still-to-come"), "{}", s.text());
     assert!(
         s.text().contains("✓ stage 1 done · 1 command"),
         "{}",

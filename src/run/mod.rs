@@ -2797,13 +2797,14 @@ impl<'p> Runner<'p> {
             StepKind::Say { kind, text } => {
                 // One full, redacted text: the journal keeps it, the terminal shows its view.
                 let text = self.display_interpolated(text);
-                // A message from the wizard's author, styled by its kind.
+                // A message from the wizard's author: a bar sets it apart from command output,
+                // and a mark says its kind. Every line of it keeps the bar.
                 let mark = match kind {
-                    SayKind::Note => "",
-                    SayKind::Warn => "⚠ ",
-                    SayKind::Record => "✓ ",
+                    SayKind::Note => "▌ ",
+                    SayKind::Warn => "▌⚠ ",
+                    SayKind::Record => "▌✓ ",
                 };
-                let shown = text.replace('\n', "\n  ");
+                let shown = text.replace('\n', &format!("\n{mark}"));
                 self.log_line(&format!("{mark}{shown}"));
                 if *kind == SayKind::Record {
                     self.journal.report(&format!("- {text}"));

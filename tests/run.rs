@@ -1780,3 +1780,23 @@ fn a_piped_poll_prints_every_try_once_and_replays_nothing() {
     let second = text.find("↻ try 2 · ").unwrap();
     assert!(text[first..second].contains("n=1"), "{text}");
 }
+
+#[test]
+fn say_lines_start_with_a_bar_and_their_mark() {
+    let env = Env::new();
+    env.wizard(concat!(
+        "stage \"a\"\n",
+        "  note \"line one\\nline two\"\n",
+        "  warn \"careful\"\n",
+        "  record \"kept\"\n",
+    ));
+    let out = env.run_yes(&[]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    assert!(
+        out.text.contains("  ▌ line one\n  ▌ line two\n"),
+        "{}",
+        out.text
+    );
+    assert!(out.text.contains("  ▌⚠ careful\n"), "{}", out.text);
+    assert!(out.text.contains("  ▌✓ kept\n"), "{}", out.text);
+}

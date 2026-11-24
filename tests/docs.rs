@@ -687,6 +687,7 @@ fn color_class(color: Rgb) -> &'static str {
         palette::MAGENTA => "k-magenta",
         palette::RED => "k-red",
         palette::COMMENT => "k-comment",
+        palette::ACCENT => "k-accent",
         other => panic!("{other:?} is not in theme::palette; add a class for it"),
     }
 }

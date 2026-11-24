@@ -46,6 +46,8 @@ pub mod palette {
     pub const RED: Rgb = Rgb(0xee, 0x53, 0x96);
     /// comment: steps still to run, shown as ghost lines.
     pub const COMMENT: Rgb = Rgb(0x6e, 0x6f, 0x70);
+    /// orange (a bright aqua in carbonfox): messages from the wizard's author.
+    pub const ACCENT: Rgb = Rgb(0x3d, 0xdb, 0xd9);
 }
 
 /// Whether to color output: `--color`.
@@ -89,11 +91,13 @@ enum Role {
     Exe,
     /// A shortened path prefix, such as `<pwd>`.
     Prefix,
+    /// A message from the wizard's author: a `note` step. Italic.
+    Say,
 }
 
 impl Role {
     fn style(self) -> (Rgb, bool) {
-        use palette::{BLUE, BORDER, COMMENT, CYAN, FG, FG_DIM, GREEN, MAGENTA, RED, TEAL};
+        use palette::{ACCENT, BLUE, BORDER, COMMENT, CYAN, FG, FG_DIM, GREEN, MAGENTA, RED, TEAL};
         match self {
             Role::Frame => (BORDER, false),
             Role::Brand | Role::Prompt => (BLUE, true),
@@ -108,6 +112,7 @@ impl Role {
             Role::Error => (RED, true),
             Role::Label | Role::Prefix => (TEAL, false),
             Role::Faint => (COMMENT, false),
+            Role::Say => (ACCENT, false),
         }
     }
 }
@@ -224,23 +229,19 @@ impl Theme {
             return;
         }
         let (rgb, bold) = role.style();
+        let attrs = match (bold, role == Role::Say) {
+            (true, _) => "1;",
+            (false, true) => "3;",
+            (false, false) => "",
+        };
         match self.depth {
             Depth::Plain => out.push_str(text),
             Depth::Ansi256 => {
-                let _ = write!(
-                    out,
-                    "\x1b[{}38;5;{}m{text}\x1b[0m",
-                    if bold { "1;" } else { "" },
-                    to_256(rgb)
-                );
+                let _ = write!(out, "\x1b[{attrs}38;5;{}m{text}\x1b[0m", to_256(rgb));
             }
             Depth::TrueColor => {
                 let Rgb(r, g, b) = rgb;
-                let _ = write!(
-                    out,
-                    "\x1b[{}38;2;{r};{g};{b}m{text}\x1b[0m",
-                    if bold { "1;" } else { "" }
-                );
+                let _ = write!(out, "\x1b[{attrs}38;2;{r};{g};{b}m{text}\x1b[0m");
             }
         }
     }
@@ -617,6 +618,20 @@ impl Theme {
                     self.inline(&c[3], None, Text::Strings, out);
                 }
             }
+        } else if let Some(c) = p.say.captures(line) {
+            out.push_str(&c[1]);
+            let role = match &c[2] {
+                "⚠ " => Role::Warn,
+                "✓ " => Role::Ok,
+                _ => Role::Say,
+            };
+            self.paint(role, "▌", out);
+            if c[2].trim().is_empty() {
+                out.push(' ');
+            } else {
+                self.paint(role, &c[2], out);
+            }
+            self.paint(role, &strip_marks(&c[3]), out);
         } else if let Some(c) = p.stage_end.captures(line) {
             out.push_str(&c[1]);
             self.paint(Role::Ok, "✓", out);
@@ -885,6 +900,7 @@ struct Patterns {
     comment: Regex,
     banner: Regex,
     captured: Regex,
+    say: Regex,
     poll: Regex,
     stage: Regex,
     tags: Regex,
@@ -914,6 +930,8 @@ fn patterns() -> &'static Patterns {
             banner: re(r"^━━ (\d+/\d+|preflight ·) (.*) (━+) ([^━]+?) ━━$"),
             // Captured or given values: `  → ready = 3  ·  wanted = 3`.
             captured: re(r"^(\s*)→ (.*)$"),
+            // A message from the wizard's author: `  ▌ text`, `  ▌⚠ text`, `  ▌✓ text`.
+            say: re(r"^(\s*)▌(⚠ |✓ | )(.*)$"),
             // A poll's lines: `  ↻ try 2 · 1s  n = 2`.
             poll: re(r"^(\s*)↻ (.*)$"),
             // The rule that starts a stage: `━━ Stage 1/2 · Title ━━━━`.

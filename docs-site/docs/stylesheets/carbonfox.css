@@ -16,6 +16,7 @@
   --k-magenta: #be95ff;
   --k-red: #ee5396;
   --k-comment: #6e6f70;
+  --k-accent: #3ddbd9;
 }
 
 [data-md-color-scheme="default"] {
@@ -101,6 +102,7 @@
 .k-term .k-magenta { color: var(--k-magenta); }
 .k-term .k-red { color: var(--k-red); }
 .k-term .k-comment { color: var(--k-comment); }
+.k-term .k-accent { color: var(--k-accent); }
 .k-term .k-bold { font-weight: 700; }
 .k-term .k-italic { font-style: italic; }
 .k-term .k-dim { opacity: 0.6; }
