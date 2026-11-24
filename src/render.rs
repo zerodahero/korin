@@ -382,6 +382,17 @@ fn is_flag(word: &str) -> bool {
 }
 
 fn layout(words: &[String], indent: usize, width: usize) -> Vec<String> {
+    layout_at(words, indent, width, 2)
+}
+
+/// Lays out a command whose first word sits `indent` columns in. Its continuation lines
+/// go `step` columns past that.
+///
+/// When the words after a `--` start like a command (not like a flag), they are a nested
+/// command, as in `fnox exec -- flux bootstrap github …`. The `--` ends the outer part's
+/// last line, and the nested command starts on the next line at the outer continuation
+/// indent, laid out by the same rule with its own continuations 4 columns deeper.
+fn layout_at(words: &[String], indent: usize, width: usize, step: usize) -> Vec<String> {
     let one = words.join(" ");
     let end = words
         .iter()
@@ -391,6 +402,41 @@ fn layout(words: &[String], indent: usize, width: usize) -> Vec<String> {
     if indent + strip_marks(&one).width() <= width && flags < BREAK_FLAGS {
         return vec![one];
     }
+    let nested = words
+        .get(end + 1)
+        .is_some_and(|w| !strip_marks(w).starts_with('-'));
+    let outer = if nested { &words[..end] } else { words };
+    let Some(mut lines) =
+        break_words(outer, end, indent, width, step).or(nested.then(|| vec![outer.join(" ")]))
+    else {
+        return vec![one];
+    };
+    if !nested {
+        return lines;
+    }
+    // The outer part's last line takes the `--` and a break.
+    if let Some(last) = lines.last_mut() {
+        last.push_str(" -- \\");
+    }
+    let inner_indent = indent + step;
+    let mut inner = layout_at(&words[end + 1..], inner_indent, width, 4).into_iter();
+    if let Some(first) = inner.next() {
+        lines.push(format!("{}{first}", " ".repeat(inner_indent)));
+    }
+    lines.extend(inner);
+    lines
+}
+
+/// The broken form of a command's words: the executable and its leading words, then each
+/// flag (with its value) or later word on a line of its own. `end` is where a `--` is, if
+/// any; flags pair with values only before it. `None` when nothing follows the head.
+fn break_words(
+    words: &[String],
+    end: usize,
+    indent: usize,
+    width: usize,
+    step: usize,
+) -> Option<Vec<String>> {
     let head = 1 + words
         .iter()
         .skip(1)
@@ -407,6 +453,7 @@ fn layout(words: &[String], indent: usize, width: usize) -> Vec<String> {
     if head_width(head) > width {
         head = full_head;
     }
+    let end = end.min(words.len());
     let mut groups: Vec<String> = Vec::new();
     let mut index = head;
     while index < words.len() {
@@ -425,16 +472,16 @@ fn layout(words: &[String], indent: usize, width: usize) -> Vec<String> {
         }
     }
     if groups.is_empty() {
-        return vec![one];
+        return None;
     }
-    let pad = " ".repeat(indent + 2);
+    let pad = " ".repeat(indent + step);
     let mut lines = vec![words[..head].join(" ")];
     lines.extend(groups.into_iter().map(|g| format!("{pad}{g}")));
     let last = lines.len() - 1;
     for line in &mut lines[..last] {
         line.push_str(" \\");
     }
-    lines
+    Some(lines)
 }
 
 /// The shown words of a command, one per argument (a known list gives one per item).
@@ -1294,6 +1341,82 @@ mod tests {
                 "  x",
             ]
         );
+    }
+
+    #[test]
+    fn words_after_a_double_dash_lay_out_as_a_nested_command() {
+        let words = [
+            "fnox",
+            "exec",
+            "--",
+            "flux",
+            "bootstrap",
+            "github",
+            "--kubeconfig",
+            "kubeconfig",
+            "--owner",
+            "zerodahero",
+            "--repository",
+            "homelab",
+            "--branch",
+            "main",
+            "--path",
+            "clusters/g7",
+            "--private",
+            "--personal",
+            "--components",
+            "source-controller,kustomize-controller,helm-controller",
+        ];
+        // As a gate shows it: the step line is indented 2 by its depth.
+        let prefix = "  3.2.2  mutate ❯ ";
+        let lines = laid_out(&words, prefix.width(), 80);
+        let mut shown = vec![format!("{prefix}{}", lines[0])];
+        shown.extend(lines[1..].iter().cloned());
+        // The example drops the depth's 2 columns from the first line only.
+        shown[0] = shown[0][2..].to_string();
+        assert_eq!(
+            shown,
+            [
+                "3.2.2  mutate ❯ fnox exec -- \\",
+                "                    flux bootstrap github \\",
+                "                        --kubeconfig kubeconfig \\",
+                "                        --owner zerodahero \\",
+                "                        --repository homelab \\",
+                "                        --branch main \\",
+                "                        --path clusters/g7 \\",
+                "                        --private \\",
+                "                        --personal \\",
+                "                        --components source-controller,kustomize-controller,helm-controller",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_nested_command_breaks_by_its_own_rule() {
+        let long = "x".repeat(30);
+        assert_eq!(
+            laid_out(&["sudo", "-u", "app", "--", "ls", "-l", &long], 0, 30),
+            [
+                "sudo \\".to_string(),
+                "  -u app -- \\".into(),
+                "  ls \\".into(),
+                format!("      -l {long}"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_double_dash_inside_a_nested_command_nests_again() {
+        let lines = laid_out(
+            &[
+                "a", "--", "b", "--x", "1", "--", "c", "--y", "2", "--z", "3", "--w", "4",
+            ],
+            0,
+            20,
+        );
+        assert_eq!(lines[0], "a -- \\");
+        assert!(lines[1].starts_with("  b "), "{lines:#?}");
+        assert!(lines.iter().any(|l| l.starts_with("      c")), "{lines:#?}");
     }
 
     #[test]
