@@ -21,3 +21,16 @@ korin's core promises are security properties, so a break in any of them is in s
 Output that an `interactive` child writes to the terminal is outside korin's control. So is
 argv that other local users can read through `ps`. See
 [Secrets](https://zerodahero.github.io/korin/reference/secrets/) in the docs.
+
+## Verifying a release
+
+Each release carries a [packslip](https://packslip.dev), `packslip.sigstore.json`, signed by
+this repository's release workflow. `mise use packslip:github.com/zerodahero/korin` checks
+it on install. To pin the signer itself, not only the repository name, use its fingerprint:
+
+```sh
+packslip verify --pin ps1_xy5autmdmpvwndc6gtygnvzfsu packslip.sigstore.json
+```
+
+The fingerprint comes from the repository's GitHub ID, so it stays the same if the
+repository is renamed or moves to another owner.
