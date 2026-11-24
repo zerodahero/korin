@@ -384,3 +384,29 @@ pinned bytes, and a script whose file no longer matches its pin does not run. Co
 
 - UI label: none; the journal's `script_sha256`
 - Avoid: lock
+
+### Retry
+
+Running a failed stage again, from the top-level step that failed (`r`) or from its first
+step (`R`). Only a stage with a `retry` line offers it. Code: `ir::Stage::retry`,
+`Runner::stage_steps`.
+
+- UI label: retry
+- Avoid: rerun, resume (resume is `--from`)
+
+### Exit tag
+
+The `· exit 0` that ends a command's block in the run log, in the color of how the command
+ended. Code: `log::Exit`.
+
+- UI label: none
+- Avoid: status line
+
+### Opener
+
+The program `o` opens an item with, chosen by the item's kind: script, json, markdown or
+text. Set in the config's `open` block; the pager when unset. Code: `log::OpenKind`,
+`Runner::opener_argv`.
+
+- UI label: `open` (config)
+- Avoid: viewer, handler

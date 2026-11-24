@@ -168,6 +168,12 @@ mutating, which have a gate, and where a run can [start with `--from`](../guides
 A [`confirm`](steps.md#confirm) step asks again partway through a stage, once earlier steps
 have found values worth checking. It shows the steps still to come.
 
+## Retrying a failed stage
+
+A stage with a [`retry`](file.md#retry) line asks, when a step fails, whether to run again
+from that step (`r`), from the stage's first step (`R`), or to stop (`q`). A retry needs no
+new gate.
+
 ## Steps run in order
 
 korin never reorders steps or stages. What the gate shows is what runs, in that order.

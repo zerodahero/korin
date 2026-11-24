@@ -12,7 +12,8 @@ There is no project config. A repository you clone cannot change how you see a g
 ## Format
 
 The file is [KDL](https://kdl.dev) version 2. Each key is one line: the key, then its value.
-`//` starts a comment.
+The `open` key is a block instead, with one line inside for each kind it sets. `//` starts a
+comment.
 
 ```kdl title="review.kdl"
 --8<-- "docs-site/examples/reference/config/review.kdl"
@@ -20,6 +21,10 @@ The file is [KDL](https://kdl.dev) version 2. Each key is one line: the key, the
 
 ```kdl title="plain.kdl"
 --8<-- "docs-site/examples/reference/config/plain.kdl"
+```
+
+```kdl title="openers.kdl"
+--8<-- "docs-site/examples/reference/config/openers.kdl"
 ```
 
 ## Keys
@@ -32,6 +37,8 @@ The file is [KDL](https://kdl.dev) version 2. Each key is one line: the key, the
 | `pager` | a command in quotes, such as `"less -R"` | `$PAGER`, else `less` | – |
 | `require-enter` | `#true`, `#false` | `#false` | `--require-enter`, `KORIN_REQUIRE_ENTER` |
 | `color` | `auto`, `always`, `never` | `auto` | `--color` |
+| `icons` | `plain`, `nerd` | `plain` | – |
+| `open` | a block: `script`, `json`, `markdown`, `text`, each with a command in quotes | the pager | `KORIN_OPEN_<KIND>` |
 
 - **`view`** is the view the plan pane and the gates start in. See
   [Compact view](cli.md#compact-view). `f` still switches during a run. The run log, and a
@@ -41,11 +48,17 @@ The file is [KDL](https://kdl.dev) version 2. Each key is one line: the key, the
   [The legend](cli.md#the-legend). `l` still switches during a run.
 - **`script-lines`** shows a script in full at its gate when it has at most this many lines.
   `0` never shows one. See [`script`](steps.md#what-the-gate-shows).
-- **`pager`** is the program `o` opens a script or a folded output with. korin splits it into words, with no
-  shell.
+- **`pager`** is the program `o` opens a script or a folded output with, unless `open` names
+  one for its kind. korin splits it into words, with no shell.
 - **`require-enter`** makes gates and `confirm` read `y` and then Enter, instead of a
   single key.
 - **`color`** works like `--color`. With `auto`, `NO_COLOR` still turns color off.
+- **`icons`** picks the marks in the plan pane. `plain` uses `▶ ✓ ✗ ↷ ⚠`, which every font
+  has. `nerd` uses Nerd Font glyphs, for a terminal set up with one.
+- **`open`** names the program that `o` opens each kind of item with. See
+  [Opening an item](cli.md#opening-an-item) for the kinds. A kind it leaves out opens in the
+  pager. `KORIN_OPEN_JSON` (and the same for each kind) wins over the file. korin splits each
+  command into words, with no shell.
 
 A flag wins over the environment, the environment wins over the file, and the file wins
 over the default. `KORIN_REQUIRE_ENTER=0` turns the key off, even when the file turns it on.
@@ -72,4 +85,9 @@ script-lines   20         default
 pager          $PAGER, else less default
 require-enter  #true      file
 color          auto       default
+icons          plain      default
+open.script    the pager  default
+open.json      "jnv"      file
+open.markdown  the pager  default
+open.text      the pager  default
 ```

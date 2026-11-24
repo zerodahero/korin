@@ -78,7 +78,7 @@ stage 2, and `2.3.1` is the first step inside it.
 ## Skip rules
 
 An operator can [skip a stage](gates.md#skipping-a-stage) with `s` at its gate, or with
-`--skip`. A `skip` line, the first line of a stage, says what skipping it means:
+`--skip`. A `skip` line, before the stage's steps, says what skipping it means:
 
 - **`skip also "<stage>", ...`** skips the named stages too. They must come later.
 - **`skip never`**: the stage cannot be skipped. korin does not offer `s`, and refuses
@@ -95,6 +95,38 @@ A stage has at most one `skip` line. The preflight may have one too.
 
 A run that starts with `--from` takes the stages before it as done in an earlier run, so their
 `skip` lines have no effect.
+
+## Retry
+
+A `retry` line lets a stage run again when one of its steps fails. It suits steps that fail
+now and then for reasons outside the wizard, such as a smoke test, or a `poll` that did not
+wait long enough. Like `skip`, it goes before the stage's steps; the two can come in either
+order.
+
+```korin
+stage "Smoke test"
+  retry
+  read curl -fsS https://shop.example.com/health
+```
+
+When a step fails, the stage asks:
+
+```text
+r retry from 4.2 · R retry stage · q quit
+```
+
+- **`r`** runs the stage again from the step that failed. A step inside `when`, `each` or
+  `poll` runs again from the top-level step that holds it. Values that earlier steps
+  captured keep their values.
+- **`R`** runs the whole stage again, from its first step.
+- **`q`**, Enter or Esc stops the run, as a failure does in any other stage.
+
+A retry needs no new gate, and has no limit. The run log marks each one with
+`↻ retry 2 of stage 4, from 4.2`, and the run's summary says how many times the stage was
+retried. A stage is retried only when it failed: never after Ctrl-C, and never without a
+terminal or under `--yes`, where there is no one to ask.
+
+A stage has at most one `retry` line. The preflight may have one too.
 
 ## Preflight
 

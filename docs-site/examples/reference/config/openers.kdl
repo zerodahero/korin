@@ -1,0 +1,7 @@
+// Open scripts in an editor, JSON in a viewer, and markdown rendered.
+icons nerd
+open {
+  script "nvim -R"
+  json "jnv"
+  markdown "glow -p"
+}

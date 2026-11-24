@@ -19,27 +19,42 @@ scrollback:
   A secret shows as a shell variable, such as `"${TOKEN}"`; see
   [Secrets in the run log](secrets.md#secrets-in-the-run-log). The step's scratch directory
   shows as `${KORIN_OUT}`.
-- **`↳` notes** under a command give its exit status when it is not 0, and the expect that
-  matched.
+- **Each command ends with an exit tag**, such as `· exit 0`, on its last output line, or on
+  the `$` line when it printed nothing. The `$` and the tag share a color: green for exit 0,
+  the warning color for a non-zero exit that an `expect` accepted (`exit 1 (expected)`), a
+  signal or a cancel, and red for a failure or a timeout. Without a terminal, the tag takes a
+  line of its own.
+- **`↳` notes** under a command say which expect matched, and where a long output went.
 - **Each stage opens with a banner** that says how its gate went, such as
   `━━ 2/4 Snapshot ━━━━ approved ━━`. Everything in the stage sits indented under it, and
   it closes with `✓ stage 2 done · 2 commands · 3m40s`.
 - **Captures show on one `→` line** under the command, such as `→ ready = 3  ·  wanted = 3`.
   Values you gave show the same way: `→ region = us-east-1  (asked)`.
-- **`note`, `warn` and `record` show as messages**: a note as plain text, a warning after
-  `⚠`, and a record after `✓`.
+- **`note`, `warn` and `record` show as messages**, each line after a `▌` bar, so they never
+  read as command output: a note in italic, a warning after `▌⚠`, and a record after `▌✓`.
 - **A long output folds.** A successful command with more than 12 lines shows its first 4,
-  then `↳ ok · +N lines · <journal file>`. A failed command shows every line. Press `o` at
-  any prompt to open a folded output in full.
+  then `↳ exit 0 · +N lines · <journal file>`. A failed command shows every line. Press `o`
+  at any prompt to open a folded output in full; see [Opening an item](#opening-an-item).
 - **A poll leaves one line per try**, such as `↻ try 2 · 1s  ready = 2`, then the try that
   matched in full. See [`poll`](steps.md#poll).
 - **The run ends with a summary**: each stage, how it ended and how long it took.
 
 In a terminal with color, the plan pane sits under the run log while a stage runs. It shows
 the stages that ended, the current stage with the step running now marked `▶`, and the
-stages to come. A running command shows its newest lines in a live window above the pane.
-Gates, `confirm`, pauses and dialogs show in the pane too, and are erased once you answer,
-so the run log keeps one line for each.
+stages to come. Its steps show without their kind, as `3.2 kubectl get nodes`; a step that
+changes things shows `⚠` before its command. A running command shows its newest lines in a
+live window above the pane. Gates, `confirm`, pauses and dialogs show in the pane too, and
+are erased once you answer, so the run log keeps one line for each.
+
+Every prompt in the pane sits in a box, so a glance finds it under the run log:
+
+```text
+╭──────────────────────────────────────────────────────────────╮
+│ ? Run stage 2? [y/N · s skip · v values · f full · l legend] │
+╰──────────────────────────────────────────────────────────────╯
+```
+
+Set `icons nerd` in your [config file](config.md) to mark the pane with Nerd Font glyphs.
 
 With `--color never` or `NO_COLOR`, or when output is not a terminal, there is no pane and
 nothing is erased: korin prints every line in order, prints what a prompt asks about before
@@ -91,6 +106,22 @@ always hold the full command:
 ```
 
 A run without a terminal, such as in CI, always shows the full view.
+
+### Opening an item
+
+Press `o` at a prompt to open a script of the stage to come, or an output folded so far.
+With more than one, korin lists them, each with its kind:
+
+- **`script`**: a script step's file.
+- **`markdown`**: a `.md` script, or the output of a command with an `output markdown` line
+  (see [`output`](options.md#output)).
+- **`json`**: an output whose stdout parses as JSON, or one whose command has an
+  `output json` line. Its opener gets stdout alone, so stderr cannot break the format.
+- **`text`**: any other output.
+
+Each kind opens in the program your [config file](config.md#keys)'s `open` block names for
+it, such as `nvim -R` for scripts or `jnv` for JSON. A kind with no program opens in the
+pager. The program gets a redacted copy, named with the kind's extension.
 
 ## `korin run`
 

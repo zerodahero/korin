@@ -10,6 +10,7 @@ Options are indented under the command step they belong to: `read`, `mutate`, `s
 | `expect <name> = <match> [and <match> ...]` | Names a result you expect, such as "not found". See [Expects](expects.md). |
 | `env <NAME>=<word>` | Sets an environment variable for this command only. |
 | `timeout <duration>` | Limits how long the command may run. |
+| `output markdown` or `output json` | Says what the output is, so `o` opens it in the right program. |
 
 ## `env`
 
@@ -48,3 +49,18 @@ A timeout always stops the wizard, with exit code 1. No expect can turn it into 
 may have changed part of what it meant to change, and korin says so.
 
 `interactive` steps take no `timeout`, because a person is using the program.
+
+## `output`
+
+`output markdown` or `output json` says what the command prints. It changes only which
+program `o` opens the output with, when the output folds: see
+[Opening an item](cli.md#opening-an-item). korin already finds JSON on its own, so
+`output json` is for output that is JSON only some of the time.
+
+```korin
+stage "Read the release notes"
+  read gh release view v1.4.0 --json body --jq .body
+    output markdown
+```
+
+A command has at most one `output` line.

@@ -23,7 +23,8 @@ preflight ["<title>"]          # optional, once, before stage 1; read-only; runs
   <steps>
 
 stage "<title>"
-  skip never | ends | also "<later stage>", ...   # optional, first line only
+  skip never | ends | also "<later stage>", ...   # optional, before the steps
+  retry                        # optional, before the steps: a failure asks r / R / q
   <steps>
 ```
 
@@ -56,6 +57,7 @@ capture [secret] <name>[?] = file <path> <mode> [on <expect>]
 expect <name> = <match> [and <match> ...]
 env <NAME>=<word>
 timeout <dur>                  # default 15m
+output markdown | json         # what `o` opens the folded output as
 ```
 
 Capture modes:

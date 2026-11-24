@@ -225,8 +225,8 @@ running when the limit passes is cancelled.
 
 ## `note`, `warn` and `record`
 
-All three print a line in the run log, inside their stage: a note as plain text, a warning
-after `⚠`, and a record after `✓`. `record` also writes it to the run's
+All three print a line in the run log, inside their stage, after a `▌` bar that sets them
+apart from command output: a note in italic, a warning after `▌⚠`, and a record after `▌✓`. `record` also writes it to the run's
 `report.md`, so use it for facts you want to keep: what was changed, and to what.
 
 ```korin title="messages.korin"
