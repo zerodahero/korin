@@ -142,6 +142,39 @@ impl Ctx {
     fn has_guard(&self, fact: Guard) -> bool {
         self.guards.contains(&fact)
     }
+
+    /// Value names in scope within two edits of `name`, closest first, for a "did you mean".
+    fn close_names(&self, name: &str) -> Vec<String> {
+        let mut found: Vec<(usize, String)> = self
+            .scopes
+            .iter()
+            .flat_map(|scope| scope.iter())
+            .filter(|(_, binding)| !matches!(binding, Binding::Alias))
+            .map(|(candidate, _)| (edit_distance(name, candidate), candidate.clone()))
+            .filter(|(distance, _)| *distance <= 2)
+            .collect();
+        found.sort();
+        found.dedup_by(|a, b| a.1 == b.1);
+        found.into_iter().map(|(_, n)| n).collect()
+    }
+}
+
+/// The Levenshtein distance between two short names.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut previous = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let current = row[j + 1];
+            row[j + 1] = (previous + usize::from(ca != *cb))
+                .min(row[j] + 1)
+                .min(current + 1);
+            previous = current;
+        }
+    }
+    row[b.len()]
 }
 
 struct Allow {
@@ -700,6 +733,62 @@ impl Compiler {
             sym,
             loc: ctx.loc(span),
         });
+    }
+
+    /// The korin values a `jq` filter uses as `$name`. Each counts as a use, like `{name}`.
+    /// A `$name` that is no korin value is left to jq: the filter may bind it itself.
+    fn jq_vars(
+        &mut self,
+        ctx: &mut Ctx,
+        filter: &str,
+        span: Span,
+    ) -> Vec<(String, ir::Interpolated)> {
+        static VAR: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let var = VAR.get_or_init(|| {
+            regex::Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("pattern compiles")
+        });
+        let file = Arc::clone(&ctx.file);
+        let mut out: Vec<(String, ir::Interpolated)> = Vec::new();
+        for found in var.captures_iter(filter) {
+            let name = found[1].to_string();
+            if out.iter().any(|(n, _)| *n == name) {
+                continue;
+            }
+            let loc = ctx.loc(span);
+            let value = match ctx.lookup(&name).cloned() {
+                None => continue,
+                Some(Binding::Alias) => {
+                    self.error(
+                        &file,
+                        "name",
+                        span,
+                        format!("`${name}` is a template alias, not a value"),
+                    )
+                    .help = Some("a jq filter can use a param, an `ask` or a capture".into());
+                    continue;
+                }
+                Some(
+                    Binding::Arg {
+                        list: Some(sym), ..
+                    }
+                    | Binding::Sym(sym),
+                ) => {
+                    self.require_available(ctx, sym, span);
+                    self.record_reference(ctx, sym, span, false);
+                    ir::Interpolated {
+                        parts: vec![IPart::Sym {
+                            sym,
+                            splat: false,
+                            loc: loc.clone(),
+                        }],
+                        loc,
+                    }
+                }
+                Some(Binding::Arg { text, list: None }) => text,
+            };
+            out.push((name, value));
+        }
+        out
     }
 
     // ---- templates ----
@@ -1502,12 +1591,31 @@ impl Compiler {
         let mut captures = Vec::new();
         let mut capture_names = Vec::new();
         for capture in &command.captures {
+            let mut jq_vars = Vec::new();
             match &capture.mode.value {
                 CaptureMode::Jq(filter)
                 | CaptureMode::JqList(filter)
                 | CaptureMode::JqJson(filter) => {
-                    if let Err(error) = Jq::compile(filter) {
-                        self.push(Diag::error(&file, "jq", capture.mode.span, error));
+                    jq_vars = self.jq_vars(ctx, filter, capture.mode.span);
+                    let names: Vec<String> = jq_vars.iter().map(|(n, _)| n.clone()).collect();
+                    if let Err(error) = Jq::compile_with(filter, &names) {
+                        let mut diag = Diag::error(&file, "jq", capture.mode.span, error.clone());
+                        if let Some(at) = error.find("undefined $") {
+                            let missing: String = error[at + "undefined $".len()..]
+                                .chars()
+                                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                                .collect();
+                            let close = ctx.close_names(&missing);
+                            let help = if close.is_empty() {
+                                "a jq filter uses a korin value as `$name`; define it with `param`, `ask` or `capture` before this line".to_string()
+                            } else {
+                                let names: Vec<String> =
+                                    close.iter().map(|n| format!("`${n}`")).collect();
+                                format!("did you mean {}?", names.join(" or "))
+                            };
+                            diag = diag.help(help);
+                        }
+                        self.push(diag);
                     }
                 }
                 CaptureMode::Regex(re) => self.check_regex(&file, re, capture.mode.span, true),
@@ -1574,6 +1682,7 @@ impl Compiler {
             captures.push(ir::Capture {
                 sym,
                 mode: capture.mode.value.clone(),
+                jq_vars,
                 file: file_template,
                 on,
                 optional: capture.optional,

@@ -35,7 +35,7 @@ use crate::render::{self, Values as _};
 use crate::skip::{self, Why};
 use crate::theme::Theme;
 use crate::view::{Prefixes, View};
-use capture::{Data, Extract, Fingerprint, extract};
+use capture::{Data, Extract, Fingerprint, extract_with};
 use journal::Journal;
 use process::{Cancel, Signals, Spec, Status, Suspended};
 use sha2::{Digest, Sha256};
@@ -3733,11 +3733,11 @@ impl<'p> Runner<'p> {
                         }
                     }
                 };
-                results.push((
-                    capture,
-                    extract(&capture.mode, &input, capture.optional),
-                    file_bytes,
-                ));
+                let extracted = match self.jq_values(capture, scratch) {
+                    Ok(vars) => extract_with(&capture.mode, &input, capture.optional, &vars),
+                    Err(message) => Extract::Fail(message),
+                };
+                results.push((capture, extracted, file_bytes));
             }
         }
 
@@ -4025,6 +4025,52 @@ impl<'p> Runner<'p> {
     }
 
     // ---- values ----
+
+    /// The values a `jq` filter uses as `$name`, each as JSON text: a string as a string, a
+    /// list as an array, a `jq json` capture as itself, an expect as a boolean, and a value
+    /// that is absent as `null`. A withheld value fails the capture.
+    fn jq_values(
+        &self,
+        capture: &ir::Capture,
+        scratch: &Path,
+    ) -> Result<Vec<(String, String)>, String> {
+        let mut out = Vec::new();
+        for (name, template) in &capture.jq_vars {
+            let json = match template.parts.as_slice() {
+                [IPart::Sym { sym, .. }] if *sym != self.p.korin_out => {
+                    match self.values.get(sym) {
+                        None => "null".to_string(),
+                        Some(value) => {
+                            if let Some(reason) = &value.withheld {
+                                return Err(format!(
+                                    "`{name}` is withheld ({reason}), so the filter cannot use it"
+                                ));
+                            }
+                            match &value.data {
+                                // A `jq json` capture holds JSON text.
+                                Data::Str(text)
+                                    if self.p.sym(*sym).ty == Ty::Json
+                                        && serde_json::from_str::<serde_json::Value>(text)
+                                            .is_ok() =>
+                                {
+                                    text.clone()
+                                }
+                                data => data.to_json().to_string(),
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    let text = self
+                        .exec_text(template, scratch)
+                        .map_err(|stop| stop.message)?;
+                    serde_json::Value::String(text).to_string()
+                }
+            };
+            out.push((name.clone(), json));
+        }
+        Ok(out)
+    }
 
     fn value(&self, sym: Sym) -> Result<&Value, Stop> {
         self.values.get(&sym).ok_or_else(|| {

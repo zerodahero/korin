@@ -50,6 +50,17 @@ impl Jq {
     ///
     /// Returns a description of the first parse or compile error.
     pub fn compile(code: &str) -> Result<Self, String> {
+        Self::compile_with(code, &[])
+    }
+
+    /// Compiles a filter that can use each of `vars` as `$name`. [`Jq::run_with`] gets their
+    /// values in the same order.
+    ///
+    /// # Errors
+    ///
+    /// Returns a description of the first parse or compile error.
+    pub fn compile_with(code: &str, vars: &[String]) -> Result<Self, String> {
+        let globals: Vec<String> = vars.iter().map(|name| format!("${name}")).collect();
         let defs = jaq_core::defs()
             .chain(jaq_std::defs())
             .chain(jaq_json::defs());
@@ -63,6 +74,7 @@ impl Jq {
             .map_err(|errors| describe_load_errors(&errors))?;
         let filter = Compiler::default()
             .with_funs(funs)
+            .with_global_vars(globals.iter().map(String::as_str))
             .compile(modules)
             .map_err(|errors| {
                 let names: Vec<String> = errors
@@ -81,9 +93,25 @@ impl Jq {
     /// Returns [`JqError::NotJson`] if the input does not parse, or [`JqError::Runtime`] if the
     /// filter raises an error.
     pub fn run(&self, input: &str) -> Result<Vec<JqValue>, JqError> {
+        self.run_with(input, &[])
+    }
+
+    /// Runs the filter with values for the names it was compiled with, each as JSON text.
+    ///
+    /// # Errors
+    ///
+    /// As [`Jq::run`]; a value that is not JSON is a [`JqError::Runtime`].
+    pub fn run_with(&self, input: &str, values: &[String]) -> Result<Vec<JqValue>, JqError> {
         let value = jaq_json::read::parse_single(input.trim().as_bytes())
             .map_err(|error| JqError::NotJson(format!("{error:?}")))?;
-        let ctx = Ctx::<data::JustLut<Val>>::new(&self.filter.lut, Vars::new([]));
+        let vars = values
+            .iter()
+            .map(|text| {
+                jaq_json::read::parse_single(text.as_bytes())
+                    .map_err(|error| JqError::Runtime(format!("a value is not JSON: {error:?}")))
+            })
+            .collect::<Result<Vec<Val>, JqError>>()?;
+        let ctx = Ctx::<data::JustLut<Val>>::new(&self.filter.lut, Vars::new(vars));
         self.filter
             .id
             .run((ctx, value))
@@ -140,6 +168,24 @@ fn convert(val: &Val) -> JqValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_filter_reads_values_as_variables() {
+        let jq =
+            Jq::compile_with(".[] | select(.id == $want) | .n", &["want".to_string()]).unwrap();
+        let out = jq
+            .run_with(r#"[{"id":"a","n":1},{"id":"b","n":2}]"#, &[r#""b""#.into()])
+            .unwrap();
+        assert_eq!(out, vec![scalar("2")]);
+        // A list arrives as an array, and a filter's own `as $x` still works.
+        let jq =
+            Jq::compile_with("$items | map(. as $x | $x + \"!\")", &["items".to_string()]).unwrap();
+        let out = jq.run_with("null", &[r#"["a","b"]"#.into()]).unwrap();
+        assert_eq!(out, vec![JqValue::Compound(r#"["a!","b!"]"#.into())]);
+        // A name not given is undefined.
+        let error = Jq::compile_with("$nope", &[]).err().unwrap();
+        assert!(error.contains("$nope"), "{error}");
+    }
 
     fn scalar(text: &str) -> JqValue {
         let json = serde_json::from_str::<serde_json::Value>(text)

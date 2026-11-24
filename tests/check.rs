@@ -525,3 +525,30 @@ fn skip_lines_name_later_stages_that_can_be_skipped() {
     );
     assert_eq!(out.lines().count(), 4, "{out}");
 }
+
+#[test]
+fn a_jq_filter_names_korin_values_as_variables() {
+    let ok = wizard(concat!(
+        "param want = \"b\"\n",
+        "stage \"s\"\n",
+        "  read tool\n",
+        "    capture x = jq .[] | select(.id == $want) | . as $row | $row.n\n",
+    ));
+    assert_eq!(ok, "ok");
+    let unknown =
+        wizard("stage \"s\"\n  read tool\n    capture x = jq .[] | select(.id == $nope)\n");
+    assert!(unknown.contains("$nope"), "{unknown}");
+    let typo = wizard(concat!(
+        "param want = \"b\"\n",
+        "stage \"s\"\n  read tool\n    capture x = jq .[] | select(.id == $wantt)\n",
+    ));
+    assert!(typo.contains("$wantt"), "{typo}");
+    let early = wizard(concat!(
+        "stage \"s\"\n",
+        "  read tool\n",
+        "    capture x = jq .[] | select(.id == $later)\n",
+        "  read tool\n",
+        "    capture later = text\n",
+    ));
+    assert!(early.contains("error"), "{early}");
+}

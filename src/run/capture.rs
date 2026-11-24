@@ -39,6 +39,17 @@ pub enum Extract {
 /// Extracts a value from `input` according to `mode`. See the result-case table in
 /// `docs-site/docs/reference/captures.md`.
 pub fn extract(mode: &CaptureMode, input: &[u8], optional: bool) -> Extract {
+    extract_with(mode, input, optional, &[])
+}
+
+/// Like [`extract`], for a `jq` filter that uses korin values as `$name`: `vars` holds each
+/// name with its value as JSON text.
+pub fn extract_with(
+    mode: &CaptureMode,
+    input: &[u8],
+    optional: bool,
+    vars: &[(String, String)],
+) -> Extract {
     let Ok(text) = std::str::from_utf8(input) else {
         return Extract::Fail("the output is not valid UTF-8".into());
     };
@@ -59,11 +70,13 @@ pub fn extract(mode: &CaptureMode, input: &[u8], optional: bool) -> Extract {
             },
         },
         CaptureMode::Jq(filter) | CaptureMode::JqList(filter) | CaptureMode::JqJson(filter) => {
-            let jq = match Jq::compile(filter) {
+            let names: Vec<String> = vars.iter().map(|(name, _)| name.clone()).collect();
+            let values: Vec<String> = vars.iter().map(|(_, value)| value.clone()).collect();
+            let jq = match Jq::compile_with(filter, &names) {
                 Ok(jq) => jq,
                 Err(error) => return Extract::Fail(error),
             };
-            let results = match jq.run(text) {
+            let results = match jq.run_with(text, &values) {
                 Ok(results) => results,
                 Err(JqError::NotJson(_)) => {
                     return Extract::Fail(format!(

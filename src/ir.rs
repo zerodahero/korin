@@ -204,6 +204,8 @@ pub struct Command {
 pub struct Capture {
     pub sym: Sym,
     pub mode: CaptureMode,
+    /// The korin values a `jq` filter uses as `$name`, each with the value it reads.
+    pub jq_vars: Vec<(String, Interpolated)>,
     pub file: Option<Interpolated>,
     pub on: Option<Sym>,
     pub optional: bool,
