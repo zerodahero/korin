@@ -1,0 +1,24 @@
+<pre class="k-term"><code><span class="k-border">╭─</span> <span class="k-blue k-bold">korin</span> <span class="k-border">─</span> <span class="k-bold">Find one deployment's image</span> <span class="k-border">─</span> <span class="k-cyan">~/project</span> <span class="k-border">─</span> <span class="k-fg-dim">1 stage</span>
+<span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run filter.korin
+
+<span class="k-border">━━</span> <span class="k-fg-dim">1/1</span> <span class="k-bold">Look up</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
+  <span class="k-green k-bold">$</span> <span class="k-bold">kubectl</span> get deployments <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
+  {"items": [
+  {
+    "metadata": {"name": "cart", "namespace": "shop"},
+    "spec": {
+    <span class="k-border">↳</span> <span class="k-fg-dim">+21 lines · ./.korin/runs/20260115T100000Z-find-one-deployment-s-image/out/0001-s1.1.stdout</span>
+    <span class="k-border">→</span> <span class="k-teal">image</span> <span class="k-border">=</span> <span class="k-cyan">registry.example.com/checkout:3.1.0</span>
+  <span class="k-green k-bold">$</span> <span class="k-bold">kubectl</span> get pods <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> name
+  pod/cart-6b7c9d8f5-4hjkl
+  pod/checkout-5c8f7b9d4-xq2mn
+  pod/checkout-5c8f7b9d4-z9wvt
+    <span class="k-border">→</span> <span class="k-teal">pod</span> <span class="k-border">=</span> <span class="k-cyan">checkout-5c8f7b9d4-xq2mn</span>
+  <span class="k-accent k-italic">▌ checkout runs registry.example.com/checkout:3.1.0, in checkout-5c8f7b9d4-xq2mn.</span>
+  <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 2 commands · 0s</span>
+
+<span class="k-comment">── done · 1s · exit 0 ──────────────────────────────────────────────────────────</span>
+ <span class="k-green k-bold">✓</span> <span class="k-fg-dim">1/1 Look up</span>  <span class="k-comment">1s</span>
+
+<span class="k-green k-bold">✓</span> <span class="k-bold">Find one deployment's image completed</span>
+  <span class="k-fg-dim">journal: ./.korin/runs/20260115T100000Z-find-one-deployment-s-image</span></code></pre>

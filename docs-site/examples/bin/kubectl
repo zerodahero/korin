@@ -20,6 +20,18 @@ JSON
 }
 
 case "$*" in
+"get deployments -n shop -o json")
+    printf '{"items": [\n'
+    deployment cart registry.example.com/cart:2.4.1 2 2
+    printf ',\n'
+    deployment checkout registry.example.com/checkout:3.1.0 3 3
+    printf ']}\n'
+    ;;
+"get pods -n shop -o name")
+    echo "pod/cart-6b7c9d8f5-4hjkl"
+    echo "pod/checkout-5c8f7b9d4-xq2mn"
+    echo "pod/checkout-5c8f7b9d4-z9wvt"
+    ;;
 "get deployment web -n shop")
     echo "NAME   READY   UP-TO-DATE   AVAILABLE   AGE"
     echo "web    3/3     3            3           41d"

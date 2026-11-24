@@ -71,6 +71,10 @@ Capture modes:
 | `lines` | Non-empty lines, as a list. |
 | `regex /<re>/` | Group 1 of the first match. `$` matches only at the very end of the output; write `(?m)` for line anchors. |
 
+Values in filters: a jq filter reads a korin value as `$name` (`select(.id == $cluster)`); a
+regex matches one as literal text with `{name}` (`/({app}-[a-z0-9]+)/`). A `#` inside a regex
+is not a comment.
+
 - `name?` makes a capture optional: absent instead of failing when jq finds nothing or
   `null`. Use it only inside `when exists name`.
 - Plain captures run only when no expect matched; `on <expect>` captures run only when that

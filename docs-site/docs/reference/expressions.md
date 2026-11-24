@@ -31,6 +31,9 @@ purpose: comparison and logic, no arithmetic. Anything more goes through a
 
 `not` binds tighter than `and`, and `and` tighter than `or`. When in doubt, add parentheses.
 
+A regex can match another value as literal text with `{name}`, as in `image ~ /^{registry}\//`.
+See [Values in a filter](captures.md#values-in-a-filter).
+
 ## Values and their text
 
 Every value compares by its text. A number from a jq capture is in jq's canonical form, so
