@@ -558,6 +558,12 @@ fn normalize(bytes: &[u8], home: &Path) -> Vec<u8> {
         out.truncate(at);
         out.extend_from_slice(&tail);
     }
+    // A stage-end line ends in the stage's time: `✓ stage 2 done · 3 commands · 0s`.
+    let stage_end = regex::bytes::Regex::new(
+        r"((?:stage \d+|preflight) done[^\n]*? · )\d+(?:h\d{2}m|m\d{2}s|s)\b",
+    )
+    .unwrap();
+    out = stage_end.replace_all(&out, &b"${1}0s"[..]).into_owned();
     let home = home.display().to_string();
     // macOS reports a temporary directory both with and without its `/private` prefix.
     for form in [

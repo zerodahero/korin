@@ -1,0 +1,11 @@
+korin 1
+title "Find one deployment's image"
+
+param app = "checkout"
+
+stage "Look up"
+  read kubectl get deployments -n shop -o json
+    capture image = jq .items[] | select(.metadata.name == $app) | .spec.template.spec.containers[0].image
+  read kubectl get pods -n shop -o name
+    capture pod = regex /pod\/({app}-[a-z0-9]+-[a-z0-9]+)/
+  note "{app} runs {image}, in {pod}."

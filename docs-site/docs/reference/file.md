@@ -14,7 +14,8 @@ are marked by indentation.
 - **Indent with spaces.** A tab is an error. Any consistent width works; `korin fmt` uses two
   spaces.
 - **Comments** start with `#` at the start of a line or after a space, and run to the end of
-  the line. A `#` inside a word, such as `page#top`, is text.
+  the line. A `#` inside a word, such as `page#top`, or inside a regex, such as
+  `/issue #\d+/`, is text.
 
 ## Header
 

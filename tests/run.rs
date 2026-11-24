@@ -1826,3 +1826,87 @@ fn a_retry_stage_without_a_terminal_fails_with_no_prompt() {
     assert!(!out.text.contains("retry"), "{}", out.text);
     assert!(env.events_of("stage_retry").is_empty());
 }
+
+// ---- values in capture filters ----
+
+fn capture_value(env: &Env, name: &str) -> serde_json::Value {
+    env.events_of("capture")
+        .into_iter()
+        .find(|e| e["name"] == name)
+        .unwrap_or_else(|| panic!("no capture event for {name}"))["value"]
+        .clone()
+}
+
+#[test]
+fn a_jq_filter_uses_korin_values_as_variables() {
+    let env = Env::new();
+    env.script(
+        "bin/clusters",
+        "#!/bin/sh\necho '[{\"id\":\"a\",\"status\":\"up\"},{\"id\":\"b\",\"status\":\"creating\"}]'\n",
+    );
+    env.script("bin/doc", "#!/bin/sh\necho '{\"keep\":[\"a\"]}'\n");
+    env.wizard(concat!(
+        "param cluster = \"b\"\n",
+        "stage \"a\"\n",
+        "  read clusters\n",
+        "    capture status = jq .[] | select(.id == $cluster) | .status\n",
+        "    capture ids = jq list .[].id\n",
+        "  read doc\n",
+        "    capture keep = jq json .keep\n",
+        "  read clusters\n",
+        "    capture kept = jq list .[] | select(.id as $x | $ids | index($x)) | select([.id] | inside($keep)) | .id\n",
+    ));
+    let out = env.run_yes(&[]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    assert_eq!(capture_value(&env, "status"), "creating");
+    assert_eq!(capture_value(&env, "kept"), serde_json::json!(["a"]));
+}
+
+#[test]
+fn a_stage_whose_filter_reads_a_skipped_value_is_a_dependent() {
+    let env = skipping_env();
+    env.script("bin/rows", "#!/bin/sh\necho '[{\"id\":\"id-7\"}]'\n");
+    env.wizard(concat!(
+        "stage \"make\"\n",
+        "  read make-id\n",
+        "    capture id = text\n",
+        "stage \"use\"\n",
+        "  read rows\n",
+        "    capture found = jq .[] | select(.id == $id) | .id\n",
+    ));
+    let out = env.run_yes(&["--skip", "make"]);
+    assert_eq!(out.code, 1, "{}", out.text);
+    assert!(
+        out.text.contains("stage 2 \"use\" reads `id`"),
+        "{}",
+        out.text
+    );
+}
+
+#[test]
+fn a_regex_matches_a_korin_value_as_literal_text() {
+    let env = Env::new();
+    env.script("bin/pods", "#!/bin/sh\necho 'webxv2-abc web.v2-xyz'\n");
+    env.wizard(concat!(
+        "param app = \"web.v2\"\n",
+        "stage \"a\"\n",
+        "  read pods\n",
+        "    expect found = stdout ~ /{app}-xyz/\n",
+        "  when found\n",
+        "    note \"found it\"\n",
+        "  read pods\n",
+        "    capture pod = regex /({app}-[a-z]{3})/\n",
+        "  when pod ~ /^{app}/\n",
+        "    note \"starts with the app\"\n",
+    ));
+    let out = env.run_yes(&[]);
+    assert_eq!(out.code, 0, "{}", out.text);
+    // The `.` in the value matches only a `.`, so `webxv2-abc` is not the pod.
+    assert_eq!(capture_value(&env, "pod"), "web.v2-xyz");
+    let said: Vec<String> = env
+        .events_of("say")
+        .iter()
+        .map(|e| e["text"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(said, ["found it", "starts with the app"], "{}", out.text);
+}

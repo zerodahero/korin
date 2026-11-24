@@ -71,6 +71,7 @@ stage "a"
     capture t = text on ok
     capture l = lines
     capture r = regex /id-(\d+)\/x/ on ok
+    capture h = regex / #(\d+)/
     env TOKEN={tok}
     timeout 90s
     output json
@@ -99,6 +100,11 @@ stage "a"
               (regex
                 (regex_pattern)))
             (identifier))
+          (capture
+            (identifier)
+            (capture_mode
+              (regex
+                (regex_pattern))))
           (env
             (identifier)
             (word

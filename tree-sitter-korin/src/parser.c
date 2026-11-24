@@ -3027,10 +3027,10 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
       END_STATE();
     case 77:
       ACCEPT_TOKEN(sym_regex_pattern);
-      if (lookahead == '/') ADVANCE(84);
       if (lookahead == '\\') ADVANCE(85);
       if (lookahead != 0 &&
-          lookahead != '\n') ADVANCE(77);
+          lookahead != '\n' &&
+          lookahead != '/') ADVANCE(77);
       END_STATE();
     case 78:
       ACCEPT_TOKEN(sym_regex_pattern);
@@ -11783,7 +11783,7 @@ static const TSParseActionEntry ts_parse_actions[] = {
   [1036] = {.entry = {.count = 1, .reusable = true}}, SHIFT(488),
   [1038] = {.entry = {.count = 1, .reusable = true}}, SHIFT(198),
   [1040] = {.entry = {.count = 1, .reusable = true}}, SHIFT(265),
-  [1042] = {.entry = {.count = 1, .reusable = false}}, SHIFT(421),
+  [1042] = {.entry = {.count = 1, .reusable = true}}, SHIFT(421),
   [1044] = {.entry = {.count = 1, .reusable = true}}, SHIFT(398),
   [1046] = {.entry = {.count = 1, .reusable = true}}, SHIFT(199),
   [1048] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_capture_mode, 3, 0, 62),
@@ -11822,7 +11822,7 @@ static const TSParseActionEntry ts_parse_actions[] = {
   [1114] = {.entry = {.count = 1, .reusable = true}}, SHIFT(213),
   [1116] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_capture_mode, 2, 0, 41),
   [1118] = {.entry = {.count = 1, .reusable = true}}, SHIFT(261),
-  [1120] = {.entry = {.count = 1, .reusable = false}}, SHIFT(452),
+  [1120] = {.entry = {.count = 1, .reusable = true}}, SHIFT(452),
   [1122] = {.entry = {.count = 1, .reusable = true}}, SHIFT(272),
   [1124] = {.entry = {.count = 1, .reusable = false}}, SHIFT(357),
   [1126] = {.entry = {.count = 1, .reusable = false}}, SHIFT(422),

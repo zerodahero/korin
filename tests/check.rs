@@ -525,3 +525,51 @@ fn skip_lines_name_later_stages_that_can_be_skipped() {
     );
     assert_eq!(out.lines().count(), 4, "{out}");
 }
+
+#[test]
+fn a_jq_filter_names_korin_values_as_variables() {
+    let ok = wizard(concat!(
+        "param want = \"b\"\n",
+        "stage \"s\"\n",
+        "  read tool\n",
+        "    capture x = jq .[] | select(.id == $want) | . as $row | $row.n\n",
+    ));
+    assert_eq!(ok, "ok");
+    let unknown =
+        wizard("stage \"s\"\n  read tool\n    capture x = jq .[] | select(.id == $nope)\n");
+    assert!(unknown.contains("$nope"), "{unknown}");
+    let typo = wizard(concat!(
+        "param want = \"b\"\n",
+        "stage \"s\"\n  read tool\n    capture x = jq .[] | select(.id == $wantt)\n",
+    ));
+    assert!(typo.contains("$wantt"), "{typo}");
+    let early = wizard(concat!(
+        "stage \"s\"\n",
+        "  read tool\n",
+        "    capture x = jq .[] | select(.id == $later)\n",
+        "  read tool\n",
+        "    capture later = text\n",
+    ));
+    assert!(early.contains("error"), "{early}");
+}
+
+#[test]
+fn a_regex_names_korin_values_in_braces_and_keeps_counts() {
+    let ok = wizard(concat!(
+        "param app = \"web\"\n",
+        "stage \"s\"\n",
+        "  read tool\n",
+        "    capture x = regex /({app}-a{2,3}) \\{app\\}/\n",
+    ));
+    assert_eq!(ok, "ok");
+    let unknown = wizard("stage \"s\"\n  read tool\n    capture x = regex /({nope})/\n");
+    assert!(unknown.contains("unknown name `nope`"), "{unknown}");
+    let list = wizard(concat!(
+        "stage \"s\"\n",
+        "  read tool\n",
+        "    capture xs = lines\n",
+        "  read tool\n",
+        "    expect a = stdout ~ /{xs}/\n",
+    ));
+    assert!(list.contains("list"), "{list}");
+}

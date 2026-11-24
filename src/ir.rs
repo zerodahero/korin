@@ -110,7 +110,8 @@ pub enum Expr {
     Not(Box<Expr>),
     Cmp(CmpOp, Box<Expr>, Box<Expr>),
     In(Box<Expr>, Box<Expr>),
-    Regex(Box<Expr>, String),
+    /// `x ~ /…/`. The regex's `{name}` parts match their value as literal text.
+    Regex(Box<Expr>, Interpolated),
     Exists(Sym),
     Sym(Sym),
     Str(Interpolated),
@@ -204,6 +205,10 @@ pub struct Command {
 pub struct Capture {
     pub sym: Sym,
     pub mode: CaptureMode,
+    /// The korin values a `jq` filter uses as `$name`, each with the value it reads.
+    pub jq_vars: Vec<(String, Interpolated)>,
+    /// A `regex` capture's pattern, whose `{name}` parts match their value as literal text.
+    pub regex: Option<Interpolated>,
     pub file: Option<Interpolated>,
     pub on: Option<Sym>,
     pub optional: bool,
@@ -221,8 +226,9 @@ pub enum Match {
     Exit(i32),
     ExitNonZero,
     Signal(String),
-    Stdout(String),
-    Stderr(String),
+    /// A regex, whose `{name}` parts match their value as literal text.
+    Stdout(Interpolated),
+    Stderr(Interpolated),
     Missing(Interpolated),
 }
 

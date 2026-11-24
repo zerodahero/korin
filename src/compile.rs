@@ -142,6 +142,39 @@ impl Ctx {
     fn has_guard(&self, fact: Guard) -> bool {
         self.guards.contains(&fact)
     }
+
+    /// Value names in scope within two edits of `name`, closest first, for a "did you mean".
+    fn close_names(&self, name: &str) -> Vec<String> {
+        let mut found: Vec<(usize, String)> = self
+            .scopes
+            .iter()
+            .flat_map(|scope| scope.iter())
+            .filter(|(_, binding)| !matches!(binding, Binding::Alias))
+            .map(|(candidate, _)| (edit_distance(name, candidate), candidate.clone()))
+            .filter(|(distance, _)| *distance <= 2)
+            .collect();
+        found.sort();
+        found.dedup_by(|a, b| a.1 == b.1);
+        found.into_iter().map(|(_, n)| n).collect()
+    }
+}
+
+/// The Levenshtein distance between two short names.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut previous = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let current = row[j + 1];
+            row[j + 1] = (previous + usize::from(ca != *cb))
+                .min(row[j] + 1)
+                .min(current + 1);
+            previous = current;
+        }
+    }
+    row[b.len()]
 }
 
 struct Allow {
@@ -702,6 +735,62 @@ impl Compiler {
         });
     }
 
+    /// The korin values a `jq` filter uses as `$name`. Each counts as a use, like `{name}`.
+    /// A `$name` that is no korin value is left to jq: the filter may bind it itself.
+    fn jq_vars(
+        &mut self,
+        ctx: &mut Ctx,
+        filter: &str,
+        span: Span,
+    ) -> Vec<(String, ir::Interpolated)> {
+        static VAR: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let var = VAR.get_or_init(|| {
+            regex::Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("pattern compiles")
+        });
+        let file = Arc::clone(&ctx.file);
+        let mut out: Vec<(String, ir::Interpolated)> = Vec::new();
+        for found in var.captures_iter(filter) {
+            let name = found[1].to_string();
+            if out.iter().any(|(n, _)| *n == name) {
+                continue;
+            }
+            let loc = ctx.loc(span);
+            let value = match ctx.lookup(&name).cloned() {
+                None => continue,
+                Some(Binding::Alias) => {
+                    self.error(
+                        &file,
+                        "name",
+                        span,
+                        format!("`${name}` is a template alias, not a value"),
+                    )
+                    .help = Some("a jq filter can use a param, an `ask` or a capture".into());
+                    continue;
+                }
+                Some(
+                    Binding::Arg {
+                        list: Some(sym), ..
+                    }
+                    | Binding::Sym(sym),
+                ) => {
+                    self.require_available(ctx, sym, span);
+                    self.record_reference(ctx, sym, span, false);
+                    ir::Interpolated {
+                        parts: vec![IPart::Sym {
+                            sym,
+                            splat: false,
+                            loc: loc.clone(),
+                        }],
+                        loc,
+                    }
+                }
+                Some(Binding::Arg { text, list: None }) => text,
+            };
+            out.push((name, value));
+        }
+        out
+    }
+
     // ---- templates ----
 
     fn interpolated(
@@ -1183,8 +1272,8 @@ impl Compiler {
                         "the left side of `~` must be a value",
                     );
                 }
-                self.check_regex(&file, &re.value, re.span, false);
-                (ir::Expr::Regex(Box::new(la), re.value.clone()), ETy::Bool)
+                let pattern = self.regex_template(ctx, &re.value, re.span, false);
+                (ir::Expr::Regex(Box::new(la), pattern), ETy::Bool)
             }
             ast::Expr::Not(inner, _) => {
                 let lowered = self.condition(ctx, inner);
@@ -1224,6 +1313,71 @@ impl Compiler {
             ir::Expr::Sym(sym) if self.syms[*sym].kind == SymKind::Expect => vec![Guard::Is(*sym)],
             ir::Expr::Exists(sym) => vec![Guard::Exists(*sym)],
             _ => Vec::new(),
+        }
+    }
+
+    /// A regex's text as a template: each `{name}` (a name starts with a letter or `_`)
+    /// becomes the value, matched as literal text. `{2,3}` stays a count, and `\{` stays a
+    /// literal brace. The pattern is checked with each value as `x`.
+    fn regex_template(
+        &mut self,
+        ctx: &mut Ctx,
+        pattern: &str,
+        span: Span,
+        needs_group: bool,
+    ) -> ir::Interpolated {
+        let mut parts: Vec<IPart> = Vec::new();
+        let mut literal = String::new();
+        let mut chars = pattern.char_indices().peekable();
+        while let Some((index, ch)) = chars.next() {
+            if ch == '\\' {
+                literal.push(ch);
+                if let Some((_, next)) = chars.next() {
+                    literal.push(next);
+                }
+                continue;
+            }
+            if ch == '{'
+                && let Some(end) = pattern[index + 1..].find('}')
+            {
+                let inner = &pattern[index + 1..index + 1 + end];
+                let path: Vec<&str> = inner.split('.').collect();
+                let is_name = path.iter().all(|part| {
+                    part.chars().next().is_some_and(is_name_start)
+                        && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                });
+                if is_name {
+                    if !literal.is_empty() {
+                        parts.push(IPart::Lit(std::mem::take(&mut literal)));
+                    }
+                    let r = ast::Ref {
+                        path: path.iter().map(|p| (*p).to_string()).collect(),
+                        splat: false,
+                        span,
+                    };
+                    parts.extend(self.interpolated_ref(ctx, &r, ICtx::Text, false));
+                    // Skip past the `}`.
+                    while chars.next_if(|(i, _)| *i <= index + 1 + end).is_some() {}
+                    continue;
+                }
+            }
+            literal.push(ch);
+        }
+        if !literal.is_empty() {
+            parts.push(IPart::Lit(literal));
+        }
+        let checked: String = parts
+            .iter()
+            .map(|part| match part {
+                IPart::Lit(text) => text.clone(),
+                IPart::Sym { .. } => "x".to_string(),
+            })
+            .collect();
+        let file = Arc::clone(&ctx.file);
+        self.check_regex(&file, &checked, span, needs_group);
+        ir::Interpolated {
+            parts,
+            loc: ctx.loc(span),
         }
     }
 
@@ -1474,12 +1628,10 @@ impl Compiler {
                     ast::Match::ExitNonZero => ir::Match::ExitNonZero,
                     ast::Match::Signal(name) => ir::Match::Signal(name.clone()),
                     ast::Match::Stdout(re) => {
-                        self.check_regex(&file, re, p.span, false);
-                        ir::Match::Stdout(re.clone())
+                        ir::Match::Stdout(self.regex_template(ctx, re, p.span, false))
                     }
                     ast::Match::Stderr(re) => {
-                        self.check_regex(&file, re, p.span, false);
-                        ir::Match::Stderr(re.clone())
+                        ir::Match::Stderr(self.regex_template(ctx, re, p.span, false))
                     }
                     ast::Match::Missing(path) => {
                         ir::Match::Missing(self.interpolated(ctx, path, ICtx::Path))
@@ -1502,15 +1654,37 @@ impl Compiler {
         let mut captures = Vec::new();
         let mut capture_names = Vec::new();
         for capture in &command.captures {
+            let mut jq_vars = Vec::new();
+            let mut regex = None;
             match &capture.mode.value {
                 CaptureMode::Jq(filter)
                 | CaptureMode::JqList(filter)
                 | CaptureMode::JqJson(filter) => {
-                    if let Err(error) = Jq::compile(filter) {
-                        self.push(Diag::error(&file, "jq", capture.mode.span, error));
+                    jq_vars = self.jq_vars(ctx, filter, capture.mode.span);
+                    let names: Vec<String> = jq_vars.iter().map(|(n, _)| n.clone()).collect();
+                    if let Err(error) = Jq::compile_with(filter, &names) {
+                        let mut diag = Diag::error(&file, "jq", capture.mode.span, error.clone());
+                        if let Some(at) = error.find("undefined $") {
+                            let missing: String = error[at + "undefined $".len()..]
+                                .chars()
+                                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                                .collect();
+                            let close = ctx.close_names(&missing);
+                            let help = if close.is_empty() {
+                                "a jq filter uses a korin value as `$name`; define it with `param`, `ask` or `capture` before this line".to_string()
+                            } else {
+                                let names: Vec<String> =
+                                    close.iter().map(|n| format!("`${n}`")).collect();
+                                format!("did you mean {}?", names.join(" or "))
+                            };
+                            diag = diag.help(help);
+                        }
+                        self.push(diag);
                     }
                 }
-                CaptureMode::Regex(re) => self.check_regex(&file, re, capture.mode.span, true),
+                CaptureMode::Regex(re) => {
+                    regex = Some(self.regex_template(ctx, re, capture.mode.span, true));
+                }
                 CaptureMode::Text | CaptureMode::Lines => {}
             }
             let on = capture.on.as_ref().and_then(|on| {
@@ -1574,6 +1748,8 @@ impl Compiler {
             captures.push(ir::Capture {
                 sym,
                 mode: capture.mode.value.clone(),
+                jq_vars,
+                regex,
                 file: file_template,
                 on,
                 optional: capture.optional,
@@ -1789,7 +1965,12 @@ fn expr_syms(expr: &ir::Expr) -> Vec<Sym> {
             v.extend(expr_syms(b));
             v
         }
-        ir::Expr::Not(e) | ir::Expr::Regex(e, _) => expr_syms(e),
+        ir::Expr::Not(e) => expr_syms(e),
+        ir::Expr::Regex(e, pattern) => {
+            let mut v = expr_syms(e);
+            v.extend(pattern.syms());
+            v
+        }
         ir::Expr::Num(_) => Vec::new(),
     }
 }
@@ -1841,4 +2022,8 @@ fn short_key(key: &str) -> String {
         Some(t) => format!("{name}#{t}"),
         None => name,
     }
+}
+
+fn is_name_start(c: char) -> bool {
+    c.is_ascii_alphabetic() || c == '_'
 }

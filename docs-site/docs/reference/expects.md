@@ -31,6 +31,9 @@ safe to run again: see [Resume after a stop](../guides/resume.md).
 --8<-- "docs-site/examples/reference/expects/matches.korin"
 ```
 
+A regex can match a korin value as literal text with `{name}`, as in
+`stdout ~ /deleted {pod}/`. See [Values in a filter](captures.md#values-in-a-filter).
+
 Pair an exit code with a regex when you can. Exit code 1 means many things; exit code 1 with
 `release not found` means one.
 

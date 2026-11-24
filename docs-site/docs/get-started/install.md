@@ -5,11 +5,15 @@ korin is one binary, for macOS on Apple silicon and Linux on x86-64 or ARM64.
 === "mise"
 
     ```sh
-    mise use github:zerodahero/korin
+    mise use packslip:github.com/zerodahero/korin
     ```
 
     This adds korin to the project's `mise.toml`, so everyone working on the project, and CI,
-    gets the same version.
+    gets the same version. Each release carries a signed [packslip](https://packslip.dev):
+    mise checks the download against it, and installs the
+    [korin skill](../guides/agents.md) with the binary.
+
+    `mise use github:zerodahero/korin` also works, without the packslip check or the skill.
 
 === "From source"
 

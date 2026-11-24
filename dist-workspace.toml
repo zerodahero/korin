@@ -23,6 +23,8 @@ hosting = "github"
 install-updater = false
 # release.yml is pinned by pinact and hardened for zizmor after generation.
 allow-dirty = ["ci"]
+# Signs a packslip for each release, with the korin skill: .github/workflows/packslip.yml.
+post-announce-jobs = ["./packslip"]
 
 # Every target is static musl, so the old glibc on dist's default ubuntu-22.04 buys nothing.
 # Pinned like ci.yml: a floating `ubuntu-latest` would change the release image unannounced.

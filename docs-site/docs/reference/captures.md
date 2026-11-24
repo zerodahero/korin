@@ -50,6 +50,28 @@ is needed. Regexes use Rust's [regex syntax](https://docs.rs/regex/latest/regex/
 `text` suits commands that print one value. `lines` suits commands that print one item per
 line, such as `kubectl get -o name`. `regex` picks a value out of text meant for people.
 
+### Values in a filter
+
+A filter can use a param, an `ask` or an earlier capture, to pick the item that matches it.
+
+- **In a jq filter, write `$name`.** jq gets the value as JSON, so no value can break the
+  filter: a string as a string, a list as an array, a `jq json` capture as itself, and an
+  optional capture that has no value as `null`. Write `{` and `}` as jq does: `{name}` is
+  object construction in jq, not a korin value.
+- **In a regex, write `{name}`.** korin escapes the value, so it matches as literal text: with
+  `app = "web.v2"`, `/{app}-/` matches `web.v2-` and not `webxv2-`. A name starts with a
+  letter or `_`, so `a{2,3}` is still a count. Write `\{` for a literal brace.
+
+```korin title="filter.korin"
+--8<-- "docs-site/examples/reference/captures/filter.korin"
+```
+
+--8<-- "docs-site/docs/generated/transcripts/reference/captures/filter.html"
+
+A value used in a filter counts like one used in a command: it must exist before the step,
+and a stage that skips its maker makes this stage a dependent. A `$name` that names no korin
+value is left to jq, so `. as $row | $row.id` still works.
+
 ## Types
 
 Each capture has a type that `korin check` knows before anything runs.

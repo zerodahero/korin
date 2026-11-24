@@ -36,8 +36,13 @@ At the gate, korin shows that the second command depends on the first:
 ## Install
 
 ```sh
-mise use github:zerodahero/korin
+mise use packslip:github.com/zerodahero/korin
 ```
+
+Each release carries a signed [packslip](https://packslip.dev), so mise checks what it
+downloads and installs the korin skill with the binary. `mise skills sync --dir
+.agents/skills` links the skill into a project. `mise use github:zerodahero/korin` works
+too, without the skill.
 
 ## Use
 

@@ -21,6 +21,19 @@ with the language.
 
     Claude loads the skill when a task fits it. You can also call it by name: `/korin:korin`.
 
+=== "mise"
+
+    Install korin from its packslip, and the skill comes with it:
+
+    ```sh
+    mise use packslip:github.com/zerodahero/korin
+    mise skills sync --dir .agents/skills
+    ```
+
+    `mise skills sync` links the skill into the project, at the version of korin the project
+    uses. The links point into mise's install directory, so mise keeps them out of git. Set
+    `auto_sync = true` under `[settings.skills]` in `mise.toml` to sync on every install.
+
 === "Copy the folder"
 
     Copy `skills/korin/` into your agent's skills directory. For Claude Code, that is
