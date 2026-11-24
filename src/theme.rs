@@ -117,6 +117,14 @@ impl Role {
     }
 }
 
+fn tone_role(tone: crate::run::Tone) -> Role {
+    match tone {
+        crate::run::Tone::Ok => Role::Ok,
+        crate::run::Tone::Warn => Role::Warn,
+        crate::run::Tone::Error => Role::Error,
+    }
+}
+
 /// How [`Theme::inline`] colors the text between values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Text {
@@ -294,6 +302,22 @@ impl Theme {
 
     /// A line that should not draw the eye, dimmed as one piece, such as a `… 3 more` line
     /// in the plan pane. The line must already be redacted.
+    /// A command's `$`, in the color of how it ended, or the prompt color while it runs.
+    pub fn shell_mark(self, tone: Option<crate::run::Tone>) -> String {
+        let mut out = String::new();
+        self.paint(tone.map_or(Role::Prompt, tone_role), "$", &mut out);
+        out
+    }
+
+    /// The exit tag that ends a command's block: `· exit 0`, in its tone.
+    pub fn exit_tag(self, tone: crate::run::Tone, tag: &str) -> String {
+        let mut out = String::new();
+        self.paint(Role::Frame, "·", &mut out);
+        out.push(' ');
+        self.paint(tone_role(tone), tag, &mut out);
+        out
+    }
+
     pub fn faint(self, line: &str) -> String {
         let mut out = String::new();
         self.paint(Role::Faint, &strip_marks(line), &mut out);

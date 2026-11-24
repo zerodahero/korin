@@ -2,7 +2,7 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run mutating.korin --param image=registry.example.com/api:2.4.0
 
 <span class="k-border">━━</span> <span class="k-fg-dim">1/2</span> <span class="k-bold">Current state</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">continued</span> <span class="k-border">━━</span>
-  <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment api <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
+  <span class="k-green k-bold">$</span> <span class="k-bold">kubectl</span> get deployment api <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
   {
     "metadata": {"name": "api", "namespace": "shop"},
     "spec": {
@@ -14,16 +14,16 @@
       "readyReplicas": 2,
       "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
     }
-  }
+  }  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
     <span class="k-border">→</span> <span class="k-teal">current</span> <span class="k-border">=</span> <span class="k-cyan">registry.example.com/api:2.3.1</span>
   <span class="k-accent k-italic">▌ api runs registry.example.com/api:2.3.1.</span>
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command · 0s</span>
 
 <span class="k-border">━━</span> <span class="k-fg-dim">2/2</span> <span class="k-bold">Roll</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
-  <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> set image <span class="k-fg-dim">deployment/</span>api api=<span class="k-cyan">registry.example.com/api:2.4.0</span> <span class="k-blue">-n</span> shop
-  deployment.apps/api image updated
-  <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> shop <span class="k-blue">--timeout</span> 5m
-  deployment "api" successfully rolled out
+  <span class="k-green k-bold">$</span> <span class="k-bold">kubectl</span> set image <span class="k-fg-dim">deployment/</span>api api=<span class="k-cyan">registry.example.com/api:2.4.0</span> <span class="k-blue">-n</span> shop
+  deployment.apps/api image updated  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
+  <span class="k-green k-bold">$</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> shop <span class="k-blue">--timeout</span> 5m
+  deployment "api" successfully rolled out  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 2 commands · 0s</span>
 
 <span class="k-comment">── done · 1s · exit 0 ──────────────────────────────────────────────────────────</span>

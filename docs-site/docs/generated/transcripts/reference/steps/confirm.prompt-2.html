@@ -2,7 +2,7 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run confirm.korin
 
 <span class="k-border">━━</span> <span class="k-fg-dim">1/1</span> <span class="k-bold">Scale down</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
-  <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment worker-v1 <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
+  <span class="k-green k-bold">$</span> <span class="k-bold">kubectl</span> get deployment worker-v1 <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
   {
     "metadata": {"name": "worker-v1", "namespace": "shop"},
     "spec": {
@@ -14,7 +14,7 @@ er:1.9.2"}]}}
       "readyReplicas": 4,
       "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
     }
-  }
+  }  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
     <span class="k-border">→</span> <span class="k-teal">replicas</span> <span class="k-border">=</span> <span class="k-cyan">4</span>
 <span class="k-border">───────────────────────────────────────────────────────────────────────────────────────────────────</span>
   <span class="k-fg-dim">next:</span>

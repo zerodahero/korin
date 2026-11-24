@@ -8,6 +8,7 @@ pub mod journal;
 mod log;
 mod pane;
 pub mod process;
+pub use log::Tone;
 pub use pane::Mark;
 mod screen;
 
@@ -206,6 +207,10 @@ struct CommandBlock {
     label: String,
     /// Shows in full wherever it lands: it belongs to a poll try that failed or was stopped.
     full: bool,
+    /// How the command ended, once it has.
+    exit: Option<log::Exit>,
+    /// How many rows of `head` are the `$` line, before its notes.
+    shell_rows: usize,
 }
 
 /// A poll that runs now, as its pane lines show it.
@@ -534,6 +539,8 @@ struct Runner<'p> {
     indented: Cell<bool>,
     /// The block of the command running now, while a live view builds it.
     building: Option<CommandBlock>,
+    /// How the command that ends now ended, for its exit tag.
+    last_exit: Option<log::Exit>,
     /// Blocks a poll holds back until it knows a try's fate.
     scopes: log::Scopes<Block>,
     /// The outputs folded so far, oldest first, for the `o` picker.
@@ -711,6 +718,7 @@ impl<'p> Runner<'p> {
             records: Vec::new(),
             indented: Cell::new(false),
             building: None,
+            last_exit: None,
             scopes: log::Scopes::default(),
             folded: RefCell::new(Vec::new()),
             polls: RefCell::new(Vec::new()),
@@ -3373,6 +3381,11 @@ impl<'p> Runner<'p> {
         let stderr = Zeroizing::new(stderr);
 
         if let Some(cancel) = cancelled {
+            self.last_exit = Some(if cancel == Cancel::Timeout {
+                log::Exit::TimedOut
+            } else {
+                log::Exit::Cancelled
+            });
             let published = !command.secret_producing;
             let unresolved: Vec<String> = command
                 .captures
@@ -3460,6 +3473,12 @@ impl<'p> Runner<'p> {
             );
         }
         let succeeded = matched.is_some() || status == Status::Exited(0);
+        self.last_exit = Some(match status {
+            Status::Exited(0) => log::Exit::Ok,
+            Status::Exited(code) if matched.is_some() => log::Exit::Expected(code),
+            Status::Exited(code) => log::Exit::Failed(code),
+            Status::Signaled(signal) => log::Exit::Signal(crate::signals::name(signal).into()),
+        });
 
         // Captures.
         let mut results: Vec<(&ir::Capture, Extract, Option<CapturedFile>)> = Vec::new();
@@ -3909,6 +3928,7 @@ impl<'p> Runner<'p> {
             let label = render::strip_marks(&render::join_breaks(&line.lines.join("\n")));
             self.building = Some(CommandBlock {
                 head: head.clone(),
+                shell_rows: line.lines.len(),
                 journal: format!("{}/out/{invocation}.stdout", self.journal_rel()),
                 step: step.to_string(),
                 label,
@@ -3969,10 +3989,19 @@ impl<'p> Runner<'p> {
     /// The command block that ends now: the live window goes, and the block goes to the run
     /// log, or to the poll try that holds it.
     fn finish_command(&mut self, ok: bool) {
+        let exit = self.last_exit.take();
         let Some(mut block) = self.building.take() else {
+            // The `$` line printed before the command ran, so the tag takes a line of its own.
+            if let Some(exit) = exit {
+                let theme = self.opts.theme;
+                let tag = theme.exit_tag(exit.tone(), &exit.tag());
+                let pad = self.pad();
+                self.screen.borrow_mut().print(&format!("{pad}{tag}\n"));
+            }
             return;
         };
         block.ok = ok;
+        block.exit = exit;
         self.screen.borrow_mut().set_window(Vec::new(), true);
         self.emit(Block::Command(block), false);
     }
@@ -3992,25 +4021,55 @@ impl<'p> Runner<'p> {
     fn render_command(&mut self, block: &CommandBlock, full: bool) {
         let theme = self.opts.theme;
         let pad = self.pad();
-        self.screen.borrow_mut().print(&format!("{}\n", block.head));
         let mode = log::mode(block.ok, full, block.lines);
+        let tag = block
+            .exit
+            .as_ref()
+            .map(|exit| theme.exit_tag(exit.tone(), &exit.tag()));
+        // The `$` takes the color of how the command ended.
+        let mut head = match &block.exit {
+            Some(exit) => block.head.replacen(
+                &theme.shell_mark(None),
+                &theme.shell_mark(Some(exit.tone())),
+                1,
+            ),
+            None => block.head.clone(),
+        };
+        if block.lines == 0
+            && let Some(tag) = &tag
+        {
+            // No output: the tag ends the `$` line.
+            let mut rows: Vec<String> = head.split('\n').map(str::to_string).collect();
+            let at = block.shell_rows.clamp(1, rows.len()) - 1;
+            rows[at] = format!("{}  {tag}", rows[at]);
+            head = rows.join("\n");
+        }
+        self.screen.borrow_mut().print(&format!("{head}\n"));
+        // Each output line goes out with a newline before the next, so the last can take
+        // the tag.
+        let end_line = |text: &mut String| text.push('\n');
         let mut text = String::new();
         let mut shown = 0;
         if let (log::Mode::Full, Some(spool)) = (mode, &block.spool) {
             let mut screen = self.screen.borrow_mut();
             let read = log::read_spool(spool, |_, line| {
-                text.push_str(pad);
-                text.push_str(&theme.output(line));
-                text.push('\n');
-                shown += 1;
+                if shown > 0 {
+                    end_line(&mut text);
+                }
                 // Print in batches, so a long output does not redraw the pane per line.
-                if shown % 200 == 0 {
+                if shown > 0 && shown % 200 == 0 {
                     screen.print(&std::mem::take(&mut text));
                 }
+                text.push_str(pad);
+                text.push_str(&theme.output(line));
+                shown += 1;
             });
-            screen.print(&text);
             drop(screen);
             if read.is_err() {
+                if shown > 0 {
+                    end_line(&mut text);
+                }
+                self.screen.borrow_mut().print(&std::mem::take(&mut text));
                 self.say(&format!("  ↳ the full output is in {}", block.journal));
             }
         } else {
@@ -4020,12 +4079,30 @@ impl<'p> Runner<'p> {
                 block.first.len()
             };
             for line in block.first.iter().take(take) {
+                if shown > 0 {
+                    end_line(&mut text);
+                }
                 text.push_str(pad);
                 text.push_str(&theme.output(line));
-                text.push('\n');
                 shown += 1;
             }
+        }
+        if !text.is_empty() {
+            // A folded output's tag goes in its note instead.
+            if mode != log::Mode::Folded
+                && let Some(tag) = &tag
+            {
+                text.push_str("  ");
+                text.push_str(tag);
+            }
+            end_line(&mut text);
             self.screen.borrow_mut().print(&text);
+        } else if block.lines > 0
+            && mode != log::Mode::Folded
+            && let Some(tag) = &tag
+        {
+            // The output had lines, but none could show: the tag takes its own line.
+            self.screen.borrow_mut().print(&format!("{pad}{tag}\n"));
         }
         if mode == log::Mode::Folded
             && let Some(spool) = &block.spool
@@ -4038,7 +4115,10 @@ impl<'p> Runner<'p> {
             });
         }
         if shown < block.lines {
-            let status = if block.ok { "ok · " } else { "" };
+            let status = match (&block.exit, mode) {
+                (Some(exit), log::Mode::Folded) => format!("{} · ", exit.tag()),
+                _ => String::new(),
+            };
             self.say(&format!(
                 "  ↳ {status}+{} lines · {}",
                 block.lines - shown,

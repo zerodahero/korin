@@ -2,7 +2,7 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run values-confirm.korin
 
 <span class="k-border">━━</span> <span class="k-fg-dim">1/1</span> <span class="k-bold">Restart</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
-  <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment api <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
+  <span class="k-green k-bold">$</span> <span class="k-bold">kubectl</span> get deployment api <span class="k-blue">-n</span> shop <span class="k-blue">-o</span> json
   {
     "metadata": {"name": "api", "namespace": "shop"},
     "spec": {
@@ -14,11 +14,11 @@
       "readyReplicas": 2,
       "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
     }
-  }
+  }  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
     <span class="k-border">→</span> <span class="k-teal">image</span> <span class="k-border">=</span> <span class="k-cyan">registry.example.com/api:2.3.1</span>
   <span class="k-green k-bold">✓</span> <span class="k-bold">confirmed: Restart pods running registry.example.com/api:2.3.1?</span>
-  <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> shop
-  deployment.apps/api restarted
+  <span class="k-green k-bold">$</span> <span class="k-bold">kubectl</span> rollout restart <span class="k-fg-dim">deployment/</span>api <span class="k-blue">-n</span> shop
+  deployment.apps/api restarted  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 2 commands · 1s</span>
 
 <span class="k-comment">── done · 1s · exit 0 ──────────────────────────────────────────────────────────</span>

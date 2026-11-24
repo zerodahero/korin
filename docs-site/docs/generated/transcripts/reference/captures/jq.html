@@ -2,13 +2,13 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run jq.korin --param pr=42
 
 <span class="k-border">━━</span> <span class="k-fg-dim">1/1</span> <span class="k-bold">Pull request</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
-  <span class="k-blue k-bold">$</span> <span class="k-bold">gh</span> pr view <span class="k-cyan">42</span> <span class="k-blue">--json</span> title,author,labels,files
+  <span class="k-green k-bold">$</span> <span class="k-bold">gh</span> pr view <span class="k-cyan">42</span> <span class="k-blue">--json</span> title,author,labels,files
   {
     "author": {"login": "grace"},
     "files": [{"path": "src/cart.rs"}, {"path": "src/checkout.rs"}],
     "labels": [{"name": "bug"}, {"name": "checkout"}],
     "title": "Keep the cart when a payment fails"
-  }
+  }  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
     <span class="k-border">→</span> <span class="k-teal">title</span> <span class="k-border">=</span> <span class="k-cyan">Keep the cart when a payment fails</span>  <span class="k-border">·</span>  <span class="k-teal">author</span> <span class="k-border">=</span> <span class="k-cyan">grace</span>  <span class="k-border">·</span>  <span class="k-teal">labels</span> <span class="k-border">=</span> <span class="k-cyan">[bug, checkout]</span>  <span class="k-border">·</span>
  <span class="k-teal">files</span> <span class="k-border">=</span> <span class="k-cyan">["src/cart.rs","src/checkout.rs"]</span>
   <span class="k-accent k-italic">▌ #42 by grace: Keep the cart when a payment fails</span>

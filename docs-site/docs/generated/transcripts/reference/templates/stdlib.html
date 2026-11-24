@@ -2,30 +2,30 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run stdlib.korin --param version=2.4.0
 
 <span class="k-border">━━</span> <span class="k-fg-dim">1/2</span> <span class="k-bold">Account</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
-  <span class="k-blue k-bold">$</span> <span class="k-bold">aws</span> sts get-caller-identity <span class="k-blue">--output</span> json
+  <span class="k-green k-bold">$</span> <span class="k-bold">aws</span> sts get-caller-identity <span class="k-blue">--output</span> json
   {
       "UserId": "AIDASAMPLEUSERID",
       "Account": "123456789012",
       "Arn": "arn:aws:iam::123456789012:user/ada"
-  }
+  }  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
     <span class="k-border">→</span> <span class="k-teal">me.account</span> <span class="k-border">=</span> <span class="k-cyan">123456789012</span>  <span class="k-border">·</span>  <span class="k-teal">me.arn</span> <span class="k-border">=</span> <span class="k-cyan">arn:aws:iam::123456789012:user/ada</span>
   <span class="k-green k-bold">✓</span> <span class="k-bold">confirmed: Write to account 123456789012 as arn:aws:iam::123456789012:user/ada?</span>
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 1 command · 0s</span>
 
 <span class="k-border">━━</span> <span class="k-fg-dim">2/2</span> <span class="k-bold">Release marker</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
-  <span class="k-blue k-bold">$</span> <span class="k-bold">aws</span> ssm get-parameter <span class="k-blue">--name</span> <span class="k-fg-dim">/shop/</span>release <span class="k-blue">--output</span> json
+  <span class="k-green k-bold">$</span> <span class="k-bold">aws</span> ssm get-parameter <span class="k-blue">--name</span> <span class="k-fg-dim">/shop/</span>release <span class="k-blue">--output</span> json
   {
       "Parameter": {"Name": "/shop/release", "Type": "String", "Value": "2.3.1", "Version": 6}
-  }
+  }  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
     <span class="k-border">→</span> <span class="k-teal">current.value</span> <span class="k-border">=</span> <span class="k-cyan">2.3.1</span>
   <span class="k-accent k-italic">▌ The current release is 2.3.1.</span>
-  <span class="k-blue k-bold">$</span> <span class="k-bold">aws</span> ssm put-parameter <span class="k-border">\</span>
+  <span class="k-green k-bold">$</span> <span class="k-bold">aws</span> ssm put-parameter <span class="k-border">\</span>
       <span class="k-blue">--name</span> <span class="k-fg-dim">/shop/</span>release <span class="k-border">\</span>
       <span class="k-blue">--value</span> <span class="k-cyan">2.4.0</span> <span class="k-border">\</span>
       <span class="k-blue">--type</span> String <span class="k-border">\</span>
       <span class="k-blue">--overwrite</span> <span class="k-border">\</span>
       <span class="k-blue">--output</span> json
-  {"Version": 7, "Tier": "Standard"}
+  {"Version": 7, "Tier": "Standard"}  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 2 done · 2 commands · 0s</span>
 
 <span class="k-comment">── done · 1s · exit 0 ──────────────────────────────────────────────────────────</span>

@@ -81,6 +81,54 @@ pub fn mode(ok: bool, forced_full: bool, lines: usize) -> Mode {
     }
 }
 
+/// How a command ended, as the run log's exit tag says it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Exit {
+    /// Exit 0.
+    Ok,
+    /// A non-zero exit that an `expect` accepted.
+    Expected(i32),
+    /// Ended by a signal, such as `TERM`.
+    Signal(String),
+    /// A non-zero exit that nothing accepted.
+    Failed(i32),
+    /// Stopped at its time limit.
+    TimedOut,
+    /// Stopped by the operator, such as with Ctrl-C.
+    Cancelled,
+}
+
+/// The color an exit tag takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tone {
+    Ok,
+    Warn,
+    Error,
+}
+
+impl Exit {
+    /// The tag's text: `exit 0`, `exit 1 (expected)`, `signal TERM`, `exit 22`, `timed out`.
+    pub fn tag(&self) -> String {
+        match self {
+            Exit::Ok => "exit 0".into(),
+            Exit::Expected(code) => format!("exit {code} (expected)"),
+            Exit::Signal(name) => format!("signal {name}"),
+            Exit::Failed(code) => format!("exit {code}"),
+            Exit::TimedOut => "timed out".into(),
+            Exit::Cancelled => "cancelled".into(),
+        }
+    }
+
+    /// Green for 0, yellow for an accepted exit, a signal or a cancel, red for a failure.
+    pub fn tone(&self) -> Tone {
+        match self {
+            Exit::Ok => Tone::Ok,
+            Exit::Expected(_) | Exit::Signal(_) | Exit::Cancelled => Tone::Warn,
+            Exit::Failed(_) | Exit::TimedOut => Tone::Error,
+        }
+    }
+}
+
 /// Which stream a line came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stream {
@@ -230,6 +278,22 @@ mod tests {
         assert_eq!(mode(false, false, FOLD_AT + 1), Mode::Full);
         assert_eq!(mode(true, true, FOLD_AT + 1), Mode::Full);
         assert_eq!(mode(true, false, FOLD_AT), Mode::Full);
+    }
+
+    #[test]
+    fn exit_tags_say_how_a_command_ended() {
+        let cases = [
+            (Exit::Ok, "exit 0", Tone::Ok),
+            (Exit::Expected(1), "exit 1 (expected)", Tone::Warn),
+            (Exit::Signal("TERM".into()), "signal TERM", Tone::Warn),
+            (Exit::Failed(22), "exit 22", Tone::Error),
+            (Exit::TimedOut, "timed out", Tone::Error),
+            (Exit::Cancelled, "cancelled", Tone::Warn),
+        ];
+        for (exit, tag, tone) in cases {
+            assert_eq!(exit.tag(), tag);
+            assert_eq!(exit.tone(), tone, "{tag}");
+        }
     }
 
     #[test]

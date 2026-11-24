@@ -792,6 +792,43 @@ fn without_color_the_values_view_prints_its_rows_before_it_asks() {
 }
 
 #[test]
+fn the_dollar_and_the_tag_take_the_color_of_the_exit() {
+    let dir = setup(
+        "stage \"a\"\n  read ok\n  read gone\n    expect missing = exit 1\n  read quiet\n  read bad\n",
+        &[
+            ("ok", "echo fine"),
+            ("gone", "echo nope; exit 1"),
+            ("quiet", "true"),
+            ("bad", "echo broken; exit 22"),
+        ],
+    );
+    let env = vec![("COLORTERM", PathBuf::from("truecolor"))];
+    let mut s = start_with_env(dir.path(), &["run", "w.korin"], &env);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    assert_eq!(s.wait(), 1, "{}", s.text());
+    let screen = s.screen();
+    assert!(screen.contains("  $ ok\n  fine  · exit 0\n"), "{screen}");
+    assert!(
+        screen.contains("  $ gone\n  nope  · exit 1 (expected)\n"),
+        "{screen}"
+    );
+    // No output: the tag ends the `$` line.
+    assert!(screen.contains("  $ quiet  · exit 0\n"), "{screen}");
+    assert!(
+        screen.contains("  $ bad\n  broken  · exit 22\n"),
+        "{screen}"
+    );
+    let raw = s.raw();
+    let green = "\x1b[1;38;2;37;190;106m$";
+    let warn = "\x1b[38;2;190;149;255m$";
+    let red = "\x1b[1;38;2;238;83;150m$";
+    for (mark, what) in [(green, "green"), (warn, "warn"), (red, "red")] {
+        assert!(raw.contains(mark), "no {what} $ in {raw:?}");
+    }
+}
+
+#[test]
 fn a_long_output_folds_on_success_and_stays_full_on_failure() {
     let dir = setup(
         "stage \"a\"\n  read many\n  read many-fail\n    expect gone = exit 9\n  read many-fail\n",
@@ -804,12 +841,12 @@ fn a_long_output_folds_on_success_and_stays_full_on_failure() {
     let screen = s.screen();
     // Success folds to its first lines, and says where the rest is.
     assert!(
-        screen.contains("  $ many\n  1\n  2\n  3\n  4\n    ↳ ok · +36 lines · ./.korin/runs/"),
+        screen.contains("  $ many\n  1\n  2\n  3\n  4\n    ↳ exit 0 · +36 lines · ./.korin/runs/"),
         "{screen}"
     );
     assert!(!screen.contains("\n  40\n"), "{screen}");
     // Failure keeps every line.
-    assert!(screen.contains("\n  139\n  140\n    ↳ exit 3"), "{screen}");
+    assert!(screen.contains("\n  139\n  140  · exit 3\n"), "{screen}");
 }
 
 #[test]
@@ -832,7 +869,11 @@ fn a_huge_failing_output_shows_in_full_once_in_arrival_order() {
     let log = &screen[..screen.rfind("✗ step").unwrap_or(screen.len())];
     let numbers = |prefix: &str| -> Vec<u32> {
         log.lines()
-            .filter_map(|l| l.trim_start().strip_prefix(prefix)?.parse().ok())
+            .filter_map(|l| {
+                let rest = l.trim_start().strip_prefix(prefix)?;
+                // The last line ends with the exit tag.
+                rest.split_whitespace().next()?.parse().ok()
+            })
             .collect()
     };
     let out = numbers("out ");
@@ -1005,7 +1046,7 @@ fn ctrl_c_during_a_try_keeps_that_try_in_full() {
     let screen = s.screen();
     // The successful long command of the stopped try shows in full, not folded.
     assert!(screen.contains("  $ long\n  1\n  2\n"), "{screen}");
-    assert!(screen.contains("\n  40\n"), "{screen}");
+    assert!(screen.contains("\n  40  · exit 0\n"), "{screen}");
     assert!(screen.contains("  $ slow\n  waiting-now"), "{screen}");
     assert!(screen.contains("✗ try 1 stopped:"), "{screen}");
 }
@@ -1029,7 +1070,7 @@ fn ctrl_c_while_waiting_shows_the_last_try_in_full() {
         .unwrap_or_else(|| panic!("{screen}"));
     let rest = &screen[replay..];
     assert!(rest.contains("  $ long\n  1\n  2\n"), "{screen}");
-    assert!(rest.contains("\n  40\n"), "{screen}");
+    assert!(rest.contains("\n  40  · exit 0\n"), "{screen}");
     assert!(
         rest.contains("✗ poll stopped: interrupted with Ctrl-C"),
         "{screen}"
@@ -1062,7 +1103,10 @@ fn a_huge_try_replays_once_in_full_after_the_scratch_directory_is_gone() {
     assert_eq!(screen.matches("MARKER-2500").count(), 1, "the marker");
     let out: Vec<u32> = screen
         .lines()
-        .filter_map(|l| l.trim_start().strip_prefix("out ")?.parse().ok())
+        .filter_map(|l| {
+            let rest = l.trim_start().strip_prefix("out ")?;
+            rest.split_whitespace().next()?.parse().ok()
+        })
         .collect();
     assert!(out.windows(2).all(|w| w[0] < w[1]), "stdout out of order");
     assert_eq!(out.len(), 3333, "stdout lines lost");

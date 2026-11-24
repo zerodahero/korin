@@ -2,7 +2,7 @@
 <span class="k-border">╰─</span><span class="k-blue k-bold">❯</span> korin run rules.korin --param env=production
 
 <span class="k-border">━━</span> <span class="k-fg-dim">1/1</span> <span class="k-bold">Deployment</span> <span class="k-border">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <span class="k-green k-bold">approved</span> <span class="k-border">━━</span>
-  <span class="k-blue k-bold">$</span> <span class="k-bold">kubectl</span> get deployment web <span class="k-blue">-n</span> <span class="k-cyan">production</span> <span class="k-blue">-o</span> json
+  <span class="k-green k-bold">$</span> <span class="k-bold">kubectl</span> get deployment web <span class="k-blue">-n</span> <span class="k-cyan">production</span> <span class="k-blue">-o</span> json
   {
     "metadata": {"name": "web", "namespace": "shop"},
     "spec": {
@@ -14,7 +14,7 @@
       "readyReplicas": 4,
       "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
     }
-  }
+  }  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
     <span class="k-border">→</span> <span class="k-teal">replicas</span> <span class="k-border">=</span> <span class="k-cyan">4</span>  <span class="k-border">·</span>  <span class="k-teal">image</span> <span class="k-border">=</span> <span class="k-cyan">registry.example.com/web:latest</span>
   <span class="k-magenta">▌⚠ Production runs a :latest image: registry.example.com/web:latest.</span>
   <span class="k-accent k-italic">▌ web runs 4 replicas in production.</span>
