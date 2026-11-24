@@ -19,11 +19,11 @@ scrollback:
   A secret shows as a shell variable, such as `"${TOKEN}"`; see
   [Secrets in the run log](secrets.md#secrets-in-the-run-log). The step's scratch directory
   shows as `${KORIN_OUT}`.
-- **Each command ends with an exit tag**, such as `· exit 0`, on its last output line, or on
-  the `$` line when it printed nothing. The `$` and the tag share a color: green for exit 0,
-  the warning color for a non-zero exit that an `expect` accepted (`exit 1 (expected)`), a
-  signal or a cancel, and red for a failure or a timeout. Without a terminal, the tag takes a
-  line of its own.
+- **The `$` takes the color of how the command ended**: green for exit 0, the warning
+  color for a non-zero exit that an `expect` accepted, a signal or a cancel, and red for a
+  failure or a timeout. Any ending but exit 0 also gets an exit tag, such as `· exit 22` or
+  `· exit 1 (expected)`, on the last output line, or on the `$` line when the command printed
+  nothing. Without a terminal, the tag takes a line of its own.
 - **`↳` notes** under a command say which expect matched, and where a long output went.
 - **Each stage opens with a banner** that says how its gate went, such as
   `━━ 2/4 Snapshot ━━━━ approved ━━`. Everything in the stage sits indented under it, and
@@ -33,7 +33,7 @@ scrollback:
 - **`note`, `warn` and `record` show as messages**, each line after a `▌` bar, so they never
   read as command output: a note in italic, a warning after `▌⚠`, and a record after `▌✓`.
 - **A long output folds.** A successful command with more than 12 lines shows its first 4,
-  then `↳ exit 0 · +N lines · <journal file>`. A failed command shows every line. Press `o`
+  then `↳ +N lines · <journal file>`. A failed command shows every line. Press `o`
   at any prompt to open a folded output in full; see [Opening an item](#opening-an-item).
 - **A poll leaves one line per try**, such as `↻ try 2 · 1s  ready = 2`, then the try that
   matched in full. See [`poll`](steps.md#poll).
@@ -110,7 +110,8 @@ A run without a terminal, such as in CI, always shows the full view.
 ### Opening an item
 
 Press `o` at a prompt to open a script of the stage to come, or an output folded so far.
-With more than one, korin lists them, each with its kind:
+With more than one, korin lists them, each with its kind. Type a number and press Enter to
+open it; press Esc to go back at once, or Enter with no number.
 
 - **`script`**: a script step's file.
 - **`markdown`**: a `.md` script, or the output of a command with an `output markdown` line

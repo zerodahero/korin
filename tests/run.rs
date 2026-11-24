@@ -1802,17 +1802,18 @@ fn say_lines_start_with_a_bar_and_their_mark() {
 }
 
 #[test]
-fn a_piped_run_tags_each_command_on_a_line_of_its_own() {
+fn a_piped_run_tags_a_command_on_a_line_of_its_own_unless_it_exits_0() {
     let env = Env::new();
-    env.wizard("stage \"a\"\n  read echo hi\n  read true\n");
+    env.script("bin/gone", "#!/bin/sh\necho nope\nexit 1\n");
+    env.wizard("stage \"a\"\n  read echo hi\n  read gone\n    expect missing = exit 1\n");
     let out = env.run_yes(&[]);
     assert_eq!(out.code, 0, "{}", out.text);
     assert!(
-        out.text
-            .contains("  $ echo hi\n  hi\n  · exit 0\n  $ true\n  · exit 0\n"),
+        out.text.contains("  $ echo hi\n  hi\n  $ gone\n  nope\n"),
         "{}",
         out.text
     );
+    assert!(out.text.contains("  · exit 1 (expected)\n"), "{}", out.text);
 }
 
 #[test]

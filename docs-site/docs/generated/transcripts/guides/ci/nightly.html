@@ -11,7 +11,6 @@
     ]
   }
     → stale = [preview-51, preview-60]
-  · exit 0
   ▌ preview-51 is more than 7 days old.
   ▌ preview-60 is more than 7 days old.
   ✓ stage 1 done · 1 command · 0s
@@ -19,10 +18,8 @@
 ━━ 2/2 Delete them ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ approved by --yes ━━
   $ kubectl delete namespace preview-51 --wait=false
   namespace "preview-51" deleted
-  · exit 0
   $ kubectl delete namespace preview-60 --wait=false
   namespace "preview-60" deleted
-  · exit 0
   ✓ stage 2 done · 2 commands · 0s
 
 ── done · 1s · exit 0 ──────────────────────────────────────────────────────────

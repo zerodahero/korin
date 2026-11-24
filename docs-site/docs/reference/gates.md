@@ -66,7 +66,7 @@ would replace them.
 
 --8<-- "docs-site/docs/generated/transcripts/reference/gates/values.prompt-2.html"
 
-Type a value's number to change it, or press Enter to go back to the prompt. Then press `r`
+Type a value's number to change it, or press Esc or Enter to go back to the prompt. Then press `r`
 to replace the value, `c` to clear an optional capture, or Enter to keep it. korin draws the
 preview again with the new value:
 

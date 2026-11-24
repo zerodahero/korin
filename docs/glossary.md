@@ -396,8 +396,8 @@ step (`R`). Only a stage with a `retry` line offers it. Code: `ir::Stage::retry`
 
 ### Exit tag
 
-The `· exit 0` that ends a command's block in the run log, in the color of how the command
-ended. Code: `log::Exit`.
+The `· exit 22` that ends a command's block in the run log, in the color of how the command
+ended. Exit 0 gets none; its green `$` says it. Code: `log::Exit`.
 
 - UI label: none
 - Avoid: status line

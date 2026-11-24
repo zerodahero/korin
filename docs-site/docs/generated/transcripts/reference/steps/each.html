@@ -7,16 +7,16 @@
       <span class="k-blue">-l</span> app=api <span class="k-border">\</span>
       <span class="k-blue">-o</span> name
   pod/api-7d9f8b6c4-2xkqp
-  pod/api-7d9f8b6c4-9mwzt  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
+  pod/api-7d9f8b6c4-9mwzt
     <span class="k-border">→</span> <span class="k-teal">pods</span> <span class="k-border">=</span> <span class="k-cyan">[pod/api-7d9f8b6c4-2xkqp, pod/api-7d9f8b6c4-9mwzt]</span>
   <span class="k-green k-bold">$</span> <span class="k-bold">kubectl</span> delete <span class="k-cyan">pod/api-7d9f8b6c4-2xkqp</span> <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">--wait=</span>true
-  pod "api-7d9f8b6c4-2xkqp" deleted  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
+  pod "api-7d9f8b6c4-2xkqp" deleted
   <span class="k-green k-bold">$</span> <span class="k-bold">kubectl</span> delete <span class="k-cyan">pod/api-7d9f8b6c4-9mwzt</span> <span class="k-blue">-n</span> <span class="k-cyan">shop</span> <span class="k-blue">--wait=</span>true
-  pod "api-7d9f8b6c4-9mwzt" deleted  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
+  pod "api-7d9f8b6c4-9mwzt" deleted
   <span class="k-green k-bold">$</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span><span class="k-cyan">api</span> <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
-  deployment "api" successfully rolled out  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
+  deployment "api" successfully rolled out
   <span class="k-green k-bold">$</span> <span class="k-bold">kubectl</span> rollout status <span class="k-fg-dim">deployment/</span><span class="k-cyan">worker</span> <span class="k-blue">-n</span> <span class="k-cyan">shop</span>
-  deployment "worker" successfully rolled out  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
+  deployment "worker" successfully rolled out
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 5 commands · 0s</span>
 
 <span class="k-comment">── done · 1s · exit 0 ──────────────────────────────────────────────────────────</span>

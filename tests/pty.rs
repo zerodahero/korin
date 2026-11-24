@@ -837,13 +837,14 @@ fn the_dollar_and_the_tag_take_the_color_of_the_exit() {
     s.answer("y");
     assert_eq!(s.wait(), 1, "{}", s.text());
     let screen = s.screen();
-    assert!(screen.contains("  $ ok\n  fine  · exit 0\n"), "{screen}");
+    // Exit 0 gets no tag; the green `$` says it.
+    assert!(screen.contains("  $ ok\n  fine\n"), "{screen}");
     assert!(
         screen.contains("  $ gone\n  nope  · exit 1 (expected)\n"),
         "{screen}"
     );
     // No output: the tag ends the `$` line.
-    assert!(screen.contains("  $ quiet  · exit 0\n"), "{screen}");
+    assert!(screen.contains("  $ quiet\n"), "{screen}");
     assert!(
         screen.contains("  $ bad\n  broken  · exit 22\n"),
         "{screen}"
@@ -870,7 +871,7 @@ fn a_long_output_folds_on_success_and_stays_full_on_failure() {
     let screen = s.screen();
     // Success folds to its first lines, and says where the rest is.
     assert!(
-        screen.contains("  $ many\n  1\n  2\n  3\n  4\n    ↳ exit 0 · +36 lines · ./.korin/runs/"),
+        screen.contains("  $ many\n  1\n  2\n  3\n  4\n    ↳ +36 lines · ./.korin/runs/"),
         "{screen}"
     );
     assert!(!screen.contains("\n  40\n"), "{screen}");
@@ -1075,7 +1076,7 @@ fn ctrl_c_during_a_try_keeps_that_try_in_full() {
     let screen = s.screen();
     // The successful long command of the stopped try shows in full, not folded.
     assert!(screen.contains("  $ long\n  1\n  2\n"), "{screen}");
-    assert!(screen.contains("\n  40  · exit 0\n"), "{screen}");
+    assert!(screen.contains("\n  40\n"), "{screen}");
     assert!(screen.contains("  $ slow\n  waiting-now"), "{screen}");
     assert!(screen.contains("✗ try 1 stopped:"), "{screen}");
 }
@@ -1099,7 +1100,7 @@ fn ctrl_c_while_waiting_shows_the_last_try_in_full() {
         .unwrap_or_else(|| panic!("{screen}"));
     let rest = &screen[replay..];
     assert!(rest.contains("  $ long\n  1\n  2\n"), "{screen}");
-    assert!(rest.contains("\n  40  · exit 0\n"), "{screen}");
+    assert!(rest.contains("\n  40\n"), "{screen}");
     assert!(
         rest.contains("✗ poll stopped: interrupted with Ctrl-C"),
         "{screen}"
@@ -2394,6 +2395,35 @@ fn the_o_picker_opens_each_kind_in_its_own_opener() {
     assert_eq!(extension(&path).as_deref(), Some("json"), "{path}");
     let md = std::fs::read_to_string(dir.path().join("md.path")).unwrap();
     assert_eq!(extension(&md).as_deref(), Some("md"), "{md}");
+}
+
+#[test]
+fn esc_leaves_the_o_picker_at_once_with_digits_typed() {
+    let dir = setup(
+        "stage \"a\"\n  read many 1\n  read many 2\nstage \"b\"\n  read true\n",
+        &[
+            ("many", "seq \"$1\" 40"),
+            ("fake-pager", "cp \"$1\" \"$PWD/paged.txt\""),
+        ],
+    );
+    let env = vec![("PAGER", dir.path().join("bin").join("fake-pager"))];
+    let mut s = start_with_env(dir.path(), &["run", "w.korin"], &env);
+    s.wait_for("Run stage 1?");
+    s.answer("y");
+    s.wait_for("Run stage 2?");
+    key(&mut s, "o");
+    s.wait_for("number to open, Esc or Enter to go back:");
+    std::thread::sleep(Duration::from_millis(200));
+    s.send("1");
+    std::thread::sleep(Duration::from_millis(200));
+    s.send("\x1b");
+    s.wait_for_nth("o open]", 2);
+    key(&mut s, "y");
+    assert_eq!(s.wait(), 0, "{}", s.text());
+    assert!(
+        !dir.path().join("paged.txt").exists(),
+        "Esc opened the output"
+    );
 }
 
 #[test]

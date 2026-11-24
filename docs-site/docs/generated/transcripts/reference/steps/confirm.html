@@ -14,11 +14,11 @@ er:1.9.2"}]}}
       "readyReplicas": 4,
       "conditions": [{"type": "Progressing", "reason": "NewReplicaSetAvailable"}]
     }
-  }  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
+  }
     <span class="k-border">→</span> <span class="k-teal">replicas</span> <span class="k-border">=</span> <span class="k-cyan">4</span>
   <span class="k-green k-bold">✓</span> <span class="k-bold">confirmed: worker-v1 runs 4 replicas. Scale it to zero?</span>
   <span class="k-green k-bold">$</span> <span class="k-bold">kubectl</span> scale <span class="k-fg-dim">deployment/</span>worker-v1 <span class="k-blue">-n</span> shop <span class="k-blue">--replicas</span> 0
-  deployment.apps/worker-v1 scaled  <span class="k-border">·</span> <span class="k-green k-bold">exit 0</span>
+  deployment.apps/worker-v1 scaled
   <span class="k-green k-bold">✓</span> <span class="k-fg-dim">stage 1 done · 2 commands · 0s</span>
 
 <span class="k-comment">── done · 1s · exit 0 ──────────────────────────────────────────────────────────</span>

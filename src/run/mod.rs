@@ -1526,6 +1526,29 @@ impl<'p> Runner<'p> {
         Ok(answer)
     }
 
+    /// Reads a number from a list, such as the `o` picker's. In a terminal it reads keys:
+    /// digits and Backspace edit the answer, Enter gives it, and Esc goes back at once,
+    /// whatever was typed. Going back gives an empty answer.
+    fn read_number(&self, what: &str) -> Result<String, Stop> {
+        let keys = !self.opts.require_enter && std::io::stdin().is_terminal();
+        let back = if keys { "Esc or Enter" } else { "Enter" };
+        let prompt = self
+            .opts
+            .theme
+            .ask(&format!("number to {what}, {back} to go back:"));
+        if !keys {
+            return self.read_line(&prompt);
+        }
+        let framed = self.frame(&prompt);
+        let answer = read_digits_interruptible(&self.signals, &framed.shown, &framed.after())?;
+        let typed = answer.as_deref().unwrap_or_default();
+        self.screen.borrow_mut().prompted(
+            &format!("{}{typed}", framed.shown),
+            &format!("{prompt}{typed}"),
+        );
+        Ok(answer.unwrap_or_default())
+    }
+
     /// Runs a dialog, such as the values view, in the plan pane. Records it leaves, such as a
     /// value set by hand, go into the run log once it closes, however it ends.
     fn in_dialog<T>(
@@ -1709,8 +1732,7 @@ impl<'p> Runner<'p> {
                     output.hidden
                 ));
             }
-            let answer =
-                self.read_line(&self.opts.theme.ask("number to open, Enter to go back:"))?;
+            let answer = self.read_number("open")?;
             match answer.trim().parse::<usize>() {
                 Ok(n) if (1..=total).contains(&n) => n - 1,
                 _ => return Ok(()),
@@ -2061,8 +2083,7 @@ impl<'p> Runner<'p> {
                     self.value_origin(*sym),
                 ));
             }
-            let answer =
-                self.read_line(&self.opts.theme.ask("number to set, Enter to go back:"))?;
+            let answer = self.read_number("set")?;
             let answer = answer.trim();
             if answer.is_empty() {
                 return Ok(());
@@ -2264,8 +2285,7 @@ impl<'p> Runner<'p> {
                     self.value_origin(*sym),
                 ));
             }
-            let answer =
-                self.read_line(&self.opts.theme.ask("number to change, Enter to go back:"))?;
+            let answer = self.read_number("change")?;
             let answer = answer.trim();
             if answer.is_empty() {
                 return Ok(());
@@ -4171,7 +4191,8 @@ impl<'p> Runner<'p> {
         let exit = self.last_exit.take();
         let Some(mut block) = self.building.take() else {
             // The `$` line printed before the command ran, so the tag takes a line of its own.
-            if let Some(exit) = exit {
+            // Exit 0 needs none.
+            if let Some(exit) = exit.filter(|exit| *exit != log::Exit::Ok) {
                 let theme = self.opts.theme;
                 let tag = theme.exit_tag(exit.tone(), &exit.tag());
                 let pad = self.pad();
@@ -4201,9 +4222,11 @@ impl<'p> Runner<'p> {
         let theme = self.opts.theme;
         let pad = self.pad();
         let mode = log::mode(block.ok, full, block.lines);
+        // Exit 0 needs no tag: the green `$` says it. Any other ending gets one.
         let tag = block
             .exit
             .as_ref()
+            .filter(|exit| **exit != log::Exit::Ok)
             .map(|exit| theme.exit_tag(exit.tone(), &exit.tag()));
         // The `$` takes the color of how the command ended.
         let mut head = match &block.exit {
@@ -4296,7 +4319,9 @@ impl<'p> Runner<'p> {
         }
         if shown < block.lines {
             let status = match (&block.exit, mode) {
-                (Some(exit), log::Mode::Folded) => format!("{} · ", exit.tag()),
+                (Some(exit), log::Mode::Folded) if *exit != log::Exit::Ok => {
+                    format!("{} · ", exit.tag())
+                }
                 _ => String::new(),
             };
             self.say(&format!(
@@ -4824,6 +4849,94 @@ fn sweep_scratch() {
 }
 
 /// Reads a line from the terminal while watching for Ctrl-C and `SIGTERM`.
+/// Reads digits one key at a time, echoing them. Backspace erases one, Enter gives the
+/// digits, and Esc gives `None` at once. Other keys, such as an arrow's escape sequence,
+/// are ignored. Ctrl-C and `SIGTERM` cancel the run.
+fn read_digits_interruptible(
+    signals: &Signals,
+    prompt: &str,
+    after: &str,
+) -> Result<Option<String>, Stop> {
+    use nix::sys::termios::{LocalFlags, SetArg, SpecialCharacterIndices, tcgetattr, tcsetattr};
+    use std::io::Read as _;
+
+    let stdin = std::io::stdin();
+    let saved = tcgetattr(&stdin)
+        .map_err(|e| Stop::failed(format!("cannot read the terminal's modes: {e}")))?;
+    let mut keys = saved.clone();
+    keys.local_flags
+        .remove(LocalFlags::ICANON | LocalFlags::ECHO);
+    keys.control_chars[SpecialCharacterIndices::VMIN as usize] = 1;
+    keys.control_chars[SpecialCharacterIndices::VTIME as usize] = 0;
+    let _ = nix::sys::termios::tcflush(&stdin, nix::sys::termios::FlushArg::TCIFLUSH);
+    tcsetattr(&stdin, SetArg::TCSANOW, &keys)
+        .map_err(|e| Stop::failed(format!("cannot set the terminal's modes: {e}")))?;
+    let mut restore = saved;
+    restore.local_flags.remove(LocalFlags::PENDIN);
+    let _restore = RestoreModes(restore);
+    print!("{prompt}{after}");
+    let _ = std::io::stdout().flush();
+    let mut digits = String::new();
+    loop {
+        let [sig_int, sig_term, _] = signals.fds();
+        let mut fds = [
+            PollFd::new(stdin.as_fd(), PollFlags::POLLIN),
+            PollFd::new(sig_int, PollFlags::POLLIN),
+            PollFd::new(sig_term, PollFlags::POLLIN),
+        ];
+        let _ = poll(&mut fds, PollTimeout::from(50u16));
+        let readable = fds[0].revents().is_some_and(|r| !r.is_empty());
+        if signals.take_interrupt() {
+            println!();
+            return Err(Stop::cancelled("interrupted with Ctrl-C"));
+        }
+        if signals.take_terminate() {
+            println!();
+            return Err(Stop::cancelled("korin received SIGTERM or SIGHUP"));
+        }
+        if !readable {
+            continue;
+        }
+        let mut buf = [0u8; 64];
+        let read = match stdin.lock().read(&mut buf) {
+            Ok(0) => return Err(Stop::cancelled("the terminal closed")),
+            Ok(n) => n,
+            Err(e) => return Err(Stop::failed(format!("cannot read the terminal: {e}"))),
+        };
+        let bytes = &buf[..read];
+        match bytes {
+            // A lone Esc goes back.
+            [0x1b] => {
+                println!();
+                return Ok(None);
+            }
+            // An arrow or another key that sends Esc and more in one read.
+            [0x1b, ..] => continue,
+            _ => {}
+        }
+        // Keys typed fast can arrive in one read, such as `2` and Enter.
+        for byte in bytes {
+            match byte {
+                b'\r' | b'\n' => {
+                    println!();
+                    return Ok(Some(digits));
+                }
+                0x7f | 0x08 => {
+                    if digits.pop().is_some() {
+                        print!("\x08 \x08");
+                    }
+                }
+                b'0'..=b'9' => {
+                    digits.push(char::from(*byte));
+                    print!("{}", char::from(*byte));
+                }
+                _ => {}
+            }
+        }
+        let _ = std::io::stdout().flush();
+    }
+}
+
 /// A prompt as it prints: in a live view, inside a box. `shown` is the prompt line with the
 /// box's left side. `right` draws the right side without moving the cursor. `bottom` draws
 /// the bottom border on the next row, then puts the cursor back after the prompt.
